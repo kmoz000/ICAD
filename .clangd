@@ -1,0 +1,11 @@
+CompileFlags:
+  CompilationDatabase: build
+  Add: [-std=c++23]
+
+Index:
+  Background: Build
+
+Diagnostics:
+  ClangTidy:
+    Add: [bugprone-*, performance-*, portability-*]
+

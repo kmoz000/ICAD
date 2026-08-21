@@ -1,0 +1,10 @@
+PROJECT incomplete_box
+UNITS mm
+BODY part
+FEATURE base
+TYPE BOX
+WIDTH 10 mm
+DEPTH 20 mm
+END
+END
+

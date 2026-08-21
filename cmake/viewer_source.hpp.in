@@ -1,0 +1,9 @@
+#pragma once
+
+#include <string_view>
+
+namespace icad::viewer {
+
+inline constexpr std::string_view library_source = R"ICADJS(@ICAD_VIEWER_JS@)ICADJS";
+
+} // namespace icad::viewer

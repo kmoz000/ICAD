@@ -1,0 +1,72 @@
+# Stable semantic selectors drive native edge and repetition tools. No mesh
+# index appears in source, so agents can edit dimensions without losing intent.
+PROJECT modeling_tools
+UNITS mm
+
+POINT3 chamfer_edge 20 mm 10 mm 5 mm
+POINT3 fillet_edge 40 mm 0 mm 0 mm
+POINT3 mirror_plane 65 mm 0 mm 0 mm
+VECTOR x_axis 1 0 0
+
+MATERIAL metal ALUMINUM
+
+BODY chamfered_bracket
+MATERIAL metal
+FEATURE stock
+TYPE BOX
+WIDTH 20 mm
+DEPTH 10 mm
+HEIGHT 10 mm
+END
+FEATURE selected_bevel
+TYPE CHAMFER
+SELECT EDGE NEAREST chamfer_edge
+DISTANCE 2 mm
+END
+END
+
+BODY filleted_bracket
+MATERIAL metal
+FEATURE stock
+TYPE BOX
+WIDTH 20 mm
+DEPTH 10 mm
+HEIGHT 10 mm
+ORIGIN_X 30 mm
+END
+FEATURE selected_round
+TYPE FILLET
+SELECT EDGE NEAREST fillet_edge
+RADIUS 2 mm
+END
+END
+
+BODY patterned_fasteners
+MATERIAL metal
+FEATURE seed
+TYPE CYLINDER
+RADIUS 2 mm
+HEIGHT 8 mm
+END
+FEATURE row
+TYPE LINEAR_PATTERN
+DIRECTION x_axis
+COUNT 4
+SPACING 10 mm
+END
+END
+
+BODY mirrored_mounts
+MATERIAL metal
+FEATURE seed
+TYPE BOX
+WIDTH 5 mm
+DEPTH 5 mm
+HEIGHT 5 mm
+ORIGIN_X 70 mm
+END
+FEATURE symmetric_pair
+TYPE MIRROR
+PLANE mirror_plane NORMAL x_axis
+END
+END

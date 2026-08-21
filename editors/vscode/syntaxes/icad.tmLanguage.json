@@ -1,0 +1,19 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "ICAD",
+  "scopeName": "source.icad",
+  "patterns": [
+    {"include": "#comments"},
+    {"include": "#keywords"},
+    {"include": "#types"},
+    {"include": "#units"},
+    {"include": "#numbers"}
+  ],
+  "repository": {
+    "comments": {"patterns": [{"name": "comment.line.number-sign.icad", "match": "#.*$"}]},
+    "keywords": {"patterns": [{"name": "keyword.control.icad", "match": "\\b(PROJECT|UNITS|TOLERANCE|PARAMETER|ANGLE|POINT3|VECTOR|POSE|INSTANCE|JOINT|MATERIAL|PRESET|PROFILE|SKETCH|BODY|FEATURE|CONSTRAINT|MATE|SCENE|TRACK|KEYFRAME|END|TYPE|OPERATION|POSITION|ROTATION|VALUE|LIMIT|BACKGROUND|DURATION|FPS|AT|OF|FROM|TO|AROUND|BY|AXIS|SELECT|NEAREST|PATH|SECTION)\\b"}]},
+    "types": {"patterns": [{"name": "support.type.icad", "match": "\\b(BOX|CYLINDER|CONE|SPHERE|EXTRUDE|REVOLVE|SWEEP|LOFT|FREEFORM|UNION|CUT|INTERSECT|NEW|FIXED|REVOLUTE|PRISMATIC|BODY|CAMERA|JOINT|FACE|EDGE)\\b"}]},
+    "units": {"patterns": [{"name": "constant.language.unit.icad", "match": "\\b(mm|cm|m|in|deg|rad|s|ms)\\b"}]},
+    "numbers": {"patterns": [{"name": "constant.numeric.icad", "match": "(?<![A-Za-z_])[-+]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][-+]?\\d+)?"}]}
+  }
+}

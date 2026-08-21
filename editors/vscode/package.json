@@ -1,0 +1,82 @@
+{
+  "name": "icad-agentic-cad",
+  "displayName": "ICAD Agentic CAD",
+  "description": "Language tooling, compiler commands, and viewer launch support for ICAD agentic 3D designs.",
+  "version": "0.21.0",
+  "publisher": "icad",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": ["Programming Languages", "Other"],
+  "keywords": ["cad", "3d", "agentic", "compiler", "step", "manufacturing"],
+  "activationEvents": ["onLanguage:icad"],
+  "main": "./dist/extension.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kmoz000/ICAD.git"
+  },
+  "files": [
+    "dist/extension.js",
+    "LICENSE",
+    "language-configuration.json",
+    "syntaxes/**",
+    "README.md"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "icad",
+        "aliases": ["ICAD", "icad"],
+        "extensions": [".icad"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "icad",
+        "scopeName": "source.icad",
+        "path": "./syntaxes/icad.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {"command": "icad.check", "title": "ICAD: Check Active Design"},
+      {"command": "icad.agentCreate", "title": "ICAD: Create Design from Prompt"},
+      {"command": "icad.build", "title": "ICAD: Build Active Design"},
+      {"command": "icad.openViewer", "title": "ICAD: Build and Open Viewer"}
+    ],
+    "menus": {
+      "editor/title": [
+        {"command": "icad.build", "when": "resourceLangId == icad", "group": "navigation@10"},
+        {"command": "icad.openViewer", "when": "resourceLangId == icad", "group": "navigation@11"}
+      ]
+    },
+    "configuration": {
+      "title": "ICAD",
+      "properties": {
+        "icad.executablePath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to icad. Empty uses build/bin/icad in the workspace, then PATH."
+        },
+        "icad.viewerPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to icad-viewer. Empty uses build/bin/icad-viewer in the workspace, then PATH."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "esbuild extension.js --bundle --platform=node --format=cjs --external:vscode --outfile=dist/extension.js",
+    "test": "npm run build && node --check dist/extension.js",
+    "package": "npm run build && vsce package --out ../../build/icad-agentic-cad.vsix"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^3.3.2",
+    "esbuild": "^0.25.8"
+  }
+}

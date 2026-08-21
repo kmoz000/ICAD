@@ -1,0 +1,379 @@
+# End-to-end ICAD acceptance model: a 120 metre twin-pier bridge.
+PROJECT advanced_bridge
+UNITS mm
+
+PARAMETER bridge_length 120 m
+PARAMETER bridge_width 20 m
+PARAMETER deck_elevation 18 m
+PARAMETER deck_thickness 1 m
+PARAMETER tower_height 22 m
+PARAMETER pier_radius 2500 mm
+POINT3 inspection_light 60000 mm 10000 mm 42000 mm
+
+# Predefined PBR materials include deterministic embedded procedural textures.
+MATERIAL bridge_concrete
+PRESET CONCRETE
+ROUGHNESS 0.9
+TEXTURE_SCALE 800 mm
+UV_MODE BOX
+END
+MATERIAL bridge_steel STRUCTURAL_STEEL
+MATERIAL road_surface ASPHALT
+
+# Foundations, abutments, and four load-bearing piers.
+BODY substructure
+MATERIAL bridge_concrete
+FEATURE west_abutment
+TYPE BOX
+WIDTH 6000 mm
+DEPTH 20000 mm
+HEIGHT 8000 mm
+ORIGIN_X 0 mm
+ORIGIN_Y 0 mm
+ORIGIN_Z 0 mm
+END
+FEATURE east_abutment
+TYPE BOX
+WIDTH 6000 mm
+DEPTH 20000 mm
+HEIGHT 8000 mm
+ORIGIN_X 114000 mm
+ORIGIN_Y 0 mm
+ORIGIN_Z 0 mm
+END
+FEATURE west_pier_north
+TYPE CYLINDER
+RADIUS 2500 mm
+HEIGHT 18000 mm
+ORIGIN_X 30000 mm
+ORIGIN_Y 5000 mm
+ORIGIN_Z 0 mm
+END
+FEATURE west_pier_south
+TYPE CYLINDER
+RADIUS 2500 mm
+HEIGHT 18000 mm
+ORIGIN_X 30000 mm
+ORIGIN_Y 15000 mm
+ORIGIN_Z 0 mm
+END
+FEATURE east_pier_north
+TYPE CYLINDER
+RADIUS 2500 mm
+HEIGHT 18000 mm
+ORIGIN_X 90000 mm
+ORIGIN_Y 5000 mm
+ORIGIN_Z 0 mm
+END
+FEATURE east_pier_south
+TYPE CYLINDER
+RADIUS 2500 mm
+HEIGHT 18000 mm
+ORIGIN_X 90000 mm
+ORIGIN_Y 15000 mm
+ORIGIN_Z 0 mm
+END
+END
+
+# Four deck slabs, longitudinal girders, and transverse cross-members.
+BODY superstructure
+MATERIAL road_surface
+FEATURE deck_span_west
+TYPE BOX
+WIDTH 30000 mm
+DEPTH 16000 mm
+HEIGHT 1000 mm
+ORIGIN_X 0 mm
+ORIGIN_Y 2000 mm
+ORIGIN_Z 18000 mm
+END
+FEATURE deck_span_midwest
+TYPE BOX
+WIDTH 30000 mm
+DEPTH 16000 mm
+HEIGHT 1000 mm
+ORIGIN_X 30000 mm
+ORIGIN_Y 2000 mm
+ORIGIN_Z 18000 mm
+END
+FEATURE deck_span_mideast
+TYPE BOX
+WIDTH 30000 mm
+DEPTH 16000 mm
+HEIGHT 1000 mm
+ORIGIN_X 60000 mm
+ORIGIN_Y 2000 mm
+ORIGIN_Z 18000 mm
+END
+FEATURE deck_span_east
+TYPE BOX
+WIDTH 30000 mm
+DEPTH 16000 mm
+HEIGHT 1000 mm
+ORIGIN_X 90000 mm
+ORIGIN_Y 2000 mm
+ORIGIN_Z 18000 mm
+END
+FEATURE girder_north
+TYPE BOX
+WIDTH 120000 mm
+DEPTH 1000 mm
+HEIGHT 2500 mm
+ORIGIN_X 0 mm
+ORIGIN_Y 2500 mm
+ORIGIN_Z 15500 mm
+END
+FEATURE girder_south
+TYPE BOX
+WIDTH 120000 mm
+DEPTH 1000 mm
+HEIGHT 2500 mm
+ORIGIN_X 0 mm
+ORIGIN_Y 16500 mm
+ORIGIN_Z 15500 mm
+END
+FEATURE crossbeam_west
+TYPE BOX
+WIDTH 800 mm
+DEPTH 15000 mm
+HEIGHT 800 mm
+ORIGIN_X 10000 mm
+ORIGIN_Y 2500 mm
+ORIGIN_Z 16500 mm
+END
+FEATURE crossbeam_midwest
+TYPE BOX
+WIDTH 800 mm
+DEPTH 15000 mm
+HEIGHT 800 mm
+ORIGIN_X 35000 mm
+ORIGIN_Y 2500 mm
+ORIGIN_Z 16500 mm
+END
+FEATURE crossbeam_center
+TYPE BOX
+WIDTH 800 mm
+DEPTH 15000 mm
+HEIGHT 800 mm
+ORIGIN_X 60000 mm
+ORIGIN_Y 2500 mm
+ORIGIN_Z 16500 mm
+END
+FEATURE crossbeam_mideast
+TYPE BOX
+WIDTH 800 mm
+DEPTH 15000 mm
+HEIGHT 800 mm
+ORIGIN_X 85000 mm
+ORIGIN_Y 2500 mm
+ORIGIN_Z 16500 mm
+END
+FEATURE crossbeam_east
+TYPE BOX
+WIDTH 800 mm
+DEPTH 15000 mm
+HEIGHT 800 mm
+ORIGIN_X 110000 mm
+ORIGIN_Y 2500 mm
+ORIGIN_Z 16500 mm
+END
+END
+
+# Four towers and two connecting caps above the pier axes.
+BODY towers
+MATERIAL bridge_concrete
+FEATURE west_tower_north
+TYPE BOX
+WIDTH 3000 mm
+DEPTH 2000 mm
+HEIGHT 22000 mm
+ORIGIN_X 28500 mm
+ORIGIN_Y 2500 mm
+ORIGIN_Z 18000 mm
+END
+FEATURE west_tower_south
+TYPE BOX
+WIDTH 3000 mm
+DEPTH 2000 mm
+HEIGHT 22000 mm
+ORIGIN_X 28500 mm
+ORIGIN_Y 15500 mm
+ORIGIN_Z 18000 mm
+END
+FEATURE east_tower_north
+TYPE BOX
+WIDTH 3000 mm
+DEPTH 2000 mm
+HEIGHT 22000 mm
+ORIGIN_X 88500 mm
+ORIGIN_Y 2500 mm
+ORIGIN_Z 18000 mm
+END
+FEATURE east_tower_south
+TYPE BOX
+WIDTH 3000 mm
+DEPTH 2000 mm
+HEIGHT 22000 mm
+ORIGIN_X 88500 mm
+ORIGIN_Y 15500 mm
+ORIGIN_Z 18000 mm
+END
+FEATURE west_tower_cap
+TYPE BOX
+WIDTH 8000 mm
+DEPTH 15000 mm
+HEIGHT 1500 mm
+ORIGIN_X 26000 mm
+ORIGIN_Y 2500 mm
+ORIGIN_Z 39500 mm
+END
+FEATURE east_tower_cap
+TYPE BOX
+WIDTH 8000 mm
+DEPTH 15000 mm
+HEIGHT 1500 mm
+ORIGIN_X 86000 mm
+ORIGIN_Y 2500 mm
+ORIGIN_Z 39500 mm
+END
+END
+
+# Edge rails and evenly distributed safety posts.
+BODY safety_system
+MATERIAL bridge_steel
+FEATURE north_guardrail
+TYPE BOX
+WIDTH 120000 mm
+DEPTH 300 mm
+HEIGHT 1500 mm
+ORIGIN_X 0 mm
+ORIGIN_Y 2000 mm
+ORIGIN_Z 19000 mm
+END
+FEATURE south_guardrail
+TYPE BOX
+WIDTH 120000 mm
+DEPTH 300 mm
+HEIGHT 1500 mm
+ORIGIN_X 0 mm
+ORIGIN_Y 17700 mm
+ORIGIN_Z 19000 mm
+END
+FEATURE north_post_west
+TYPE BOX
+WIDTH 300 mm
+DEPTH 300 mm
+HEIGHT 1800 mm
+ORIGIN_X 10000 mm
+ORIGIN_Y 2000 mm
+ORIGIN_Z 19000 mm
+END
+FEATURE north_post_midwest
+TYPE BOX
+WIDTH 300 mm
+DEPTH 300 mm
+HEIGHT 1800 mm
+ORIGIN_X 40000 mm
+ORIGIN_Y 2000 mm
+ORIGIN_Z 19000 mm
+END
+FEATURE north_post_mideast
+TYPE BOX
+WIDTH 300 mm
+DEPTH 300 mm
+HEIGHT 1800 mm
+ORIGIN_X 80000 mm
+ORIGIN_Y 2000 mm
+ORIGIN_Z 19000 mm
+END
+FEATURE north_post_east
+TYPE BOX
+WIDTH 300 mm
+DEPTH 300 mm
+HEIGHT 1800 mm
+ORIGIN_X 110000 mm
+ORIGIN_Y 2000 mm
+ORIGIN_Z 19000 mm
+END
+FEATURE south_post_west
+TYPE BOX
+WIDTH 300 mm
+DEPTH 300 mm
+HEIGHT 1800 mm
+ORIGIN_X 10000 mm
+ORIGIN_Y 17700 mm
+ORIGIN_Z 19000 mm
+END
+FEATURE south_post_midwest
+TYPE BOX
+WIDTH 300 mm
+DEPTH 300 mm
+HEIGHT 1800 mm
+ORIGIN_X 40000 mm
+ORIGIN_Y 17700 mm
+ORIGIN_Z 19000 mm
+END
+FEATURE south_post_mideast
+TYPE BOX
+WIDTH 300 mm
+DEPTH 300 mm
+HEIGHT 1800 mm
+ORIGIN_X 80000 mm
+ORIGIN_Y 17700 mm
+ORIGIN_Z 19000 mm
+END
+FEATURE south_post_east
+TYPE BOX
+WIDTH 300 mm
+DEPTH 300 mm
+HEIGHT 1800 mm
+ORIGIN_X 110000 mm
+ORIGIN_Y 17700 mm
+ORIGIN_Z 19000 mm
+END
+END
+
+# Dedicated inspection and utility paths below the road deck.
+BODY bridge_services
+MATERIAL bridge_steel
+FEATURE inspection_walkway
+TYPE BOX
+WIDTH 120000 mm
+DEPTH 1200 mm
+HEIGHT 200 mm
+ORIGIN_X 0 mm
+ORIGIN_Y 9400 mm
+ORIGIN_Z 15000 mm
+END
+FEATURE utility_conduit
+TYPE CYLINDER
+RADIUS 250 mm
+HEIGHT 120000 mm
+ORIGIN_X 0 mm
+ORIGIN_Y 11000 mm
+ORIGIN_Z 15200 mm
+ROTATION_Y 90 deg
+END
+END
+
+# A programmable browser-viewer scene with camera and body animation tracks.
+SCENE inspection_flythrough
+DURATION 12 s
+FPS 30
+BACKGROUND SKY_DAY
+LOOP 1
+LIGHT sun DIRECTIONAL COLOR 1 0.95 0.86 INTENSITY 2.5
+LIGHT inspection POINT COLOR 0.7 0.85 1 INTENSITY 4 AT inspection_light
+EVENT 6 s service_apex
+TRACK camera_orbit CAMERA main_camera
+EASING EASE_IN_OUT
+KEYFRAME 0 s POSITION 0 mm 0 mm 0 mm ROTATION 0 deg 0 deg 0 deg
+KEYFRAME 12 s POSITION 0 mm 0 mm 0 mm ROTATION 0 deg 0 deg 18 deg
+END
+TRACK service_reveal BODY bridge_services
+EASING EASE_IN_OUT
+KEYFRAME 0 s POSITION 0 mm 0 mm 0 mm ROTATION 0 deg 0 deg 0 deg
+KEYFRAME 6 s POSITION 0 mm 0 mm 1200 mm ROTATION 0 deg 0 deg 0 deg
+KEYFRAME 12 s POSITION 0 mm 0 mm 0 mm ROTATION 0 deg 0 deg 0 deg
+END
+END

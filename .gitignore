@@ -1,0 +1,49 @@
+# CMake build trees
+/build/
+/build-*/
+/out/
+/.icad-history/
+.vscode
+# Generated compiler databases and test artifacts
+compile_commands.json
+Testing/
+/mcp-test-workspace/
+/source-document-workspace/
+/source-document-outside/
+PLAN.md
+# Editor and operating-system files
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.swp
+
+# Compiler outputs
+*.obj
+*.step
+*.stp
+*.stl
+*.gltf
+*.glb
+*.3mf
+*.dxf
+*.scene.json
+*.bom.json
+*.manufacturing.json
+*.drawing.svg
+*.viewer.js
+*.vsix
+editors/vscode/node_modules/
+editors/vscode/dist/
+
+# Coverage, profiling, and sanitizer artifacts
+*.gcda
+*.gcno
+*.profraw
+*.profdata
+*.dSYM/
+
+# Local logs and scratch files
+*.log
+*.tmp

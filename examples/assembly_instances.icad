@@ -1,0 +1,24 @@
+# Reused component geometry with native revolute occurrence solving.
+PROJECT assembly_instances
+UNITS mm
+
+POINT3 origin 0 mm 0 mm 0 mm
+POINT3 station_a 20 mm 0 mm 0 mm
+POINT3 station_b 40 mm 0 mm 0 mm
+VECTOR hinge_axis 0 0 1
+
+MATERIAL alloy ALUMINUM
+BODY link_definition
+MATERIAL alloy
+FEATURE stock
+TYPE BOX
+WIDTH 10 mm
+DEPTH 10 mm
+HEIGHT 10 mm
+END
+END
+
+INSTANCE link_a OF link_definition AT station_a ROTATION 0 deg 0 deg 0 deg
+INSTANCE link_b OF link_definition AT station_b ROTATION 0 deg 0 deg 0 deg
+JOINT mount FIXED WORLD link_a AT station_a AXIS hinge_axis
+JOINT hinge REVOLUTE link_a link_b AT station_b AXIS hinge_axis VALUE 90 deg LIMIT -90 deg 90 deg

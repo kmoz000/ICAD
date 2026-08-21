@@ -1,0 +1,33 @@
+# A fully constrained 2D mounting pattern solved from approximate seed points.
+PROJECT constrained_sketch
+UNITS mm
+
+PARAMETER plate_width 40 mm
+PARAMETER plate_height 25 mm
+ANGLE corner_angle 90 deg
+
+SKETCH mounting_outline
+POINT origin 0 mm 0 mm FIXED
+POINT lower_right 38 mm 2 mm
+POINT upper_right 39 mm 28 mm
+POINT upper_left -1 mm 24 mm
+CONSTRAINT bottom_horizontal HORIZONTAL origin lower_right
+CONSTRAINT right_vertical VERTICAL lower_right upper_right
+CONSTRAINT top_horizontal HORIZONTAL upper_right upper_left
+CONSTRAINT left_vertical VERTICAL upper_left origin
+CONSTRAINT width_bottom DISTANCE origin lower_right plate_width
+CONSTRAINT height_right DISTANCE lower_right upper_right plate_height
+CONSTRAINT width_top DISTANCE upper_right upper_left plate_width
+CONSTRAINT height_left DISTANCE upper_left origin plate_height
+CONSTRAINT square_corner ANGLE origin lower_right upper_right corner_angle
+END
+
+MATERIAL plate_material ALUMINUM
+BODY plate
+MATERIAL plate_material
+FEATURE stock
+TYPE EXTRUDE
+PROFILE mounting_outline
+HEIGHT 4 mm
+END
+END

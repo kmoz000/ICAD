@@ -1,0 +1,59 @@
+# Native ICAD boolean acceptance model. Each BODY evaluates its features in
+# source order and emits only the reconstructed result.
+PROJECT boolean_showcase
+UNITS mm
+
+BODY union_result
+FEATURE base
+TYPE BOX
+WIDTH 10 mm
+DEPTH 10 mm
+HEIGHT 10 mm
+END
+FEATURE overlapping_addition
+TYPE BOX
+OPERATION UNION
+WIDTH 10 mm
+DEPTH 10 mm
+HEIGHT 10 mm
+ORIGIN_X 5 mm
+END
+END
+
+BODY cut_result
+FEATURE stock
+TYPE BOX
+WIDTH 10 mm
+DEPTH 10 mm
+HEIGHT 10 mm
+ORIGIN_X 30 mm
+END
+FEATURE square_through_hole
+TYPE BOX
+OPERATION CUT
+WIDTH 4 mm
+DEPTH 4 mm
+HEIGHT 12 mm
+ORIGIN_X 33 mm
+ORIGIN_Y 3 mm
+ORIGIN_Z -1 mm
+END
+END
+
+BODY intersect_result
+FEATURE first_volume
+TYPE BOX
+WIDTH 10 mm
+DEPTH 10 mm
+HEIGHT 10 mm
+ORIGIN_X 60 mm
+END
+FEATURE retained_overlap
+TYPE BOX
+OPERATION INTERSECT
+WIDTH 10 mm
+DEPTH 10 mm
+HEIGHT 10 mm
+ORIGIN_X 65 mm
+END
+END

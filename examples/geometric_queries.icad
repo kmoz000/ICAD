@@ -1,0 +1,26 @@
+# Configurable tolerance with exact polyhedral distance and plane sections.
+PROJECT geometric_queries
+UNITS mm
+TOLERANCE LINEAR 0.001 mm ANGULAR 0.01 deg
+
+MATERIAL alloy ALUMINUM
+BODY first_block
+MATERIAL alloy
+FEATURE stock
+TYPE BOX
+WIDTH 10 mm
+DEPTH 10 mm
+HEIGHT 10 mm
+END
+END
+
+BODY second_block
+MATERIAL alloy
+FEATURE stock
+TYPE BOX
+WIDTH 10 mm
+DEPTH 10 mm
+HEIGHT 10 mm
+ORIGIN_X 20 mm
+END
+END

@@ -1,0 +1,124 @@
+program          = { statement | newline } ;
+statement        = project | units | parameter | angle | point3 | vector | pose | instance | joint |
+                   tolerance | material | profile | sketch | body | constraint | mate | scene ;
+
+project          = "PROJECT", identifier, newline ;
+units            = "UNITS", identifier, newline ;
+parameter        = "PARAMETER", identifier, quantity, newline ;
+angle            = "ANGLE", identifier, scalar_value, newline ;
+tolerance        = "TOLERANCE", "LINEAR", scalar_value,
+                   "ANGULAR", scalar_value, newline ;
+point3           = "POINT3", identifier,
+                   ( scalar_value, scalar_value, scalar_value |
+                     "FROM", identifier, "ALONG", identifier, "DISTANCE", scalar_value ), newline ;
+vector           = "VECTOR", identifier,
+                   ( number, number, number |
+                     "FROM", identifier, "TO", identifier |
+                     "ROTATE", identifier, "AROUND", identifier, "BY", scalar_value ), newline ;
+pose             = "POSE", identifier, "AT", identifier, "ROTATION",
+                   scalar_value, scalar_value, scalar_value, newline ;
+instance         = "INSTANCE", identifier, "OF", identifier, "AT", identifier,
+                   "ROTATION", scalar_value, scalar_value, scalar_value, newline ;
+joint            = "JOINT", identifier, joint_kind, identifier, identifier,
+                   "AT", identifier, "AXIS", identifier, [ joint_drive ], newline ;
+joint_kind       = "FIXED" | "REVOLUTE" | "PRISMATIC" ;
+joint_drive      = "VALUE", scalar_value, "LIMIT", scalar_value, scalar_value ;
+material         = "MATERIAL", identifier,
+                   ( identifier, newline |
+                     newline, "PRESET", identifier, newline,
+                     [ "BASE_COLOR", number, number, number, number, newline ],
+                     [ "METALLIC", number, newline ],
+                     [ "ROUGHNESS", number, newline ],
+                     [ "TEXTURE_SCALE", quantity, newline ],
+                     [ "UV_MODE", ( "BOX" | "PLANAR" | "CYLINDRICAL" | "SPHERICAL" ), newline ],
+                     "END", newline ) ;
+profile          = "PROFILE", identifier, newline,
+                   ( point_profile | path_profile | circle_profile ), "END", newline ;
+point_profile    = point, point, point, { point } ;
+point            = "POINT", quantity, quantity, newline ;
+path_profile     = "START", quantity, quantity, newline,
+                   path_segment, { path_segment }, "CLOSE", newline ;
+path_segment     = line_segment | arc_segment ;
+line_segment     = "LINE", quantity, quantity, newline ;
+arc_segment      = "ARC", quantity, quantity, "CENTER", quantity, quantity,
+                   ( "CW" | "CCW" ), newline ;
+circle_profile   = "CIRCLE", quantity, quantity, quantity, newline ;
+
+sketch           = "SKETCH", identifier, newline,
+                   { sketch_point | sketch_constraint }, "END", newline ;
+sketch_point     = "POINT", identifier, scalar_value, scalar_value,
+                   [ "FIXED" ], newline ;
+sketch_constraint = "CONSTRAINT", identifier,
+                    ( ( "HORIZONTAL" | "VERTICAL" | "COINCIDENT" ),
+                      identifier, identifier |
+                      "DISTANCE", identifier, identifier, scalar_value |
+                      "ANGLE", identifier, identifier, identifier, scalar_value ), newline ;
+
+body             = "BODY", identifier, newline,
+                   [ "MATERIAL", identifier, newline ],
+                   { feature }, "END", newline ;
+feature          = "FEATURE", identifier, newline,
+                   "TYPE", identifier, newline,
+                   [ "PROFILE", identifier, newline ],
+                   [ "TARGET_PROFILE", identifier, newline ],
+                   [ "PATH", identifier, identifier, { identifier }, newline ],
+                   [ "OPERATION", ( "NEW" | "UNION" | "CUT" | "INTERSECT" ), newline ],
+                   [ "SELECT", "EDGE", "NEAREST", identifier, newline ],
+                   [ "DIRECTION", identifier, newline ],
+                   [ "COUNT", number, newline ],
+                   [ "PLANE", identifier, "NORMAL", identifier, newline ],
+                   { property }, "END", newline ;
+property         = identifier, quantity, newline ;
+constraint       = "CONSTRAINT", identifier,
+                   ( "MIN_DISTANCE", identifier, identifier, scalar_value |
+                     "COINCIDENT", identifier, identifier, scalar_value |
+                     "PARALLEL", identifier, identifier |
+                     "PERPENDICULAR", identifier, identifier |
+                     "ANGLE_BETWEEN", identifier, identifier, scalar_value ), newline ;
+mate             = "MATE", identifier,
+                   ( "FACE", identifier, face_selector, identifier, face_selector,
+                     "OFFSET", scalar_value |
+                     "EDGE", identifier, edge_selector, identifier, edge_selector,
+                     "TOLERANCE", scalar_value ), newline ;
+face_selector    = "X_MIN" | "X_MAX" | "Y_MIN" | "Y_MAX" | "Z_MIN" | "Z_MAX" ;
+edge_selector    = ( "X_AT_Y_MIN_Z_MIN" | "X_AT_Y_MIN_Z_MAX" |
+                     "X_AT_Y_MAX_Z_MIN" | "X_AT_Y_MAX_Z_MAX" |
+                     "Y_AT_X_MIN_Z_MIN" | "Y_AT_X_MIN_Z_MAX" |
+                     "Y_AT_X_MAX_Z_MIN" | "Y_AT_X_MAX_Z_MAX" |
+                     "Z_AT_X_MIN_Y_MIN" | "Z_AT_X_MIN_Y_MAX" |
+                     "Z_AT_X_MAX_Y_MIN" | "Z_AT_X_MAX_Y_MAX" ) ;
+
+scene            = "SCENE", identifier, newline,
+                   "DURATION", quantity, newline,
+                   "FPS", number, newline,
+                   "BACKGROUND", identifier, newline,
+                   [ "LOOP", number, newline ],
+                   { light | event },
+                   { track }, "END", newline ;
+light            = "LIGHT", identifier, ( "DIRECTIONAL" | "POINT" ),
+                   "COLOR", number, number, number, "INTENSITY", number,
+                   [ "AT", identifier ], newline ;
+event            = "EVENT", quantity, identifier, newline ;
+track            = "TRACK", identifier,
+                   ( "BODY" | "CAMERA" | "JOINT" | "VISIBILITY" ), identifier, newline,
+                   [ "EASING", ( "LINEAR" | "EASE_IN" | "EASE_OUT" |
+                                  "EASE_IN_OUT" | "STEP" ), newline ],
+                   keyframe, keyframe, { keyframe }, "END", newline ;
+keyframe         = "KEYFRAME", quantity,
+                   ( "POSITION", quantity, quantity, quantity,
+                     "ROTATION", quantity, quantity, quantity |
+                     "VALUE", scalar_value |
+                     "VISIBLE", ( "ON" | "OFF" ) ), newline ;
+
+quantity         = number, identifier ;
+scalar_value     = quantity | identifier ;
+identifier       = letter, { letter | digit | "_" } ;
+number           = [ "-" ], digit, { digit }, [ ".", digit, { digit } ] ;
+newline          = "\n" ;
+letter           = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" |
+                   "J" | "K" | "L" | "M" | "N" | "O" | "P" | "Q" | "R" |
+                   "S" | "T" | "U" | "V" | "W" | "X" | "Y" | "Z" |
+                   "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" |
+                   "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" |
+                   "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z" ;
+digit            = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;

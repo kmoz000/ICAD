@@ -1,0 +1,37 @@
+# Agent-readable face/edge mating plus joint-driven browser animation.
+PROJECT assembly_semantics
+UNITS mm
+TOLERANCE LINEAR 0.001 mm ANGULAR 0.001 deg
+
+POINT3 origin 0 mm 0 mm 0 mm
+POINT3 upper 0 mm 0 mm 10 mm
+POINT3 hinge_point 0 mm 0 mm 10 mm
+VECTOR hinge_axis 0 0 1
+
+MATERIAL alloy ALUMINUM
+BODY link_definition
+MATERIAL alloy
+FEATURE stock
+TYPE BOX
+WIDTH 10 mm
+DEPTH 10 mm
+HEIGHT 10 mm
+END
+END
+
+INSTANCE upper_link OF link_definition AT upper ROTATION 0 deg 0 deg 0 deg
+JOINT hinge REVOLUTE WORLD upper_link AT hinge_point AXIS hinge_axis VALUE 0 deg LIMIT -90 deg 90 deg
+
+MATE seated FACE link_definition Z_MAX upper_link Z_MIN OFFSET 0 mm
+MATE aligned EDGE link_definition X_AT_Y_MIN_Z_MAX upper_link X_AT_Y_MIN_Z_MIN TOLERANCE 0.001 mm
+
+SCENE articulate
+DURATION 2 s
+FPS 30
+BACKGROUND STUDIO
+TRACK hinge_motion JOINT hinge
+KEYFRAME 0 s VALUE -45 deg
+KEYFRAME 1 s VALUE 45 deg
+KEYFRAME 2 s VALUE -45 deg
+END
+END

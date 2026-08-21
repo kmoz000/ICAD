@@ -1,0 +1,307 @@
+# Native ICAD robotic-arm assembly benchmark based on the reference files in
+# examples/Robotic_Arm_3D_Model. Ten source components contain twenty solids.
+PROJECT robotic_arm
+UNITS mm
+
+PARAMETER joint_radius 24 mm
+PARAMETER link_width 42 mm
+PARAMETER link_depth 24 mm
+PARAMETER shoulder_height 122 mm
+PARAMETER preview_upper_length 116 mm
+PARAMETER preview_forearm_length 138 mm
+
+ANGLE zero_angle 0 deg
+ANGLE waist_angle 25 deg
+ANGLE shoulder_angle -35 deg
+ANGLE elbow_angle 55 deg
+ANGLE wrist_angle -15 deg
+
+POINT3 world_origin 0 mm 0 mm 0 mm
+POINT3 waist_center 0 mm 0 mm 62 mm
+POINT3 shoulder_center 0 mm 0 mm shoulder_height
+POINT3 elbow_center 98 mm 0 mm 184 mm
+POINT3 wrist_center 235 mm 0 mm 200 mm
+POINT3 palm_center 310 mm 0 mm 187 mm
+POINT3 gear_1_center 310 mm 0 mm 198 mm
+POINT3 gear_2_center 336 mm 0 mm 198 mm
+POINT3 tool_center 360 mm 0 mm 190 mm
+POINT3 tool_target 360 mm 0 mm 190 mm
+POINT3 finger_tip FROM palm_center ALONG x_axis DISTANCE 50 mm
+POINT3 preview_elbow FROM shoulder_center ALONG preview_upper_axis DISTANCE preview_upper_length
+POINT3 preview_wrist FROM preview_elbow ALONG preview_forearm_axis DISTANCE preview_forearm_length
+
+VECTOR x_axis 1 0 0
+VECTOR y_axis 0 1 0
+VECTOR z_axis 0 0 1
+VECTOR reach_axis FROM shoulder_center TO finger_tip
+VECTOR preview_upper_axis ROTATE x_axis AROUND y_axis BY shoulder_angle
+VECTOR preview_forearm_axis ROTATE preview_upper_axis AROUND y_axis BY elbow_angle
+
+POSE base AT world_origin ROTATION zero_angle zero_angle zero_angle
+
+JOINT base_mount FIXED WORLD base AT world_origin AXIS z_axis
+JOINT waist_turn REVOLUTE base waist AT waist_center AXIS z_axis VALUE waist_angle LIMIT -180 deg 180 deg
+JOINT shoulder_hinge REVOLUTE waist arm_01 AT shoulder_center AXIS y_axis VALUE shoulder_angle LIMIT -90 deg 90 deg
+JOINT elbow_hinge REVOLUTE arm_01 arm_02 AT elbow_center AXIS y_axis VALUE elbow_angle LIMIT -135 deg 135 deg
+JOINT wrist_hinge REVOLUTE arm_02 arm_03 AT wrist_center AXIS y_axis VALUE wrist_angle LIMIT -120 deg 120 deg
+JOINT palm_mount FIXED arm_03 gripper_base AT palm_center AXIS x_axis
+JOINT gripper_slide PRISMATIC gripper_base gripper_1 AT palm_center AXIS x_axis VALUE 0 mm LIMIT 0 mm 20 mm
+JOINT gear_1_drive REVOLUTE gripper_base gear_1 AT gear_1_center AXIS y_axis VALUE zero_angle LIMIT -360 deg 360 deg
+JOINT gear_2_drive REVOLUTE gripper_base gear_2 AT gear_2_center AXIS y_axis VALUE zero_angle LIMIT -360 deg 360 deg
+JOINT linkage_mount FIXED gripper_1 grip_link_1 AT tool_center AXIS x_axis
+
+CONSTRAINT tool_alignment PARALLEL x_axis x_axis
+CONSTRAINT wrist_axis PERPENDICULAR x_axis z_axis
+CONSTRAINT tool_on_target COINCIDENT tool_center tool_target 0.01 mm
+CONSTRAINT preview_elbow_motion ANGLE_BETWEEN preview_upper_axis preview_forearm_axis elbow_angle
+
+MATERIAL blue_shell PLASTIC
+MATERIAL steel_joint STRUCTURAL_STEEL
+MATERIAL dark_grip CARBON_FIBER
+
+PROFILE arm_link
+START 0 mm 0 mm
+LINE 95 mm 0 mm
+ARC 107 mm 12 mm CENTER 95 mm 12 mm CCW
+ARC 95 mm 24 mm CENTER 95 mm 12 mm CCW
+LINE 0 mm 24 mm
+ARC -12 mm 12 mm CENTER 0 mm 12 mm CCW
+ARC 0 mm 0 mm CENTER 0 mm 12 mm CCW
+CLOSE
+END
+
+BODY base
+MATERIAL steel_joint
+FEATURE mounting_flange
+TYPE CYLINDER
+RADIUS 70 mm
+HEIGHT 8 mm
+END
+FEATURE base_column
+TYPE CYLINDER
+RADIUS 58 mm
+HEIGHT 48 mm
+ORIGIN_Z 8 mm
+END
+END
+
+BODY waist
+MATERIAL blue_shell
+FEATURE turntable
+TYPE CYLINDER
+RADIUS 52 mm
+HEIGHT 12 mm
+ORIGIN_Z 56 mm
+END
+FEATURE waist_housing
+TYPE BOX
+WIDTH 64 mm
+DEPTH 58 mm
+HEIGHT 72 mm
+ORIGIN_X -32 mm
+ORIGIN_Y -29 mm
+ORIGIN_Z 68 mm
+END
+END
+
+BODY arm_01
+MATERIAL blue_shell
+FEATURE shoulder_joint
+TYPE CYLINDER
+RADIUS joint_radius
+HEIGHT link_depth
+ORIGIN_X -12 mm
+ORIGIN_Y 0 mm
+ORIGIN_Z 122 mm
+ROTATION_X 90 deg
+END
+FEATURE lower_link
+TYPE EXTRUDE
+PROFILE arm_link
+HEIGHT link_depth
+ORIGIN_X -6 mm
+ORIGIN_Y -12 mm
+ORIGIN_Z 138 mm
+ROTATION_Y -68 deg
+END
+END
+
+BODY arm_02
+MATERIAL blue_shell
+FEATURE elbow_joint
+TYPE CYLINDER
+RADIUS joint_radius
+HEIGHT link_depth
+ORIGIN_X 98 mm
+ORIGIN_Y 0 mm
+ORIGIN_Z 184 mm
+ROTATION_X 90 deg
+END
+FEATURE upper_link
+TYPE BOX
+WIDTH 125 mm
+DEPTH link_depth
+HEIGHT link_width
+ORIGIN_X 110 mm
+ORIGIN_Y -12 mm
+ORIGIN_Z 174 mm
+ROTATION_Y 12 deg
+END
+END
+
+BODY arm_03
+MATERIAL blue_shell
+FEATURE wrist_joint
+TYPE CYLINDER
+RADIUS 18 mm
+HEIGHT link_depth
+ORIGIN_X 235 mm
+ORIGIN_Y 0 mm
+ORIGIN_Z 200 mm
+ROTATION_X 90 deg
+END
+FEATURE wrist_link
+TYPE BOX
+WIDTH 55 mm
+DEPTH 20 mm
+HEIGHT 26 mm
+ORIGIN_X 245 mm
+ORIGIN_Y -10 mm
+ORIGIN_Z 190 mm
+ROTATION_Y -15 deg
+END
+END
+
+BODY gripper_base
+MATERIAL steel_joint
+FEATURE palm
+TYPE BOX
+WIDTH 38 mm
+DEPTH 28 mm
+HEIGHT 22 mm
+ORIGIN_X 292 mm
+ORIGIN_Y -14 mm
+ORIGIN_Z 176 mm
+END
+FEATURE palm_axis
+TYPE CYLINDER
+RADIUS 10 mm
+HEIGHT 34 mm
+ORIGIN_X 310 mm
+ORIGIN_Y -17 mm
+ORIGIN_Z 187 mm
+ROTATION_X 90 deg
+END
+END
+
+BODY gripper_1
+MATERIAL dark_grip
+FEATURE upper_finger
+TYPE BOX
+WIDTH 72 mm
+DEPTH 8 mm
+HEIGHT 12 mm
+ORIGIN_X 325 mm
+ORIGIN_Y 8 mm
+ORIGIN_Z 191 mm
+ROTATION_Y -22 deg
+END
+FEATURE lower_finger
+TYPE BOX
+WIDTH 72 mm
+DEPTH 8 mm
+HEIGHT 12 mm
+ORIGIN_X 325 mm
+ORIGIN_Y -16 mm
+ORIGIN_Z 171 mm
+ROTATION_Y 22 deg
+END
+END
+
+BODY gear_1
+MATERIAL steel_joint
+FEATURE drive_gear
+TYPE CYLINDER
+RADIUS 16 mm
+HEIGHT 8 mm
+ORIGIN_X 310 mm
+ORIGIN_Y -4 mm
+ORIGIN_Z 198 mm
+ROTATION_X 90 deg
+END
+FEATURE drive_hub
+TYPE CYLINDER
+RADIUS 6 mm
+HEIGHT 12 mm
+ORIGIN_X 310 mm
+ORIGIN_Y -6 mm
+ORIGIN_Z 198 mm
+ROTATION_X 90 deg
+END
+END
+
+BODY gear_2
+MATERIAL steel_joint
+FEATURE follower_gear
+TYPE CYLINDER
+RADIUS 14 mm
+HEIGHT 8 mm
+ORIGIN_X 336 mm
+ORIGIN_Y -4 mm
+ORIGIN_Z 198 mm
+ROTATION_X 90 deg
+END
+FEATURE follower_hub
+TYPE CYLINDER
+RADIUS 5 mm
+HEIGHT 12 mm
+ORIGIN_X 336 mm
+ORIGIN_Y -6 mm
+ORIGIN_Z 198 mm
+ROTATION_X 90 deg
+END
+END
+
+BODY grip_link_1
+MATERIAL dark_grip
+FEATURE upper_linkage
+TYPE BOX
+WIDTH 45 mm
+DEPTH 6 mm
+HEIGHT 7 mm
+ORIGIN_X 330 mm
+ORIGIN_Y 13 mm
+ORIGIN_Z 200 mm
+ROTATION_Y -20 deg
+END
+FEATURE lower_linkage
+TYPE BOX
+WIDTH 45 mm
+DEPTH 6 mm
+HEIGHT 7 mm
+ORIGIN_X 330 mm
+ORIGIN_Y -19 mm
+ORIGIN_Z 168 mm
+ROTATION_Y 20 deg
+END
+END
+
+SCENE articulation
+DURATION 8 s
+FPS 30
+BACKGROUND STUDIO
+TRACK orbit CAMERA assembly_camera
+KEYFRAME 0 s POSITION 0 mm 0 mm 0 mm ROTATION 0 deg 0 deg 0 deg
+KEYFRAME 8 s POSITION 0 mm 0 mm 0 mm ROTATION 0 deg 0 deg 360 deg
+END
+TRACK elbow_motion BODY arm_02
+KEYFRAME 0 s POSITION 0 mm 0 mm 0 mm ROTATION 0 deg 0 deg 0 deg
+KEYFRAME 4 s POSITION 0 mm 0 mm 0 mm ROTATION 0 deg -30 deg 0 deg
+KEYFRAME 8 s POSITION 0 mm 0 mm 0 mm ROTATION 0 deg 0 deg 0 deg
+END
+TRACK gripper_motion BODY gripper_1
+KEYFRAME 0 s POSITION 0 mm 0 mm 0 mm ROTATION 0 deg 0 deg 0 deg
+KEYFRAME 4 s POSITION 4 mm 0 mm 0 mm ROTATION 0 deg 0 deg 0 deg
+KEYFRAME 8 s POSITION 0 mm 0 mm 0 mm ROTATION 0 deg 0 deg 0 deg
+END
+END

@@ -1,0 +1,285 @@
+#pragma once
+
+#include "icad/compiler/diagnostics/diagnostic.hpp"
+
+#include <array>
+#include <cstddef>
+#include <string>
+#include <vector>
+
+namespace icad::compiler::ast {
+
+struct QuantityLiteral {
+    double value{};
+    std::string unit;
+    SourceLocation location;
+};
+
+struct ParameterDecl {
+    std::string name;
+    QuantityLiteral value;
+    SourceLocation location;
+};
+
+struct ValueDecl {
+    QuantityLiteral literal;
+    std::string parameter_reference;
+    SourceLocation location;
+};
+
+struct AngleDecl {
+    std::string name;
+    ValueDecl value;
+    SourceLocation location;
+};
+
+struct ToleranceDecl {
+    ValueDecl linear;
+    ValueDecl angular;
+    bool declared{};
+    SourceLocation location;
+};
+
+struct Point3Decl {
+    std::string name;
+    std::array<ValueDecl, 3> coordinates;
+    std::string base_point;
+    std::string direction;
+    ValueDecl distance;
+    bool derived{};
+    SourceLocation location;
+};
+
+struct VectorDecl {
+    std::string name;
+    std::array<double, 3> components{};
+    std::string from_point;
+    std::string to_point;
+    std::string source_vector;
+    std::string around_axis;
+    ValueDecl angle;
+    bool derived{};
+    bool rotated{};
+    SourceLocation location;
+};
+
+struct PoseDecl {
+    std::string body;
+    std::string point;
+    std::array<ValueDecl, 3> rotation;
+    SourceLocation location;
+};
+
+struct InstanceDecl {
+    std::string name;
+    std::string body;
+    std::string point;
+    std::array<ValueDecl, 3> rotation;
+    SourceLocation location;
+};
+
+struct JointDecl {
+    std::string name;
+    std::string kind;
+    std::string parent_body;
+    std::string child_body;
+    std::string point;
+    std::string axis;
+    ValueDecl value;
+    ValueDecl lower_limit;
+    ValueDecl upper_limit;
+    bool driven{};
+    SourceLocation location;
+};
+
+struct MaterialDecl {
+    std::string name;
+    std::string preset;
+    std::array<double, 4> base_color{};
+    double metallic{};
+    double roughness{};
+    ValueDecl texture_scale;
+    std::string uv_mode;
+    bool has_base_color{};
+    bool has_metallic{};
+    bool has_roughness{};
+    bool has_texture_scale{};
+    SourceLocation location;
+};
+
+struct PropertyDecl {
+    std::string name;
+    QuantityLiteral value;
+    std::string parameter_reference;
+    SourceLocation location;
+};
+
+struct Point2Decl {
+    QuantityLiteral x;
+    QuantityLiteral y;
+    SourceLocation location;
+};
+
+enum class ProfileMode { unset, points, path, circle };
+enum class PathSegmentKind { line, circular_arc };
+
+struct PathSegmentDecl {
+    PathSegmentKind kind{PathSegmentKind::line};
+    Point2Decl end;
+    Point2Decl center;
+    bool counterclockwise{true};
+    SourceLocation location;
+};
+
+struct ProfileDecl {
+    std::string name;
+    ProfileMode mode{ProfileMode::unset};
+    std::vector<Point2Decl> points;
+    Point2Decl path_start;
+    std::vector<PathSegmentDecl> path_segments;
+    bool path_closed{};
+    Point2Decl circle_center;
+    QuantityLiteral circle_radius;
+    SourceLocation location;
+};
+
+struct SketchPointDecl {
+    std::string name;
+    ValueDecl x;
+    ValueDecl y;
+    bool fixed{};
+    SourceLocation location;
+};
+
+struct SketchConstraintDecl {
+    std::string name;
+    std::string kind;
+    std::vector<std::string> references;
+    ValueDecl target;
+    SourceLocation location;
+};
+
+struct SketchDecl {
+    std::string name;
+    std::vector<SketchPointDecl> points;
+    std::vector<SketchConstraintDecl> constraints;
+    SourceLocation location;
+};
+
+struct ConstraintDecl {
+    std::string name;
+    std::string kind;
+    std::string first_body;
+    std::string second_body;
+    ValueDecl target;
+    SourceLocation location;
+};
+
+struct MateDecl {
+    std::string name;
+    std::string kind;
+    std::string first_occurrence;
+    std::string first_selector;
+    std::string second_occurrence;
+    std::string second_selector;
+    ValueDecl target;
+    SourceLocation location;
+};
+
+struct FeatureDecl {
+    std::string name;
+    std::string type;
+    std::string profile;
+    std::string target_profile;
+    std::string operation;
+    std::string selected_edge_point;
+    std::string direction;
+    std::string plane_point;
+    std::string plane_normal;
+    std::vector<std::string> path_points;
+    std::size_t count{};
+    bool has_count{};
+    std::vector<PropertyDecl> properties;
+    SourceLocation location;
+};
+
+struct BodyDecl {
+    std::string name;
+    std::string material;
+    std::vector<FeatureDecl> features;
+    SourceLocation location;
+};
+
+struct KeyframeDecl {
+    QuantityLiteral time;
+    QuantityLiteral position_x;
+    QuantityLiteral position_y;
+    QuantityLiteral position_z;
+    QuantityLiteral rotation_x;
+    QuantityLiteral rotation_y;
+    QuantityLiteral rotation_z;
+    ValueDecl joint_value;
+    bool value_only{};
+    bool visible{true};
+    bool visibility_only{};
+    SourceLocation location;
+};
+
+struct TrackDecl {
+    std::string name;
+    std::string target_kind;
+    std::string target;
+    std::string easing{"LINEAR"};
+    std::vector<KeyframeDecl> keyframes;
+    SourceLocation location;
+};
+
+struct LightDecl {
+    std::string name;
+    std::string kind;
+    std::array<double, 3> color{};
+    double intensity{};
+    std::string point;
+    SourceLocation location;
+};
+
+struct SceneEventDecl {
+    QuantityLiteral time;
+    std::string name;
+    SourceLocation location;
+};
+
+struct SceneDecl {
+    std::string name;
+    QuantityLiteral duration;
+    double frames_per_second{};
+    std::string background;
+    std::size_t loop_count{1};
+    std::vector<LightDecl> lights;
+    std::vector<SceneEventDecl> events;
+    std::vector<TrackDecl> tracks;
+    SourceLocation location;
+};
+
+struct Program {
+    std::string project_name;
+    std::string default_length_unit;
+    ToleranceDecl tolerance;
+    std::vector<ParameterDecl> parameters;
+    std::vector<AngleDecl> angles;
+    std::vector<Point3Decl> points;
+    std::vector<VectorDecl> vectors;
+    std::vector<PoseDecl> poses;
+    std::vector<InstanceDecl> instances;
+    std::vector<JointDecl> joints;
+    std::vector<MaterialDecl> materials;
+    std::vector<ProfileDecl> profiles;
+    std::vector<SketchDecl> sketches;
+    std::vector<BodyDecl> bodies;
+    std::vector<ConstraintDecl> constraints;
+    std::vector<MateDecl> mates;
+    std::vector<SceneDecl> scenes;
+    SourceLocation location;
+};
+
+} // namespace icad::compiler::ast

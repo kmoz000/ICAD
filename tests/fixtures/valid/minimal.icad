@@ -1,0 +1,11 @@
+PROJECT test_block
+UNITS mm
+BODY block
+FEATURE base
+TYPE BOX
+WIDTH 10 mm
+DEPTH 20 mm
+HEIGHT 30 mm
+END
+END
+

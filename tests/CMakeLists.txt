@@ -1,0 +1,216 @@
+set(ICAD_UNIT_TEST_TARGETS)
+function(icad_add_unit_test component source)
+    set(target "icad_${component}_test")
+    add_executable(${target} ${source})
+    target_link_libraries(${target} PRIVATE ICAD::compiler icad_project_options)
+    add_test(NAME "unit.${component}" COMMAND ${target})
+    set_tests_properties("unit.${component}" PROPERTIES LABELS "unit;${component}")
+    list(APPEND ICAD_UNIT_TEST_TARGETS ${target})
+    set(ICAD_UNIT_TEST_TARGETS "${ICAD_UNIT_TEST_TARGETS}" PARENT_SCOPE)
+endfunction()
+
+icad_add_unit_test(lexer unit/lexer_test.cpp)
+icad_add_unit_test(parser unit/parser_test.cpp)
+icad_add_unit_test(units unit/units_test.cpp)
+icad_add_unit_test(resolver unit/resolver_test.cpp)
+icad_add_unit_test(semantic unit/semantic_test.cpp)
+icad_add_unit_test(geometry unit/geometry_test.cpp)
+icad_add_unit_test(boolean unit/boolean_test.cpp)
+icad_add_unit_test(modeling_tools unit/modeling_tools_test.cpp)
+icad_add_unit_test(surfaces unit/surfaces_test.cpp)
+icad_add_unit_test(sketch_solver unit/sketch_solver_test.cpp)
+icad_add_unit_test(incremental unit/incremental_test.cpp)
+icad_add_unit_test(queries unit/queries_test.cpp)
+icad_add_unit_test(instances unit/instances_test.cpp)
+icad_add_unit_test(assembly_semantics unit/assembly_semantics_test.cpp)
+add_test(NAME benchmark.incremental COMMAND icad_incremental_test)
+set_tests_properties(benchmark.incremental PROPERTIES LABELS "benchmark" TIMEOUT 60)
+icad_add_unit_test(intersection unit/intersection_test.cpp)
+icad_add_unit_test(topology unit/topology_test.cpp)
+icad_add_unit_test(scene unit/scene_test.cpp)
+icad_add_unit_test(profile unit/profile_test.cpp)
+icad_add_unit_test(constraints unit/constraints_test.cpp)
+icad_add_unit_test(mechanism unit/mechanism_test.cpp)
+icad_add_unit_test(engineering unit/engineering_test.cpp)
+icad_add_unit_test(agent unit/agent_test.cpp)
+icad_add_unit_test(json unit/json_test.cpp)
+icad_add_unit_test(mcp unit/mcp_test.cpp)
+icad_add_unit_test(source_document unit/source_document_test.cpp)
+icad_add_unit_test(fuzz_smoke unit/fuzz_smoke_test.cpp)
+icad_add_unit_test(agent_workflow unit/agent_workflow_test.cpp)
+set_tests_properties(unit.fuzz_smoke PROPERTIES LABELS "unit;fuzz" TIMEOUT 30)
+
+add_test(
+    NAME integration.cli_check_valid
+    COMMAND ${CMAKE_COMMAND}
+        -DICAD_EXECUTABLE=$<TARGET_FILE:icad>
+        -DICAD_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/valid/minimal.icad
+        -DEXPECT_SUCCESS=ON
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/integration/cli_check.cmake
+)
+set_tests_properties(integration.cli_check_valid PROPERTIES LABELS "integration")
+
+add_test(
+    NAME integration.cli_check_invalid
+    COMMAND ${CMAKE_COMMAND}
+        -DICAD_EXECUTABLE=$<TARGET_FILE:icad>
+        -DICAD_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/invalid/unexpected_character.icad
+        -DEXPECT_SUCCESS=OFF
+        -DEXPECT_CODE=ICAD-L0001
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/integration/cli_check.cmake
+)
+set_tests_properties(integration.cli_check_invalid PROPERTIES LABELS "integration")
+
+add_test(
+    NAME integration.cli_check_semantic_error
+    COMMAND ${CMAKE_COMMAND}
+        -DICAD_EXECUTABLE=$<TARGET_FILE:icad>
+        -DICAD_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/invalid/missing_height.icad
+        -DEXPECT_SUCCESS=OFF
+        -DEXPECT_CODE=ICAD-S0010
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/integration/cli_check.cmake
+)
+set_tests_properties(integration.cli_check_semantic_error PROPERTIES LABELS "integration")
+
+add_test(
+    NAME integration.release_metadata
+    COMMAND ${CMAKE_COMMAND}
+        -DPROJECT_ROOT=${PROJECT_SOURCE_DIR}
+        -DEXPECTED_VERSION=${PROJECT_VERSION}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/integration/release_metadata.cmake
+)
+set_tests_properties(integration.release_metadata PROPERTIES LABELS "integration;release")
+
+add_test(
+    NAME sandbox.clean_working_directory
+    COMMAND ${CMAKE_COMMAND}
+        -DICAD_EXECUTABLE=$<TARGET_FILE:icad>
+        -DICAD_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/valid/minimal.icad
+        -DSANDBOX_ROOT=${CMAKE_CURRENT_BINARY_DIR}/sandbox-runtime
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/sandbox/clean_working_directory.cmake
+)
+set_tests_properties(sandbox.clean_working_directory PROPERTIES LABELS "sandbox")
+
+add_custom_target(test-unit
+    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -L unit
+    DEPENDS ${ICAD_UNIT_TEST_TARGETS}
+    USES_TERMINAL
+)
+
+add_test(
+    NAME benchmark.advanced_bridge
+    COMMAND ${CMAKE_COMMAND}
+        -DICAD_EXECUTABLE=$<TARGET_FILE:icad>
+        -DICAD_SOURCE=${PROJECT_SOURCE_DIR}/examples/advanced.icad
+        -DOUTPUT_ROOT=${CMAKE_CURRENT_BINARY_DIR}/benchmark-advanced
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/benchmark/advanced_bridge.cmake
+)
+set_tests_properties(benchmark.advanced_bridge PROPERTIES LABELS "benchmark" TIMEOUT 60)
+if(ICAD_CHROMIUM_EXECUTABLE)
+    add_test(
+        NAME browser.viewer_smoke
+        COMMAND ${CMAKE_COMMAND}
+            -DICAD_EXECUTABLE=$<TARGET_FILE:icad>
+            -DICAD_SOURCE=${PROJECT_SOURCE_DIR}/examples/advanced.icad
+            -DOUTPUT_ROOT=${CMAKE_CURRENT_BINARY_DIR}/browser-viewer
+            -DCHROMIUM_EXECUTABLE=${ICAD_CHROMIUM_EXECUTABLE}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/browser/viewer_smoke.cmake
+    )
+    set_tests_properties(browser.viewer_smoke PROPERTIES LABELS "browser;viewer" TIMEOUT 60)
+endif()
+add_test(
+    NAME benchmark.robotic_arm
+    COMMAND ${CMAKE_COMMAND}
+        -DICAD_EXECUTABLE=$<TARGET_FILE:icad>
+        -DICAD_SOURCE=${PROJECT_SOURCE_DIR}/examples/robotic_arm.icad
+        -DREFERENCE_ROOT=${PROJECT_SOURCE_DIR}/examples/Robotic_Arm_3D_Model
+        -DOUTPUT_ROOT=${CMAKE_CURRENT_BINARY_DIR}/benchmark-robotic-arm
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/benchmark/robotic_arm.cmake
+)
+set_tests_properties(benchmark.robotic_arm PROPERTIES LABELS "benchmark" TIMEOUT 60)
+add_test(
+    NAME benchmark.boolean_showcase
+    COMMAND ${CMAKE_COMMAND}
+        -DICAD_EXECUTABLE=$<TARGET_FILE:icad>
+        -DICAD_SOURCE=${PROJECT_SOURCE_DIR}/examples/boolean_showcase.icad
+        -DOUTPUT_ROOT=${CMAKE_CURRENT_BINARY_DIR}/benchmark-boolean
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/benchmark/boolean_showcase.cmake
+)
+set_tests_properties(benchmark.boolean_showcase PROPERTIES LABELS "benchmark" TIMEOUT 60)
+add_test(
+    NAME benchmark.modeling_tools
+    COMMAND ${CMAKE_COMMAND}
+        -DICAD_EXECUTABLE=$<TARGET_FILE:icad>
+        -DICAD_SOURCE=${PROJECT_SOURCE_DIR}/examples/modeling_tools.icad
+        -DOUTPUT_ROOT=${CMAKE_CURRENT_BINARY_DIR}/benchmark-modeling-tools
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/benchmark/modeling_tools.cmake
+)
+set_tests_properties(benchmark.modeling_tools PROPERTIES LABELS "benchmark" TIMEOUT 60)
+add_test(
+    NAME benchmark.advanced_surfaces
+    COMMAND ${CMAKE_COMMAND}
+        -DICAD_EXECUTABLE=$<TARGET_FILE:icad>
+        -DICAD_SOURCE=${PROJECT_SOURCE_DIR}/examples/advanced_surfaces.icad
+        -DOUTPUT_ROOT=${CMAKE_CURRENT_BINARY_DIR}/benchmark-advanced-surfaces
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/benchmark/advanced_surfaces.cmake
+)
+set_tests_properties(benchmark.advanced_surfaces PROPERTIES LABELS "benchmark" TIMEOUT 60)
+add_test(
+    NAME benchmark.constrained_sketch
+    COMMAND ${CMAKE_COMMAND}
+        -DICAD_EXECUTABLE=$<TARGET_FILE:icad>
+        -DICAD_SOURCE=${PROJECT_SOURCE_DIR}/examples/constrained_sketch.icad
+        -DOUTPUT_ROOT=${CMAKE_CURRENT_BINARY_DIR}/benchmark-constrained-sketch
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/benchmark/constrained_sketch.cmake
+)
+set_tests_properties(benchmark.constrained_sketch PROPERTIES LABELS "benchmark" TIMEOUT 60)
+add_test(
+    NAME benchmark.geometric_queries
+    COMMAND ${CMAKE_COMMAND}
+        -DICAD_EXECUTABLE=$<TARGET_FILE:icad>
+        -DICAD_SOURCE=${PROJECT_SOURCE_DIR}/examples/geometric_queries.icad
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/benchmark/geometric_queries.cmake
+)
+set_tests_properties(benchmark.geometric_queries PROPERTIES LABELS "benchmark" TIMEOUT 60)
+add_test(
+    NAME benchmark.assembly_instances
+    COMMAND ${CMAKE_COMMAND}
+        -DICAD_EXECUTABLE=$<TARGET_FILE:icad>
+        -DICAD_SOURCE=${PROJECT_SOURCE_DIR}/examples/assembly_instances.icad
+        -DOUTPUT_ROOT=${CMAKE_CURRENT_BINARY_DIR}/benchmark-assembly-instances
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/benchmark/assembly_instances.cmake
+)
+set_tests_properties(benchmark.assembly_instances PROPERTIES LABELS "benchmark" TIMEOUT 60)
+add_test(
+    NAME benchmark.assembly_semantics
+    COMMAND ${CMAKE_COMMAND}
+        -DICAD_EXECUTABLE=$<TARGET_FILE:icad>
+        -DICAD_SOURCE=${PROJECT_SOURCE_DIR}/examples/assembly_semantics.icad
+        -DOUTPUT_ROOT=${CMAKE_CURRENT_BINARY_DIR}/benchmark-assembly-semantics
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/benchmark/assembly_semantics.cmake
+)
+set_tests_properties(benchmark.assembly_semantics PROPERTIES LABELS "benchmark" TIMEOUT 60)
+add_test(
+    NAME benchmark.agentic_robot_prompt
+    COMMAND ${CMAKE_COMMAND}
+        -DICAD_EXECUTABLE=$<TARGET_FILE:icad>
+        -DREFERENCE_ROOT=${PROJECT_SOURCE_DIR}/examples/Robotic_Arm_3D_Model
+        -DOUTPUT_ROOT=${CMAKE_CURRENT_BINARY_DIR}/benchmark-agentic-robot-prompt
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/benchmark/agentic_robot_prompt.cmake
+)
+set_tests_properties(benchmark.agentic_robot_prompt PROPERTIES LABELS "benchmark;agent" TIMEOUT 60)
+add_custom_target(benchmark
+    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -L benchmark
+    DEPENDS icad icad_incremental_test
+    USES_TERMINAL
+)
+add_custom_target(test-integration
+    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -L integration
+    DEPENDS icad
+    USES_TERMINAL
+)
+add_custom_target(test-sandbox
+    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -L sandbox
+    DEPENDS icad
+    USES_TERMINAL
+)

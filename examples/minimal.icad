@@ -1,0 +1,17 @@
+# Smallest useful ICAD product definition used by the bootstrap.
+PROJECT demo_block
+UNITS mm
+
+PARAMETER width 80 mm
+PARAMETER depth 60 mm
+PARAMETER height 4 mm
+
+BODY mount
+FEATURE base
+TYPE BOX
+WIDTH 80 mm
+DEPTH 60 mm
+HEIGHT 4 mm
+END
+END
+

@@ -1,0 +1,77 @@
+# Native faceted advanced surfaces driven by named profiles and path points.
+PROJECT advanced_surfaces
+UNITS mm
+
+POINT3 rail_start 0 mm 0 mm 0 mm
+POINT3 rail_rise 0 mm 0 mm 20 mm
+POINT3 rail_end 10 mm 0 mm 30 mm
+
+PROFILE square
+POINT 0 mm 0 mm
+POINT 8 mm 0 mm
+POINT 8 mm 8 mm
+POINT 0 mm 8 mm
+END
+
+PROFILE inset
+POINT 2 mm 2 mm
+POINT 6 mm 2 mm
+POINT 6 mm 6 mm
+POINT 2 mm 6 mm
+END
+
+PROFILE diamond
+POINT 4 mm 0 mm
+POINT 8 mm 4 mm
+POINT 4 mm 8 mm
+POINT 0 mm 4 mm
+END
+
+PROFILE torus_section
+CIRCLE 10 mm 0 mm 2 mm
+END
+
+MATERIAL alloy ALUMINUM
+
+BODY swept_rail
+MATERIAL alloy
+FEATURE polyline_sweep
+TYPE SWEEP
+PROFILE square
+PATH rail_start rail_rise rail_end
+END
+END
+
+BODY lofted_transition
+MATERIAL alloy
+FEATURE square_to_inset
+TYPE LOFT
+PROFILE square
+TARGET_PROFILE inset
+HEIGHT 20 mm
+ORIGIN_X 30 mm
+END
+END
+
+BODY freeform_transition
+MATERIAL alloy
+FEATURE twisted_morph
+TYPE FREEFORM
+PROFILE square
+TARGET_PROFILE diamond
+HEIGHT 30 mm
+TWIST 90 deg
+COUNT 9
+ORIGIN_X 60 mm
+END
+END
+
+BODY toroidal_ring
+MATERIAL alloy
+FEATURE curved_revolution
+TYPE REVOLVE
+PROFILE torus_section
+ANGLE 360 deg
+ORIGIN_X 100 mm
+END
+END

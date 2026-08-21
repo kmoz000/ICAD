@@ -1,0 +1,10 @@
+#pragma once
+
+#include <string_view>
+
+namespace icad::agent::templates {
+
+inline constexpr std::string_view robotic_arm = R"ICADTPL(@ICAD_ROBOTIC_ARM_TEMPLATE@)ICADTPL";
+inline constexpr std::string_view bridge = R"ICADTPL(@ICAD_BRIDGE_TEMPLATE@)ICADTPL";
+
+} // namespace icad::agent::templates

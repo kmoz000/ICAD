@@ -1,0 +1,56 @@
+if(NOT DEFINED ICAD_EXECUTABLE OR NOT DEFINED OUTPUT_ROOT OR NOT DEFINED REFERENCE_ROOT)
+    message(FATAL_ERROR "agentic robot prompt benchmark is missing required paths")
+endif()
+
+file(GLOB reference_stls "${REFERENCE_ROOT}/*.STL")
+list(LENGTH reference_stls reference_components)
+if(NOT reference_components EQUAL 10)
+    message(FATAL_ERROR "agentic benchmark expected 10 reference components, found ${reference_components}")
+endif()
+execute_process(
+    COMMAND "${ICAD_EXECUTABLE}" inspect-step
+            "${REFERENCE_ROOT}/Robotic Arm 3D Model.STEP"
+    RESULT_VARIABLE reference_result
+    OUTPUT_VARIABLE reference_output
+    ERROR_VARIABLE reference_error
+)
+if(NOT reference_result EQUAL 0 OR NOT reference_output MATCHES "STEP_SOLIDS 20" OR
+   NOT reference_output MATCHES "STEP_ASSEMBLY_COMPONENTS 21")
+    message(FATAL_ERROR "agentic benchmark could not validate the supplied reference: ${reference_error}${reference_output}")
+endif()
+file(REMOVE_RECURSE "${OUTPUT_ROOT}")
+file(MAKE_DIRECTORY "${OUTPUT_ROOT}")
+set(source "${OUTPUT_ROOT}/prompt_robotic_arm.icad")
+execute_process(
+    COMMAND "${ICAD_EXECUTABLE}" agent-create
+            "Create a detailed articulated industrial robotic arm with a gripper and animated joints"
+            --source-out "${source}"
+            --output-dir "${OUTPUT_ROOT}/artifacts"
+    RESULT_VARIABLE create_result
+    OUTPUT_VARIABLE create_output
+    ERROR_VARIABLE create_error
+)
+foreach(expected IN ITEMS "\"ready\":true" "\"bodies\":10" "\"joints\":10"
+                          "\"degreesOfFreedom\":7" "\"topologyValid\":true"
+                          "\"intent\":\"ROBOTIC_ARM\"" "\"expectedModelIterations\":1"
+                          "\"schema\":\"icad.agent.design-map.v1\""
+                          "\"selectedTemplate\":\"robotic_arm\""
+                          "\"name\":\"preview_forearm_axis\""
+                          "\"child\":\"arm_02\""
+                          "components=10" "solids=20")
+    if(NOT create_result EQUAL 0 OR NOT create_output MATCHES "${expected}")
+        message(FATAL_ERROR "one-command robotic creation is missing ${expected}: ${create_error}${create_output}")
+    endif()
+endforeach()
+execute_process(
+    COMMAND "${ICAD_EXECUTABLE}" inspect-step
+            "${OUTPUT_ROOT}/artifacts/prompt_robotic_arm.assembly.step"
+    RESULT_VARIABLE step_result
+    OUTPUT_VARIABLE step_output
+    ERROR_VARIABLE step_error
+)
+if(NOT step_result EQUAL 0 OR NOT step_output MATCHES "STEP_SOLIDS 20" OR
+   NOT step_output MATCHES "STEP_ASSEMBLY_COMPONENTS 10")
+    message(FATAL_ERROR "robotic prompt STEP assembly failed: ${step_error}${step_output}")
+endif()
+message(STATUS "one-command robotic prompt passed against reference: 10 source components, 10 ICAD bodies, 10 joints, 7 DOF, 20 solids")
