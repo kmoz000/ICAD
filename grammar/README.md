@@ -34,11 +34,19 @@ precede every other declaration, and produce stable `ICAD-C0001` through
 headers. Compiler package version `0.21.0` and language contract version `1.0`
 are intentionally separate.
 
+`PARAMETER_EXPRESSIONS_V1` adds deterministic `+`, `-`, `*`, `/`, unary signs,
+and parentheses to `PARAMETER`, `ANGLE`, and feature-property values.
+`QUALIFIED_VALUE_REFERENCES_V1` accepts project-qualified scalar names such as
+`bracket.width`. Addition/subtraction require equal dimensions. In this v1
+slice multiplication requires one dimensionless operand; division accepts a
+dimensionless divisor or equal dimensions. Derived area/volume dimensions are
+reserved for the next expression capability.
+
 The lexer reserves tokens needed by later slices: qualified-name dots,
-selector brackets, expression punctuation, JSON-style strings, comments, and
-decimal exponents. This is lexical preparation only. The production parser
-still rejects v2 constructs, and signed numeric literals remain compatible with
-the current grammar until expression parsing is implemented.
+selector brackets, JSON-style strings, comments, and decimal exponents. The
+production parser still rejects unadvertised v2 constructs. Signed numeric
+literals remain one token for source compatibility and are interpreted
+correctly by the production expression parser.
 
 Within a `BODY`, the primary grammar is an ordered CAD-style history. Start
 with `SKETCH name ON PLANE XY|XZ|YZ`, create the first solid with `PAD name FROM

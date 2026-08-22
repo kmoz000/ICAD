@@ -12,8 +12,8 @@ spans, and exclusive end locations; recognize qualified-name/selector/expression
 punctuation and JSON-style strings; validate string escapes and numeric
 exponents; and normalize CRLF, CR, and LF line endings. The production parser
 filters retained comments and continues to accept the existing grammar.
-Legacy signed literals remain one token so current models are not broken before
-typed expression parsing is available.
+Legacy signed literals remain one token so current models are not broken while
+the expression parser treats them correctly in unary and additive positions.
 
 The following vertical slice adds production language-contract negotiation.
 `REQUIRES ICAD 1.0` and `REQUIRES CAPABILITY NAME` headers are preflighted
@@ -22,7 +22,16 @@ registry shared by parsing, CLI `icad language`, and MCP `icad.language`.
 Unsupported v2 requirements stop with one stable `ICAD-C` diagnostic before
 the parser examines dependent future syntax.
 
-Multi-shape sketches, qualified semantic references, expressions, advanced
+The next complete vertical slice implements typed scalar expressions for
+parameters, angles, and feature properties. Expressions retain source and
+dependency provenance, resolve forward and project-qualified parameter names,
+canonicalize units, and diagnose malformed syntax, unknown names, cycles,
+dimension mismatches, unsupported derived dimensions, and division by zero.
+The compiler advertises `PARAMETER_EXPRESSIONS_V1` and
+`QUALIFIED_VALUE_REFERENCES_V1`; broader expressions and scoped topology names
+remain gated.
+
+Multi-shape sketches, qualified topology references, general expressions, advanced
 feature blocks, `PART`/`ASSEMBLY`, engineering material properties, validation,
 and associative drawings remain proposal syntax. They must not be returned by
 `icad.language` until their complete parser-to-engine vertical gates pass.
@@ -30,9 +39,9 @@ and associative drawings remain proposal syntax. They must not be returned by
 ## Current repository inventory
 
 - 19 implementation modules under `src/`;
-- 44 C++ implementation files, all compiled by CMake;
-- 41 public headers, all consumed by implementation or tests;
-- 32 unit/fuzz executables plus seven integration cases, sandbox, optional browser,
+- 45 C++ implementation files, all compiled by CMake;
+- 42 public headers, all consumed by implementation or tests;
+- 33 unit/fuzz executables plus seven integration cases, sandbox, optional browser,
   and 13 benchmark cases;
 - 11 maintained `.icad` examples;
 - one build tree: `build/`;

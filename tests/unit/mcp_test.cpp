@@ -188,6 +188,8 @@ auto main() -> int {
         !serialized.contains("\"name\":\"icad.agent.conceptualize\"") ||
         !serialized.contains("\"languageVersion\":\"1.0\"") ||
         !serialized.contains("\"CAPABILITY_NEGOTIATION\"") ||
+        !serialized.contains("\"PARAMETER_EXPRESSIONS_V1\"") ||
+        !serialized.contains("\"QUALIFIED_VALUE_REFERENCES_V1\"") ||
         !serialized.contains("\"BODY_HISTORY\"") ||
         !serialized.contains("\"name\":\"icad.distance\"") ||
         !serialized.contains("\"schema\":\"icad.distance.v1\"") ||

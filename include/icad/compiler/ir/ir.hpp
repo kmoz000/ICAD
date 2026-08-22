@@ -24,6 +24,8 @@ struct Quantity {
 struct Parameter {
     std::string name;
     Quantity value;
+    std::string expression;
+    std::vector<std::string> dependencies;
 };
 
 struct NamedAngle {
@@ -97,6 +99,7 @@ struct Joint {
 struct Property {
     std::string name;
     Quantity value;
+    std::string expression;
 };
 
 struct Point2 {

@@ -33,6 +33,11 @@ auto main() -> int {
     passed &= require(
         icad::compiler::language::supports_capability("CAPABILITY_NEGOTIATION"),
         "capability negotiation advertises itself");
+    passed &= require(
+        icad::compiler::language::supports_capability("PARAMETER_EXPRESSIONS_V1") &&
+            icad::compiler::language::supports_capability(
+                "QUALIFIED_VALUE_REFERENCES_V1"),
+        "completed expression and qualified-reference slices are advertised");
     passed &= require(!icad::compiler::language::supports_capability("MULTI_SHAPE_SKETCH"),
                       "proposed multi-shape syntax is not advertised");
 

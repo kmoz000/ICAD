@@ -11,9 +11,9 @@ punctuation and JSON-style string literals, accepts decimal exponent spellings,
 normalizes CRLF/CR/LF into newline tokens, and records exact byte ranges plus
 exclusive end locations. The current parser filters retained comments and
 continues to consume the production grammar unchanged. Signed literals such as
-`-12.5` deliberately remain one number token until the typed-expression parser
-lands. Recognizing a proposed token does not enable any v2 declaration or
-capability.
+`-12.5` deliberately remains one number token for source compatibility and is
+handled by the typed-expression parser. Recognizing a proposed token does not
+enable any unadvertised v2 declaration or capability.
 
 Language requirements are preflighted before normal parsing. `REQUIRES ICAD
 MAJOR.MINOR` is checked against production language version `1.0`, while
@@ -22,6 +22,13 @@ MAJOR.MINOR` is checked against production language version `1.0`, while
 Unsupported requirements stop compilation with one `ICAD-C` diagnostic before
 future syntax is examined. CLI `icad language` and MCP `icad.language` consume
 the same registry.
+
+`compiler/expression.cpp` owns the production scalar-expression parser and
+typed evaluator. The v1 gate covers parameter, angle, and feature-property
+expressions plus project-qualified value references. It evaluates to canonical
+units, retains source/dependency provenance, supports forward references, and
+rejects unknown names, cycles, incompatible dimensions, unsupported derived
+dimensions, and division by zero.
 
 Canonical IR includes typed scalar/angle values, parameter-driven 3D points,
 normalized and axis-angle-rotated vectors, retained spatial expression

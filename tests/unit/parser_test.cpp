@@ -9,6 +9,7 @@ auto main() -> int {
                             "PROJECT parser_test // parser ignores retained comments\n"
                             "UNITS mm\n"
                             "PARAMETER span 2 m\n"
+                            "PARAMETER inset span / 4 + 5 mm\n"
                             "PROFILE rounded\nSTART 0 mm 0 mm\nLINE 10 mm 0 mm\n"
                             "ARC 10 mm 10 mm CENTER 5 mm 5 mm CCW\nLINE 0 mm 10 mm\nCLOSE\nEND\n"
                             "BODY bridge\n"
@@ -27,7 +28,10 @@ auto main() -> int {
         std::cerr << "parser rejected valid nested source\n";
         return 1;
     }
-    if (parsed.program.project_name != "parser_test" || parsed.program.parameters.size() != 1 ||
+    if (parsed.program.project_name != "parser_test" || parsed.program.parameters.size() != 2 ||
+        parsed.program.parameters[1].expression.references.size() != 1 ||
+        parsed.program.parameters[1].expression.references.front() != "span" ||
+        parsed.program.parameters[1].expression.source != "span / 4 + 5 mm" ||
         parsed.program.profiles.size() != 1 ||
         parsed.program.profiles.front().mode != icad::compiler::ast::ProfileMode::path ||
         parsed.program.profiles.front().path_segments.size() != 3 ||
@@ -59,6 +63,14 @@ auto main() -> int {
     const auto proposed_part = icad::compiler::parse(proposed_part_tokens.tokens);
     if (!proposed_part_tokens.ok() || proposed_part.ok()) {
         std::cerr << "lexer/parser boundary incorrectly enabled proposed PART syntax\n";
+        return 1;
+    }
+    const auto malformed_expression = icad::compiler::parse(
+        icad::compiler::lex("PROJECT bad_expression\nUNITS mm\nPARAMETER width (2 mm\n")
+            .tokens);
+    if (malformed_expression.ok() || malformed_expression.diagnostics.front().code !=
+                                               "ICAD-E0001") {
+        std::cerr << "parser accepted a malformed scalar expression\n";
         return 1;
     }
     return 0;

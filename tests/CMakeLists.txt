@@ -11,6 +11,7 @@ endfunction()
 
 icad_add_unit_test(lexer unit/lexer_test.cpp)
 icad_add_unit_test(language unit/language_test.cpp)
+icad_add_unit_test(expression unit/expression_test.cpp)
 icad_add_unit_test(parser unit/parser_test.cpp)
 icad_add_unit_test(units unit/units_test.cpp)
 icad_add_unit_test(resolver unit/resolver_test.cpp)

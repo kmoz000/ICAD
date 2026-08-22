@@ -1,12 +1,15 @@
 #include "icad/compiler/parser/parser.hpp"
 
+#include "icad/compiler/expression.hpp"
 #include "icad/compiler/language.hpp"
 
 #include <algorithm>
 #include <charconv>
 #include <cmath>
 #include <cstddef>
+#include <iterator>
 #include <ranges>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -87,6 +90,34 @@ auto add_error(ParseResult& result, std::string code, std::string message, Sourc
     return quantity;
 }
 
+[[nodiscard]] auto parse_expression(const Line& line, std::size_t begin, std::size_t end,
+                                    ParseResult& result) -> ast::ScalarExpression {
+    if (begin > end || end > line.size()) {
+        add_error(result, "ICAD-E0001", "invalid scalar expression token range",
+                  line.front().location);
+        return {};
+    }
+    auto parsed = parse_scalar_expression(
+        std::span<const Token>{line.data() + begin, end - begin});
+    result.diagnostics.insert(result.diagnostics.end(),
+                              std::make_move_iterator(parsed.diagnostics.begin()),
+                              std::make_move_iterator(parsed.diagnostics.end()));
+    return std::move(parsed.expression);
+}
+
+auto retain_legacy_value(const ast::ScalarExpression& expression, ast::QuantityLiteral& literal,
+                         std::string& reference) -> void {
+    if (expression.postfix.size() != 1) {
+        return;
+    }
+    const auto& node = expression.postfix.front();
+    if (node.operation == ast::ScalarExpressionOp::literal && !node.unit.empty()) {
+        literal = ast::QuantityLiteral{node.literal, node.unit, node.location};
+    } else if (node.operation == ast::ScalarExpressionOp::reference) {
+        reference = node.symbol;
+    }
+}
+
 [[nodiscard]] auto parse_value(const Line& line, std::size_t& index, ParseResult& result)
     -> ast::ValueDecl {
     ast::ValueDecl value;
@@ -97,13 +128,27 @@ auto add_error(ParseResult& result, std::string code, std::string message, Sourc
     }
     value.location = line[index].location;
     if (line[index].kind == TokenKind::number) {
+        const std::size_t begin = index;
         value.literal = parse_quantity(line, index, result);
         index += std::min<std::size_t>(2, line.size() - index);
+        value.expression = parse_expression(line, begin, index, result);
         return value;
     }
     if (valid_identifier(line[index])) {
-        value.parameter_reference = line[index].lexeme;
-        ++index;
+        const std::size_t begin = index;
+        value.parameter_reference = line[index++].lexeme;
+        while (index < line.size() && line[index].kind == TokenKind::dot) {
+            if (index + 1 >= line.size() || !valid_identifier(line[index + 1])) {
+                add_error(result, "ICAD-E0001",
+                          "qualified name expects an identifier after '.'", line[index].location);
+                ++index;
+                break;
+            }
+            value.parameter_reference.push_back('.');
+            value.parameter_reference += line[index + 1].lexeme;
+            index += 2;
+        }
+        value.expression = parse_expression(line, begin, index, result);
         return value;
     }
     add_error(result, "ICAD-P0020", "expected a quantity or parameter reference",
@@ -254,20 +299,20 @@ auto add_error(ParseResult& result, std::string code, std::string message, Sourc
             add_error(result, "ICAD-P0005", "feature block is missing END", feature.location);
             break;
         }
-        if (!valid_identifier(line[0]) || (line.size() != 2 && line.size() != 3)) {
+        if (!valid_identifier(line[0]) || line.size() < 2) {
             add_error(result, "ICAD-P0001",
-                      "feature property expects NAME NUMBER UNIT or NAME PARAMETER",
+                      "feature property expects NAME SCALAR_EXPRESSION",
                       line.front().location);
             ++index;
             continue;
         }
-        if (line.size() == 2 && valid_identifier(line[1])) {
-            feature.properties.push_back(
-                ast::PropertyDecl{line[0].lexeme, {}, line[1].lexeme, line.front().location});
-        } else {
-            feature.properties.push_back(ast::PropertyDecl{
-                line[0].lexeme, parse_quantity(line, 1, result), {}, line.front().location});
-        }
+        auto expression = parse_expression(line, 1, line.size(), result);
+        ast::PropertyDecl property;
+        property.name = line[0].lexeme;
+        property.location = line.front().location;
+        property.expression = std::move(expression);
+        retain_legacy_value(property.expression, property.value, property.parameter_reference);
+        feature.properties.push_back(std::move(property));
         ++index;
     }
 
@@ -1083,27 +1128,31 @@ auto parse(const std::vector<Token>& tokens) -> ParseResult {
             continue;
         }
         if (first == "PARAMETER") {
-            if (line.size() != 4 || !valid_identifier(line[1])) {
-                add_error(result, "ICAD-P0001", "PARAMETER expects NAME NUMBER UNIT",
+            if (line.size() < 3 || !valid_identifier(line[1])) {
+                add_error(result, "ICAD-P0001", "PARAMETER expects NAME SCALAR_EXPRESSION",
                           line.front().location);
             } else {
-                result.program.parameters.push_back(ast::ParameterDecl{
-                    line[1].lexeme, parse_quantity(line, 2, result), line.front().location});
+                ast::ParameterDecl parameter;
+                parameter.name = line[1].lexeme;
+                parameter.location = line.front().location;
+                parameter.expression = parse_expression(line, 2, line.size(), result);
+                std::string unused_reference;
+                retain_legacy_value(parameter.expression, parameter.value, unused_reference);
+                result.program.parameters.push_back(std::move(parameter));
             }
             ++index;
             continue;
         }
         if (first == "ANGLE") {
-            std::size_t cursor = 2;
             if (line.size() < 3 || !valid_identifier(line[1])) {
-                add_error(result, "ICAD-P0020", "ANGLE expects NAME QUANTITY|PARAMETER",
+                add_error(result, "ICAD-P0020", "ANGLE expects NAME SCALAR_EXPRESSION",
                           line.front().location);
             } else {
-                auto value = parse_value(line, cursor, result);
-                if (cursor != line.size()) {
-                    add_error(result, "ICAD-P0020", "ANGLE has unexpected trailing values",
-                              line[cursor].location);
-                }
+                ast::ValueDecl value;
+                value.location = line[2].location;
+                value.expression = parse_expression(line, 2, line.size(), result);
+                retain_legacy_value(value.expression, value.literal,
+                                    value.parameter_reference);
                 result.program.angles.push_back(
                     ast::AngleDecl{line[1].lexeme, std::move(value), line.front().location});
             }

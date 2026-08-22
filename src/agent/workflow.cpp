@@ -29,6 +29,15 @@ namespace {
     return json::Value{json::Value::Array{values}};
 }
 
+[[nodiscard]] auto strings(const std::vector<std::string>& values) -> json::Value {
+    json::Value::Array result;
+    result.reserve(values.size());
+    for (const auto& value : values) {
+        result.emplace_back(value);
+    }
+    return json::Value{std::move(result)};
+}
+
 [[nodiscard]] auto lowercase(std::string_view text) -> std::string {
     std::string result{text};
     std::ranges::transform(result, result.begin(),
@@ -99,7 +108,9 @@ END
     for (const auto& parameter : project.parameters) {
         handles.push_back(object({{"name", parameter.name},
                                   {"value", parameter.value.value},
-                                  {"unit", parameter.value.unit}}));
+                                  {"unit", parameter.value.unit},
+                                  {"expression", parameter.expression},
+                                  {"dependencies", strings(parameter.dependencies)}}));
     }
     return json::Value{std::move(handles)};
 }

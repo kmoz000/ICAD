@@ -5,6 +5,7 @@ add_library(icad_compiler
     mcp/server.cpp
     compiler/compiler.cpp
     compiler/dependency_graph.cpp
+    compiler/expression.cpp
     compiler/incremental.cpp
     compiler/importer.cpp
     compiler/language.cpp

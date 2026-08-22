@@ -25,16 +25,46 @@ struct QuantityLiteral {
     SourceLocation location;
 };
 
+enum class ScalarExpressionOp {
+    literal,
+    reference,
+    unary_plus,
+    unary_minus,
+    add,
+    subtract,
+    multiply,
+    divide,
+};
+
+struct ScalarExpressionNode {
+    ScalarExpressionOp operation{ScalarExpressionOp::literal};
+    double literal{};
+    std::string symbol;
+    std::string unit;
+    SourceLocation location;
+};
+
+struct ScalarExpression {
+    std::vector<ScalarExpressionNode> postfix;
+    std::vector<std::string> references;
+    std::string source;
+    SourceLocation location;
+
+    [[nodiscard]] auto empty() const noexcept -> bool { return postfix.empty(); }
+};
+
 struct ParameterDecl {
     std::string name;
     QuantityLiteral value;
     SourceLocation location;
+    ScalarExpression expression;
 };
 
 struct ValueDecl {
     QuantityLiteral literal;
     std::string parameter_reference;
     SourceLocation location;
+    ScalarExpression expression;
 };
 
 struct AngleDecl {
@@ -122,6 +152,7 @@ struct PropertyDecl {
     QuantityLiteral value;
     std::string parameter_reference;
     SourceLocation location;
+    ScalarExpression expression;
 };
 
 struct Point2Decl {

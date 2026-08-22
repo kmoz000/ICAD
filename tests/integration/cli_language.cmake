@@ -16,6 +16,8 @@ if(NOT output MATCHES "ICAD_LANGUAGE 1.0")
     message(FATAL_ERROR "language output omitted the production version: ${output}")
 endif()
 if(NOT output MATCHES "CAPABILITY CAPABILITY_NEGOTIATION" OR
+   NOT output MATCHES "CAPABILITY PARAMETER_EXPRESSIONS_V1" OR
+   NOT output MATCHES "CAPABILITY QUALIFIED_VALUE_REFERENCES_V1" OR
    NOT output MATCHES "CAPABILITY BODY_HISTORY")
     message(FATAL_ERROR "language output omitted implemented capabilities: ${output}")
 endif()

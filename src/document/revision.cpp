@@ -55,6 +55,9 @@ auto fingerprint(const compiler::ir::Project& project) -> std::uint64_t {
         hash.add(parameter.name);
         hash.add(parameter.value.value);
         hash.add(parameter.value.unit);
+        hash.add(parameter.expression);
+        for (const auto& dependency : parameter.dependencies)
+            hash.add(dependency);
     }
     for (const auto& angle : project.angles) {
         hash.add(angle.name);
@@ -222,6 +225,7 @@ auto fingerprint(const compiler::ir::Project& project) -> std::uint64_t {
                 hash.add(property.name);
                 hash.add(property.value.value);
                 hash.add(property.value.unit);
+                hash.add(property.expression);
             }
         }
     }

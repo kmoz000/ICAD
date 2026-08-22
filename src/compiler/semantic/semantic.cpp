@@ -1,5 +1,6 @@
 #include "icad/compiler/semantic/semantic.hpp"
 
+#include "icad/compiler/expression.hpp"
 #include "icad/compiler/types/types.hpp"
 #include "icad/compiler/units/units.hpp"
 #include "icad/constraints/sketch_solver.hpp"
@@ -7,6 +8,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <iterator>
 #include <numbers>
 #include <string>
 #include <unordered_map>
@@ -52,9 +55,50 @@ auto add_error(SemanticResult& result, std::string code, std::string message,
     return ir::Quantity{*converted, std::string{canonical}, source_unit->dimension};
 }
 
+auto append_diagnostics(SemanticResult& result, std::vector<Diagnostic> diagnostics) -> void {
+    result.diagnostics.insert(result.diagnostics.end(),
+                              std::make_move_iterator(diagnostics.begin()),
+                              std::make_move_iterator(diagnostics.end()));
+}
+
+[[nodiscard]] auto quantity_from_evaluated(EvaluatedScalar value) -> ir::Quantity {
+    return ir::Quantity{value.value, std::string{units::canonical_symbol(value.dimension)},
+                        value.dimension};
+}
+
+[[nodiscard]] auto lower_expression(
+    const ast::ScalarExpression& expression, units::Dimension expected, bool positive,
+    const std::unordered_map<std::string, ir::Quantity>& named_values, SemanticResult& result)
+    -> ir::Quantity {
+    auto evaluated = evaluate_scalar_expression(
+        expression, [&named_values](std::string_view reference) -> std::optional<EvaluatedScalar> {
+            const auto found = named_values.find(std::string{reference});
+            if (found == named_values.end()) {
+                return std::nullopt;
+            }
+            return EvaluatedScalar{found->second.value, found->second.dimension};
+        });
+    append_diagnostics(result, std::move(evaluated.diagnostics));
+    if (!evaluated.value) {
+        return {};
+    }
+    if (expected != units::Dimension::unknown && evaluated.value->dimension != expected) {
+        add_error(result, "ICAD-S0002", "scalar expression has the wrong physical dimension",
+                  expression.location);
+    }
+    if (positive && evaluated.value->value <= 0.0) {
+        add_error(result, "ICAD-S0003", "quantity must be greater than zero",
+                  expression.location);
+    }
+    return quantity_from_evaluated(*evaluated.value);
+}
+
 [[nodiscard]] auto lower_value(const ast::ValueDecl& value, units::Dimension expected,
                                const std::unordered_map<std::string, ir::Quantity>& named_values,
                                SemanticResult& result) -> ir::Quantity {
+    if (!value.expression.empty()) {
+        return lower_expression(value.expression, expected, false, named_values, result);
+    }
     if (value.parameter_reference.empty()) {
         return lower_quantity(value.literal, expected, false, result);
     }
@@ -308,12 +352,92 @@ auto analyze(const ast::Program& program) -> SemanticResult {
     }
 
     std::unordered_map<std::string, ir::Quantity> parameter_values;
+    std::unordered_map<std::string, const ast::ParameterDecl*> parameter_declarations;
     for (const auto& parameter : program.parameters) {
-        const auto unit = units::find(parameter.value.unit);
-        const auto dimension = unit ? unit->dimension : units::Dimension::unknown;
-        auto quantity = lower_quantity(parameter.value, dimension, false, result);
-        parameter_values.emplace(parameter.name, quantity);
-        lowered.parameters.push_back(ir::Parameter{parameter.name, std::move(quantity)});
+        parameter_declarations.emplace(parameter.name, &parameter);
+    }
+    const std::string project_prefix = program.project_name + ".";
+    const auto local_parameter_name = [&](std::string_view reference) -> std::string {
+        if (reference.starts_with(project_prefix)) {
+            return std::string{reference.substr(project_prefix.size())};
+        }
+        return std::string{reference};
+    };
+    std::unordered_set<std::string> unresolved_parameters;
+    for (const auto& parameter : program.parameters) {
+        unresolved_parameters.insert(parameter.name);
+    }
+    bool parameter_progress = true;
+    while (parameter_progress && !unresolved_parameters.empty()) {
+        parameter_progress = false;
+        for (auto iterator = unresolved_parameters.begin();
+             iterator != unresolved_parameters.end();) {
+            const auto* parameter = parameter_declarations.at(*iterator);
+            bool unknown_reference = false;
+            bool dependency_pending = false;
+            for (const auto& reference : parameter->expression.references) {
+                const std::string local = local_parameter_name(reference);
+                if (!parameter_declarations.contains(local)) {
+                    add_error(result, "ICAD-E0002",
+                              "unknown scalar reference '" + reference + "'",
+                              parameter->expression.location);
+                    unknown_reference = true;
+                    break;
+                }
+                if (!parameter_values.contains(local)) {
+                    dependency_pending = true;
+                }
+            }
+            if (unknown_reference) {
+                iterator = unresolved_parameters.erase(iterator);
+                parameter_progress = true;
+                continue;
+            }
+            if (dependency_pending) {
+                ++iterator;
+                continue;
+            }
+
+            ir::Quantity quantity;
+            if (parameter->expression.empty()) {
+                const auto unit = units::find(parameter->value.unit);
+                const auto dimension = unit ? unit->dimension : units::Dimension::unknown;
+                quantity = lower_quantity(parameter->value, dimension, false, result);
+            } else {
+                auto evaluated = evaluate_scalar_expression(
+                    parameter->expression,
+                    [&](std::string_view reference) -> std::optional<EvaluatedScalar> {
+                        const std::string local = local_parameter_name(reference);
+                        const auto found = parameter_values.find(local);
+                        if (found == parameter_values.end()) {
+                            return std::nullopt;
+                        }
+                        return EvaluatedScalar{found->second.value, found->second.dimension};
+                    });
+                append_diagnostics(result, std::move(evaluated.diagnostics));
+                if (evaluated.value) {
+                    quantity = quantity_from_evaluated(*evaluated.value);
+                }
+            }
+            parameter_values.emplace(parameter->name, quantity);
+            parameter_values.emplace(project_prefix + parameter->name, quantity);
+            iterator = unresolved_parameters.erase(iterator);
+            parameter_progress = true;
+        }
+    }
+    for (const auto& name : unresolved_parameters) {
+        add_error(result, "ICAD-S0041",
+                  "parameter expression has a cyclic dependency involving '" + name + "'",
+                  parameter_declarations.at(name)->location);
+    }
+    for (const auto& parameter : program.parameters) {
+        const auto found = parameter_values.find(parameter.name);
+        if (found == parameter_values.end()) {
+            continue;
+        }
+        lowered.parameters.push_back(ir::Parameter{parameter.name, found->second,
+                                                    parameter.expression.source,
+                                                    parameter.expression.references});
     }
     if (program.tolerance.declared) {
         const auto linear = lower_value(program.tolerance.linear, units::Dimension::length,
@@ -337,6 +461,7 @@ auto analyze(const ast::Program& program) -> SemanticResult {
         }
         auto quantity = lower_value(angle.value, units::Dimension::angle, parameter_values, result);
         parameter_values[angle.name] = quantity;
+        parameter_values[project_prefix + angle.name] = quantity;
         lowered.angles.push_back({angle.name, quantity.value});
     }
 
@@ -1050,7 +1175,11 @@ auto analyze(const ast::Program& program) -> SemanticResult {
                     continue;
                 }
                 ir::Quantity quantity;
-                if (!property.parameter_reference.empty()) {
+                if (!property.expression.empty()) {
+                    quantity = lower_expression(property.expression, property_spec->dimension,
+                                                property_spec->must_be_positive, parameter_values,
+                                                result);
+                } else if (!property.parameter_reference.empty()) {
                     const auto parameter = parameter_values.find(property.parameter_reference);
                     if (parameter == parameter_values.end()) {
                         add_error(result, "ICAD-S0022",
@@ -1073,8 +1202,8 @@ auto analyze(const ast::Program& program) -> SemanticResult {
                     quantity = lower_quantity(property.value, property_spec->dimension,
                                               property_spec->must_be_positive, result);
                 }
-                lowered_feature.properties.push_back(
-                    ir::Property{property.name, std::move(quantity)});
+                lowered_feature.properties.push_back(ir::Property{
+                    property.name, std::move(quantity), property.expression.source});
             }
             for (const auto& property_spec : schema->properties) {
                 if (property_spec.required &&

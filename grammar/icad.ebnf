@@ -7,8 +7,8 @@ statement        = project | units | parameter | angle | point3 | vector | pose 
 
 project          = "PROJECT", identifier, newline ;
 units            = "UNITS", identifier, newline ;
-parameter        = "PARAMETER", identifier, quantity, newline ;
-angle            = "ANGLE", identifier, scalar_value, newline ;
+parameter        = "PARAMETER", identifier, scalar_expression, newline ;
+angle            = "ANGLE", identifier, scalar_expression, newline ;
 tolerance        = "TOLERANCE", "LINEAR", scalar_value,
                    "ANGULAR", scalar_value, newline ;
 point3           = "POINT3", identifier,
@@ -85,7 +85,7 @@ feature          = "FEATURE", identifier, newline,
                    [ "COUNT", number, newline ],
                    [ "PLANE", identifier, "NORMAL", identifier, newline ],
                    { property }, "END", newline ;
-property         = identifier, quantity, newline ;
+property         = identifier, scalar_expression, newline ;
 constraint       = "CONSTRAINT", identifier,
                    ( "MIN_DISTANCE", identifier, identifier, scalar_value |
                      "COINCIDENT", identifier, identifier, scalar_value |
@@ -128,7 +128,16 @@ keyframe         = "KEYFRAME", quantity,
                      "VISIBLE", ( "ON" | "OFF" ) ), newline ;
 
 quantity         = number, identifier ;
-scalar_value     = quantity | identifier ;
+scalar_value     = quantity | qualified_name ;
+scalar_expression = additive_expression ;
+additive_expression = multiplicative_expression,
+                      { ( "+" | "-" ), multiplicative_expression } ;
+multiplicative_expression = unary_expression,
+                            { ( "*" | "/" ), unary_expression } ;
+unary_expression = [ "+" | "-" ], primary_expression ;
+primary_expression = number, [ identifier ] | qualified_name |
+                     "(", scalar_expression, ")" ;
+qualified_name   = identifier, { ".", identifier } ;
 identifier       = letter, { letter | digit | "_" } ;
 number           = [ "-" ], digit, { digit }, [ ".", digit, { digit } ] ;
 newline          = "\n" ;

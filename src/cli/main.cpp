@@ -93,8 +93,13 @@ auto print_ast(const icad::compiler::ast::Program& program) -> void {
     std::cout << "Project " << program.project_name << "\n"
               << "  Units " << program.default_length_unit << '\n';
     for (const auto& parameter : program.parameters) {
-        std::cout << "  Parameter " << parameter.name << " = " << parameter.value.value << ' '
-                  << parameter.value.unit << '\n';
+        std::cout << "  Parameter " << parameter.name << " = ";
+        if (!parameter.expression.source.empty()) {
+            std::cout << parameter.expression.source;
+        } else {
+            std::cout << parameter.value.value << ' ' << parameter.value.unit;
+        }
+        std::cout << '\n';
     }
     for (const auto& material : program.materials) {
         std::cout << "  Material " << material.name << " : " << material.preset << '\n';
@@ -130,7 +135,9 @@ auto print_ast(const icad::compiler::ast::Program& program) -> void {
             std::cout << '\n';
             for (const auto& property : feature.properties) {
                 std::cout << "      " << property.name << " = ";
-                if (!property.parameter_reference.empty())
+                if (!property.expression.source.empty())
+                    std::cout << property.expression.source;
+                else if (!property.parameter_reference.empty())
                     std::cout << property.parameter_reference;
                 else
                     std::cout << property.value.value << ' ' << property.value.unit;

@@ -279,6 +279,22 @@ or call MCP `icad.language` for the authoritative capability list. Unsupported
 future requirements fail during preflight before their dependent syntax is
 parsed.
 
+The first typed-expression layer is production-ready for parameters, angles,
+and feature properties. It supports precedence, unary signs, parentheses,
+forward dependencies, project-qualified scalar names, unit checking, cycle
+detection, and division-by-zero diagnostics:
+
+```icad
+REQUIRES ICAD 1.0
+REQUIRES CAPABILITY PARAMETER_EXPRESSIONS_V1
+REQUIRES CAPABILITY QUALIFIED_VALUE_REFERENCES_V1
+PROJECT bracket
+UNITS mm
+PARAMETER wall 8 mm
+PARAMETER width 120 mm
+PARAMETER inner bracket.width - 2 * wall
+```
+
 ```icad
 BODY mounting_bracket
 SKETCH base ON PLANE XY

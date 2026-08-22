@@ -15,6 +15,8 @@ namespace {
 
 constexpr std::array supported_capabilities{
     std::string_view{"CAPABILITY_NEGOTIATION"},
+    std::string_view{"PARAMETER_EXPRESSIONS_V1"},
+    std::string_view{"QUALIFIED_VALUE_REFERENCES_V1"},
     std::string_view{"IMPORT_INJECT"},
     std::string_view{"BODY_HISTORY"},
     std::string_view{"NAMED_SKETCH_ENTITIES"},
