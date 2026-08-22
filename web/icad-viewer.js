@@ -291,10 +291,10 @@
           if (sourcePoints.reduce((sum, point) => sum + point[2], 0) / 3 > center[2] + section * extent) continue;
           const transformed = sourcePoints.map(sourcePoint => {
             let point = animatedOccurrence(sourcePoint.slice(), part.body, jointsByChild, jointValues);
+            point = rotate(point.map((value, axis) => value - partCenter[axis]), transform.rotation)
+              .map((value, axis) => value + partCenter[axis] + transform.position[axis]);
             point = point.map((value, axis) => value + direction[axis] * explode * extent * 0.4);
-            point = rotate(point.map((value, axis) => value - center[axis]), transform.rotation);
-            point = point.map((value, axis) => value + transform.position[axis]);
-            return rotate(point, cameraRotation);
+            return rotate(point.map((value, axis) => value - center[axis]), cameraRotation);
           });
           const firstEdge = transformed[1].map((value, axis) => value - transformed[0][axis]);
           const secondEdge = transformed[2].map((value, axis) => value - transformed[0][axis]);
@@ -543,11 +543,13 @@
       for (const part of model.parts) {
         if (visibility.get(part.body) === false) continue;
         const transform = transforms.get(part.body) || { position: [0, 0, 0], rotation: [0, 0, 0] };
+        const partCenter = [0, 1, 2].map(axis => part.vertices.reduce(
+          (sum, point) => sum + point[axis], 0) / part.vertices.length);
         const projected = part.vertices.map((vertex) => {
           let point = animateOccurrence(vertex.slice(), part.body);
-          point = rotate(point.map((value, index) => value - center[index]), transform.rotation);
-          point = point.map((value, index) => value + transform.position[index]);
-          point = rotate(point, cameraRotation);
+          point = rotate(point.map((value, index) => value - partCenter[index]), transform.rotation)
+            .map((value, index) => value + partCenter[index] + transform.position[index]);
+          point = rotate(point.map((value, index) => value - center[index]), cameraRotation);
           return [width / 2 + point[0] * scale, height / 2 - point[1] * scale, point[2]];
         });
         for (const face of part.triangles) {

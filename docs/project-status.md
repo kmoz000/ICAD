@@ -4,13 +4,37 @@ This is the final cleanup audit for the current compiler milestone. It
 separates proven v0.21 capability from the work still required for the complete
 industrial agentic CAD platform.
 
+## Post-v0.21 language v2 foundation
+
+The first v2 implementation slice is lexical and intentionally does not
+advertise new language capabilities. Tokens now retain comments, exact byte
+spans, and exclusive end locations; recognize qualified-name/selector/expression
+punctuation and JSON-style strings; validate string escapes and numeric
+exponents; and normalize CRLF, CR, and LF line endings. The production parser
+filters retained comments and continues to accept the existing grammar.
+Legacy signed literals remain one token so current models are not broken before
+typed expression parsing is available.
+
+The following vertical slice adds production language-contract negotiation.
+`REQUIRES ICAD 1.0` and `REQUIRES CAPABILITY NAME` headers are preflighted
+before normal parsing and retained in the AST. The compiler owns one capability
+registry shared by parsing, CLI `icad language`, and MCP `icad.language`.
+Unsupported v2 requirements stop with one stable `ICAD-C` diagnostic before
+the parser examines dependent future syntax.
+
+Multi-shape sketches, qualified semantic references, expressions, advanced
+feature blocks, `PART`/`ASSEMBLY`, engineering material properties, validation,
+and associative drawings remain proposal syntax. They must not be returned by
+`icad.language` until their complete parser-to-engine vertical gates pass.
+
 ## Current repository inventory
 
-- 18 implementation modules under `src/`;
-- 40 C++ implementation files, all compiled by CMake;
-- 37 public headers, all consumed by implementation or tests;
-- 29 unit/fuzz executables plus integration, sandbox, optional browser, and 12 benchmark cases;
-- 10 maintained `.icad` examples;
+- 19 implementation modules under `src/`;
+- 44 C++ implementation files, all compiled by CMake;
+- 41 public headers, all consumed by implementation or tests;
+- 32 unit/fuzz executables plus seven integration cases, sandbox, optional browser,
+  and 13 benchmark cases;
+- 11 maintained `.icad` examples;
 - one build tree: `build/`;
 - one geometry engine and no OpenCASCADE dependency.
 
@@ -74,6 +98,17 @@ profiles for downstream solid features. Its maintained benchmark solves a
 parameter-driven rectangle to zero DOF, extrudes it, and reads the solid back
 from STEP and STL.
 
+Body-local feature history is now the primary prismatic modeling path. Datum
+sketches on `XY`, `XZ`, or `YZ` feed named `PAD` operations; subsequent
+sketches attach to an earlier feature's selected principal face and feed `ADD`
+or inward `POCKET` operations. The AST, IR, dependency graph, incremental
+fingerprints, LSP, CLI AST output, native geometry engine, and `visual.json`
+all retain the same ordered support relationship. The maintained
+`sketch_history.icad` test covers a base pad, raised face pad, and circular
+pocket without OpenCASCADE. Body sketches require explicit supports and a
+later consumer, resolve to collision-free `body::sketch` identifiers, and keep
+their original `PAD` or `POCKET` command throughout the pipeline.
+
 The source-module package adds project-root-confined `IMPORT`/`INJECT`
 composition with canonical path checks, `.icad` filtering, cycle rejection,
 depth and aggregate-size limits, dependency reporting, CLI/LSP/live-viewer
@@ -100,6 +135,15 @@ delivery model into depth-resolved 64x32 front, right, top, and isometric grids
 with a stable body legend, bounds, triangle counts, and current joint state.
 The maintained robot benchmark requires these views and recognizable detailed
 gripper/gear components, so model acceptance is no longer based only on counts.
+The `compare-json` command and `icad.compare` MCP tool add a deterministic
+`icad.agent.comparison.v2` selection contract. It keeps both complete visual
+snapshots while reporting body and joint graph changes, per-body spatial
+envelopes and role hints, material presets, scene programs, project bounds, and
+mesh/topology cost. Four shared-world-bounds difference rasters quantify
+silhouette IoU, body-identity agreement, and changed cells. An intent-aware
+optimization matrix refuses to invent an automatic winner before functional
+priority is known. Candidate exploration remains limited to two major
+structural alternatives per user-selection round.
 
 The query package adds a dimensioned project-wide linear/angular tolerance
 policy to canonical IR, revisions, agent inspection, and contact/query
@@ -149,14 +193,16 @@ artifact set in one invocation. The composite readiness report combines
 compiler diagnostics, constraints, manufacturing, topology, measurements, and
 interference; atomic multi-parameter edits collapse related dimensional changes
 into one revision. Its benchmark proves the robotic prompt path at 10 bodies,
-10 joints, 7 driven degrees of freedom, and a structurally readable 24-solid
+10 joints, 9 driven degrees of freedom, and a structurally readable 25-solid
 STEP assembly with one expected model iteration. The response now embeds prompt
 interpretation, assumptions, editable scalar/angle handles, and a compact design
 map containing bounds, spatial references, joint connectivity, contacts, and
 animation, so an agent does not need another call merely to understand layout.
-The source now uses toothed gear profiles, tapered arm and wrist shells, hooked
-opposed gripper fingers, linkage profiles, and four flange fasteners instead of
-accepting a primitive-box proxy as the visual benchmark.
+The acceptance source now uses one coherent datum chain, toothed gear profiles,
+tapered arm and wrist shells, opposed gripper fingers, and four flange fasteners.
+Its direct visual snapshot checks actual mesh-volume attachment at rest and at
+the first, middle, and last scene samples, and rejects movement of the grounded
+root instead of accepting a model from structural counts alone.
 
 The engineering package adds process-aware material compatibility and checks
 for wall proxy, hole diameter, tooling radius, bend radius, overhang, stock,

@@ -1,4 +1,5 @@
 #include "icad/agent/workflow.hpp"
+#include "icad/ai/inspector.hpp"
 #include "icad/compiler/compiler.hpp"
 
 #include <iostream>
@@ -14,6 +15,17 @@ auto fail(std::string_view message) -> int {
 } // namespace
 
 auto main() -> int {
+    const auto concept_json = icad::agent::conceptualize_json(
+        "Design an industrial robotic arm assembly with animated revolute joints, a gripper, "
+        "orthographic drawings, STEP, STL, and OBJ output");
+    if (!concept_json.contains("\"schema\":\"icad.agent.concept.v1\"") ||
+        !concept_json.contains("\"conceptualIterations\":1") ||
+        !concept_json.contains("DOMAIN:ROBOTIC_MANIPULATOR") ||
+        !concept_json.contains("\"format\":\"ICAD_GRAMMAR_ONLY\"") ||
+        !concept_json.contains("\"requiredSchema\":\"icad.visual.snapshot.v1\"") ||
+        !concept_json.contains("\"available\":false")) {
+        return fail("raw prompt conceptualization contract is incomplete");
+    }
     const auto robotic = icad::agent::bootstrap(
         "Create an articulated industrial robotic arm with a gripper and animated joints");
     if (robotic.intent != icad::agent::DesignIntent::robotic_arm ||
@@ -21,8 +33,8 @@ auto main() -> int {
         !robotic.json.contains("\"preferredTool\":\"icad.agent.create\"") ||
         !robotic.json.contains("\"selectedTemplate\":\"robotic_arm\"") ||
         !robotic.json.contains("\"sourceReference\":\"examples/Robotic_Arm_3D_Model\"") ||
-        !robotic.json.contains("\"name\":\"joint_radius\"") ||
-        !robotic.json.contains("\"name\":\"elbow_angle\"") ||
+        !robotic.json.contains("\"name\":\"major_joint_radius\"") ||
+        !robotic.json.contains("\"name\":\"home_angle\"") ||
         !robotic.source.contains("# Agent prompt: Create an articulated industrial robotic arm") ||
         !robotic.source.contains("# Embedded template: ROBOTIC_ARM") ||
         !robotic.json.contains("\"workflow\":[\"agent.create\"]")) {
@@ -33,16 +45,20 @@ auto main() -> int {
         compilation.ir_project->joints.size() != 10) {
         return fail("embedded robotic-arm scaffold is not the maintained detailed model");
     }
+    const auto visual = icad::ai::visual_snapshot_json(*compilation.ir_project);
+    if (!visual.contains("\"schema\":\"icad.visual.snapshot.v1\"") ||
+        !visual.contains("\"name\":\"front\""))
+        return fail("direct visual.json feedback is unavailable after compilation");
     const auto review = icad::agent::review_json(robotic.source);
     if (!review.contains("\"ready\":true") || !review.contains("\"bodies\":10") ||
         !review.contains("\"joints\":10") ||
-        !review.contains("\"degreesOfFreedom\":7") ||
+        !review.contains("\"degreesOfFreedom\":9") ||
         !review.contains("\"topologyValid\":true") ||
         !review.contains("\"schema\":\"icad.agent.design-map.v1\"") ||
-        !review.contains("\"centerMm\":[0,0,28]") ||
+        !review.contains("\"centerMm\":[0,0,37.5]") ||
         !review.contains("\"name\":\"elbow_hinge\"") ||
-        !review.contains("\"child\":\"arm_02\"") ||
-        !review.contains("\"name\":\"preview_forearm_axis\"") ||
+        !review.contains("\"child\":\"forearm\"") ||
+        !review.contains("\"name\":\"forearm_axis\"") ||
         !review.contains("\"name\":\"tool_on_target\"") ||
         !review.contains("\"name\":\"articulation\"")) {
         return fail("composite robotic-arm readiness review is incomplete");

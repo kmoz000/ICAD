@@ -102,6 +102,7 @@ build/bin/icad ast examples/minimal.icad
 build/bin/icad inspect examples/advanced.icad
 build/bin/icad inspect-json examples/advanced.icad
 build/bin/icad visual-json examples/robotic_arm.icad
+build/bin/icad compare-json first.icad second.icad
 build/bin/icad topology-json examples/advanced.icad
 build/bin/icad diagnostics-json examples/advanced.icad
 build/bin/icad measure examples/advanced.icad
@@ -158,6 +159,12 @@ The deterministic tool catalog contains source-text tools:
 - `icad.visualize`: deterministic 64x32 front, right, top, and isometric
   depth rasters with a component legend, per-body bounds/triangle counts, and
   current joint state, giving an agent a compact visual check after every edit;
+- `icad.compare`: two complete source documents compared by body and mechanism
+  graph, per-body spatial envelopes/roles/materials, scene programs, topology
+  cost, and two embedded four-view snapshots. Shared-world-bounds difference
+  grids mark first-only (`A`), second-only (`B`), common-body (`=`), and changed
+  body identity (`!`) cells. Its intent-aware optimization matrix prevents an
+  agent from selecting a cheaper design that performs the wrong function;
 - `icad.topology`: stable solid/shell/face/edge/vertex IDs and analytic geometry;
 - `icad.distance`: closest points and exact-polyhedral body distance;
 - `icad.interference`: penetrating, contained, and surface-contact classification;
@@ -238,7 +245,84 @@ Every type accepts `ORIGIN_X`, `ORIGIN_Y`, `ORIGIN_Z`, `ROTATION_X`,
 `mm`, `cm`, `m`, `in`, and `ft`; angles are `deg` and `rad`; scene time units
 are `ms`, `s`, and `min`.
 
-Named parameters can replace compatible feature quantities. Custom profiles
+Named parameters can replace compatible feature quantities.
+
+## Sketch-first feature history
+
+Normal ICAD parts are authored in the same order as a CAD designer builds
+them: sketch on a datum plane, create the first solid, select a resulting face,
+sketch again, then add or remove material.
+
+The advanced language direction treats a sketch as a constrained 2D workspace
+containing named SVG-path-like shapes, not as one implicit polygon. Shapes feed
+ordered solid features; bodies form manufacturable solids; components add
+interfaces and engineering identity; assemblies add occurrences, mates, and
+motion. The formal dependency model, proposed multi-shape syntax, material vs.
+appearance separation, and agent/viewer data contract are documented in
+[Grammar v2 design](docs/grammar-v2-design.md). The detailed compiler contract
+and proposed syntax are in the [Grammar v2 RFC](docs/grammar-v2-rfc.md) and
+[proposed EBNF](grammar/icad-v2-proposal.ebnf). The matching
+[compiler and native-engine architecture](docs/compiler-v2-architecture.md)
+defines the conceptual lexer, semantic passes, exact topology, incremental
+execution, and thread-safety model. These are design contracts; agents must not
+emit proposed constructs until `icad.language` advertises the matching compiler
+capability.
+
+The first implementation slice only prepares the lexer: it retains comments and
+exact byte spans, recognizes the reserved v2 punctuation/string surface, and
+adds recoverable string/exponent diagnostics while preserving current signed
+numeric literals. This does not enable proposed grammar constructs yet.
+
+Source files can now pin their implemented contract with `REQUIRES ICAD 1.0`
+and `REQUIRES CAPABILITY NAME` before `PROJECT`. Run `build/bin/icad language`
+or call MCP `icad.language` for the authoritative capability list. Unsupported
+future requirements fail during preflight before their dependent syntax is
+parsed.
+
+```icad
+BODY mounting_bracket
+SKETCH base ON PLANE XY
+POINT p0 0 mm 0 mm FIXED
+POINT p1 100 mm 0 mm FIXED
+POINT p2 100 mm 60 mm FIXED
+POINT p3 0 mm 60 mm FIXED
+END
+PAD base_solid FROM base DEPTH 12 mm NEW
+
+SKETCH boss ON FACE base_solid Z_MAX
+POINT p0 25 mm 15 mm FIXED
+POINT p1 75 mm 15 mm FIXED
+POINT p2 75 mm 45 mm FIXED
+POINT p3 25 mm 45 mm FIXED
+END
+PAD raised_boss FROM boss DEPTH 20 mm ADD
+
+SKETCH bore ON FACE raised_boss Z_MAX
+CIRCLE 50 mm 30 mm 8 mm
+END
+POCKET mounting_bore FROM bore DEPTH 20 mm
+END
+```
+
+`XY`, `XZ`, and `YZ` are supported datum planes. Face sketches reference an
+earlier feature and one explicit principal face selector: `X_MIN`, `X_MAX`,
+`Y_MIN`, `Y_MAX`, `Z_MIN`, or `Z_MAX`. `PAD ... NEW` must create a body's first
+solid; later pads use `ADD`, while `POCKET` cuts inward from the selected face.
+Every body-local sketch requires `ON PLANE` or `ON FACE` and must be consumed by
+a later operation. Sketch names are local to their body, so two bodies may both
+use `base`; canonical IR and agent output identify them as `body::base`. The
+compiler rejects forward references, duplicate history names within a body,
+mixed circle and point sketches, unused body sketches, invalid depth
+dimensions, and invalid boolean results.
+`visual-json` exposes the same ordered history under `featureHistory`, allowing
+an agent to reason about how a part was made instead of reverse engineering its
+triangles. See [`examples/sketch_history.icad`](examples/sketch_history.icad).
+
+### Low-level and advanced features
+
+The explicit `FEATURE` block remains available for primitives, revolve, sweep,
+loft, freeform, fillet, chamfer, pattern, mirror, and precise legacy models.
+Prefer the sketch-first history above for new prismatic parts. Custom profiles
 support native triangulated extrusion and full revolution:
 
 ```icad
@@ -687,6 +771,16 @@ live import in the target CAD version before a release is called certified.
 
 ## Agent workflow
 
+Compress a raw mechanical request into one blueprint-aware concept pass before authoring:
+
+```sh
+build/bin/icad agent-concept "Design an industrial robot with animated joints and STEP STL OBJ"
+build/bin/icad visual-json model.icad > build/model.visual.json
+# revise named ICAD history operations directly from model.visual.json, then compile again
+```
+
+The concept result uses `icad.agent.concept.v1`, fixes `conceptualIterations` to one, and requires ICAD grammar-only generation. Iterative geometry feedback uses the direct `icad.visual.snapshot.v1` `visual.json`; comparison JSON is reserved for choosing between already-valid alternatives.
+
 1. Start with `icad agent-create` or MCP `icad.agent.create` for the shortest
    prompt-to-artifact path. It embeds maintained compiler-valid robot and bridge
    designs instead of asking a model to rediscover assembly syntax.
@@ -696,9 +790,10 @@ live import in the target CAD version before a release is called certified.
    `icad.agent.review`. Repair only its focused next actions.
 3. Apply dimensional revisions together with `icad.project.set_parameters` so
    one model decision produces one compiler-validated revision.
-4. Compare the front/top/right/isometric raster legend across revisions, then
-   reference only stable semantic topology IDs returned by ICAD; never patch
-   binary CAD or infer a joint axis from mesh triangles.
+4. When exploring alternatives, compare two major structural candidates at a
+   time with `icad.compare` (or `compare-json`). Select one before generating
+   the next pair. Then reference only stable semantic topology IDs returned by
+   ICAD; never patch binary CAD or infer a joint axis from mesh triangles.
 5. Read back STEP/STL and run the benchmark/viewer gates before delivery.
 
 This keeps every design change diffable and reproducible. `icad lsp` provides
@@ -734,9 +829,9 @@ make sanitizers
 make thread-sanitizer  # race-check shared incremental compilation, then restore build
 ```
 
-The configured suite contains 46 deterministic tests: 29 C++ unit/fuzz
-executables, integration and sandbox cases, and 12 benchmark cases including a
-large robotic-arm live-refresh benchmark. A 47th
+The configured suite contains 50 deterministic tests: 31 C++ unit/fuzz
+executables, integration and sandbox cases, and 13 benchmark cases including a
+large robotic-arm live-refresh benchmark and sketch-history STEP/STL read-back. A 51st
 headless-Chromium viewer runtime smoke test is registered only when a configure-time
 launch probe confirms that the installed browser can actually run headless.
 
@@ -750,18 +845,20 @@ The robotic-arm benchmark compares against
 `examples/Robotic_Arm_3D_Model`: 10 reference STL component files, 23,314
 reference facets, 20 reference STEP solids, and 21 reference assembly
 occurrences. The native `robotic_arm.icad` acceptance design builds 10
-components, 24 solids, and 2,164 deterministic facets. It uses exact circular
-link arcs, tapered arm/wrist shells, toothed gear profiles, opposed hooked
-gripper fingers, linkage profiles, and flange fasteners. The benchmark now
-also validates four deterministic agent-readable depth views. Its topology
-baseline is 242 exact vertices, 363 exact edges, and 169 exact faces. This is a
+components, 25 solids, and 2,368 deterministic facets. It uses one coherent
+world datum chain, tapered arm/wrist shells, toothed gear profiles, opposed
+hooked gripper fingers, and flange fasteners. The benchmark validates four
+deterministic agent-readable depth views, exact mesh-volume attachment at all
+nine parent-child interfaces, and three samples of a 27-keyframe scene that
+drives all nine moving degrees of freedom while the base remains grounded. Its
+topology baseline is 274 exact vertices, 411 exact edges, and 187 exact faces. This is a
 recognizable articulated acceptance model, not a claim that it duplicates the
 supplied proprietary surface model.
 
 The agentic prompt benchmark runs a single `agent-create` command from a short
 robotic-arm request, requires one expected model iteration, verifies 10 bodies,
-10 joints, 7 driven degrees of freedom, valid topology, and structurally reads
-back the resulting 24-solid STEP assembly and the visual snapshot. That same test directly validates the
+10 joints, 9 driven degrees of freedom, valid topology, and structurally reads
+back the resulting 25-solid STEP assembly and the visual snapshot. That same test directly validates the
 supplied reference folder's 10 STL components and 20-solid STEP baseline before
 comparing the generated structural result.
 

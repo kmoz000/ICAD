@@ -45,6 +45,31 @@ auto main() -> int {
         !visual.contains("\"body\":\"part\"") || !visual.contains("\"rows\":[")) {
         return fail("agent visual snapshot JSON is incomplete");
     }
+    constexpr std::string_view alternative_source =
+        "PROJECT AgentAlternative\nUNITS mm\nMATERIAL finish TITANIUM\nBODY part\nMATERIAL "
+        "finish\nFEATURE cube\nTYPE BOX\nWIDTH 2 mm\nDEPTH 1 mm\nHEIGHT 1 mm\nEND\nEND\n"
+        "BODY sensor\nMATERIAL finish\nFEATURE lens\nTYPE SPHERE\nRADIUS 1 mm\nORIGIN_X 4 "
+        "mm\nEND\nEND\n";
+    const auto alternative = icad::compiler::compile(alternative_source);
+    if (!alternative.ok())
+        return fail("agent comparison fixture did not compile");
+    const auto comparison =
+        icad::ai::comparison_json(*compilation.ir_project, *alternative.ir_project);
+    if (!comparison.contains("\"schema\":\"icad.agent.comparison.v2\"") ||
+        !comparison.contains("\"secondOnlyBodies\":[\"sensor\"]") ||
+        !comparison.contains("\"body\":\"part\"") ||
+        !comparison.contains("\"materialPreset\":\"TITANIUM\"") ||
+        !comparison.contains("\"selectionDimensions\":[") ||
+        !comparison.contains("\"mechanismDelta\":{") ||
+        !comparison.contains("\"viewDelta\":{") ||
+        !comparison.contains("\"differenceGrid\":{") ||
+        !comparison.contains("\"silhouetteIntersectionOverUnion\":") ||
+        !comparison.contains("\"optimizationMatrix\":[") ||
+        !comparison.contains("\"semanticRoleHint\":") ||
+        !comparison.contains("\"decisionPolicy\":{") ||
+        !comparison.contains("\"visual\":{\"schema\":\"icad.visual.snapshot.v1\"")) {
+        return fail("agent structural comparison JSON is incomplete");
+    }
     std::string large_source{"PROJECT LargeAgentView\nUNITS mm\n"};
     for (int index = 0; index < 63; ++index) {
         large_source += "BODY body_" + std::to_string(index) + "\nFEATURE box\nTYPE BOX\n"

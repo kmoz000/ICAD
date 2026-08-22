@@ -4,6 +4,11 @@ ICAD is an agent-first compiler with a single, repository-owned geometry
 engine. External CAD kernels, desktop GUI frameworks, image libraries, JSON
 libraries, and JavaScript frameworks are outside the core architecture.
 
+This page describes the implemented architecture. The proposed lossless lexer,
+v2 compiler passes, direct modeling-kernel layers, persistent topology, and
+parallel revision model are specified separately in the
+[ICAD v2 compiler and engine architecture](compiler-v2-architecture.md).
+
 ```text
 .icad source
   -> root-confined IMPORT/INJECT module expansion and cycle detection

@@ -91,5 +91,5 @@ endif()
 install(FILES README.md LICENSE DESTINATION share/icad)
 install(FILES assets/icons/icad.ico assets/icons/icad.icns assets/icons/icad-256.png
         DESTINATION share/icad/icons)
-install(FILES examples/advanced.icad examples/robotic_arm.icad
+install(FILES examples/advanced.icad examples/robotic_arm.icad examples/sketch_history.icad
         DESTINATION share/icad/examples)

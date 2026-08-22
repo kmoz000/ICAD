@@ -63,6 +63,9 @@ auto build_dependency_graph(const ir::Project& project) -> DependencyGraph {
     }
     for (const auto& sketch : project.sketches) {
         std::vector<std::string> dependencies;
+        if (!sketch.body.empty() && !sketch.support_feature.empty())
+            append_unique(dependencies,
+                          "feature:" + sketch.body + '/' + sketch.support_feature);
         for (const auto& constraint : sketch.constraints) {
             if (!constraint.target_reference.empty()) {
                 append_unique(dependencies,
@@ -104,6 +107,9 @@ auto build_dependency_graph(const ir::Project& project) -> DependencyGraph {
                 append_unique(dependencies, "point:" + feature.plane_point);
             if (!feature.plane_normal.empty())
                 append_unique(dependencies, "vector:" + feature.plane_normal);
+            if (!feature.support_feature.empty())
+                append_unique(dependencies,
+                              "feature:" + body.name + '/' + feature.support_feature);
             for (const auto& path_point : feature.path_points)
                 append_unique(dependencies, "point:" + path_point);
             const std::string feature_id = "feature:" + body.name + '/' + feature.name;

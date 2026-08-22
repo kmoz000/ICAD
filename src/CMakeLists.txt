@@ -7,6 +7,7 @@ add_library(icad_compiler
     compiler/dependency_graph.cpp
     compiler/incremental.cpp
     compiler/importer.cpp
+    compiler/language.cpp
     compiler/lexer/lexer.cpp
     compiler/parser/parser.cpp
     compiler/resolver/resolver.cpp
@@ -30,6 +31,7 @@ add_library(icad_compiler
     manufacturing/validator.cpp
     drawings/exporter.cpp
     scene/exporter.cpp
+    scene/evaluator.cpp
     viewer/live_session.cpp
     exchange/exporter.cpp
     exchange/obj_exporter.cpp
@@ -39,6 +41,7 @@ add_library(icad_compiler
     exchange/three_mf_exporter.cpp
 )
 add_library(ICAD::compiler ALIAS icad_compiler)
+set_target_properties(icad_compiler PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 target_include_directories(icad_compiler
     PUBLIC
@@ -48,9 +51,29 @@ target_include_directories(icad_compiler
 target_include_directories(icad_compiler PRIVATE "${PROJECT_BINARY_DIR}/generated")
 target_link_libraries(icad_compiler PUBLIC icad_project_options)
 
+add_library(icad_engine SHARED engine/session.cpp engine/c_api.cpp)
+add_library(ICAD::engine ALIAS icad_engine)
+target_compile_definitions(icad_engine PRIVATE ICAD_ENGINE_BUILD)
+target_include_directories(icad_engine
+    PUBLIC
+        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
+)
+target_link_libraries(icad_engine PRIVATE ICAD::compiler icad_project_options)
+set_target_properties(icad_engine PROPERTIES
+    CXX_VISIBILITY_PRESET hidden
+    VISIBILITY_INLINES_HIDDEN YES
+    VERSION ${PROJECT_VERSION}
+    SOVERSION ${PROJECT_VERSION_MAJOR}
+)
+
 add_executable(icad cli/main.cpp)
 target_link_libraries(icad PRIVATE ICAD::compiler icad_project_options)
-install(TARGETS icad RUNTIME DESTINATION bin)
+install(TARGETS icad icad_engine
+        RUNTIME DESTINATION bin
+        LIBRARY DESTINATION lib
+        ARCHIVE DESTINATION lib)
+install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/icad DESTINATION include)
 
 if(ICAD_BUILD_DESKTOP_VIEWER)
     include(FetchContent)
@@ -69,7 +92,7 @@ if(ICAD_BUILD_DESKTOP_VIEWER)
 
     add_executable(icad-viewer desktop_viewer/main.cpp)
     target_include_directories(icad-viewer PRIVATE "${PROJECT_BINARY_DIR}/generated")
-    target_link_libraries(icad-viewer PRIVATE ICAD::compiler webview::core_static)
+    target_link_libraries(icad-viewer PRIVATE ICAD::engine ICAD::compiler webview::core_static)
     set_target_properties(icad-viewer PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
     install(TARGETS icad-viewer RUNTIME DESTINATION bin)
 endif()

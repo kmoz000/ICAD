@@ -475,8 +475,81 @@ auto apply_joint_chain(Part& part, const compiler::ir::Project& project,
     }
 }
 
+auto orient_history_part(Part& part, const compiler::ir::Feature& feature,
+                         const Part* support) -> void {
+    if (feature.support_face.empty()) {
+        if (feature.sketch_plane == "XZ") {
+            for (auto& point : part.vertices)
+                point = {point.x, point.z, point.y};
+        } else if (feature.sketch_plane == "YZ") {
+            for (auto& point : part.vertices)
+                point = {point.z, point.x, point.y};
+        }
+        return;
+    }
+    if (support == nullptr || support->vertices.empty())
+        return;
+    Point3 minimum{std::numeric_limits<double>::max(), std::numeric_limits<double>::max(),
+                   std::numeric_limits<double>::max()};
+    Point3 maximum{std::numeric_limits<double>::lowest(), std::numeric_limits<double>::lowest(),
+                   std::numeric_limits<double>::lowest()};
+    for (const auto& point : support->vertices) {
+        minimum.x = std::min(minimum.x, point.x);
+        minimum.y = std::min(minimum.y, point.y);
+        minimum.z = std::min(minimum.z, point.z);
+        maximum.x = std::max(maximum.x, point.x);
+        maximum.y = std::max(maximum.y, point.y);
+        maximum.z = std::max(maximum.z, point.z);
+    }
+    const bool cut = feature.operation == compiler::ir::FeatureOperation::cut;
+    double local_minimum = std::numeric_limits<double>::max();
+    double local_maximum = std::numeric_limits<double>::lowest();
+    for (const auto& point : part.vertices) {
+        local_minimum = std::min(local_minimum, point.z);
+        local_maximum = std::max(local_maximum, point.z);
+    }
+    const double local_depth = local_maximum - local_minimum;
+    constexpr double face_overlap = 1.0e-2;
+    const auto progress = [&](double local_z) {
+        return local_depth <= 0.0 ? 0.0 : (local_z - local_minimum) / local_depth;
+    };
+    const auto from_maximum_face = [&](double face, double local_z) {
+        const double distance = progress(local_z) * (local_depth + face_overlap);
+        return cut ? face + face_overlap - distance : face - face_overlap + distance;
+    };
+    const auto from_minimum_face = [&](double face, double local_z) {
+        const double distance = progress(local_z) * (local_depth + face_overlap);
+        return cut ? face - face_overlap + distance : face + face_overlap - distance;
+    };
+    for (auto& point : part.vertices) {
+        const Point3 local = point;
+        if (feature.support_face == "Z_MAX")
+            point = {local.x, local.y, from_maximum_face(maximum.z, local.z)};
+        else if (feature.support_face == "Z_MIN")
+            point = {local.x, local.y, from_minimum_face(minimum.z, local.z)};
+        else if (feature.support_face == "X_MAX")
+            point = {from_maximum_face(maximum.x, local.z), local.x, local.y};
+        else if (feature.support_face == "X_MIN")
+            point = {from_minimum_face(minimum.x, local.z), local.x, local.y};
+        else if (feature.support_face == "Y_MAX")
+            point = {local.x, from_maximum_face(maximum.y, local.z), local.y};
+        else if (feature.support_face == "Y_MIN")
+            point = {local.x, from_minimum_face(minimum.y, local.z), local.y};
+    }
+    const bool reverse_winding =
+        ((feature.support_face == "Z_MAX" || feature.support_face == "X_MAX") && cut) ||
+        ((feature.support_face == "Z_MIN" || feature.support_face == "X_MIN") && !cut) ||
+        (feature.support_face == "Y_MAX" && !cut) ||
+        (feature.support_face == "Y_MIN" && cut);
+    if (reverse_winding) {
+        for (auto& triangle : part.triangles)
+            std::swap(triangle[1], triangle[2]);
+    }
+}
+
 [[nodiscard]] auto make_part(const compiler::ir::Project& project,
-                             const compiler::ir::Feature& feature) -> Part {
+                             const compiler::ir::Feature& feature,
+                             const Part* support) -> Part {
     Part part;
     if (feature.type == "BOX") {
         part = make_box(feature);
@@ -509,6 +582,7 @@ auto apply_joint_chain(Part& part, const compiler::ir::Project& project,
             }
         }
     }
+    orient_history_part(part, feature, support);
     apply_transform(part, feature);
     return part;
 }
@@ -899,7 +973,8 @@ auto build_model(const compiler::ir::Project& project) -> Model {
                 body_parts.back() = std::move(modified);
                 continue;
             }
-            Part part = make_part(project, feature);
+            Part part = make_part(project, feature,
+                                  body_parts.empty() ? nullptr : &body_parts.back());
             part.name = body.name + "_" + feature.name;
             part.body = body.name;
             part.material = body.material;

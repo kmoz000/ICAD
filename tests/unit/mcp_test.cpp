@@ -90,6 +90,11 @@ auto main() -> int {
     messages += tool_call(5, "icad.inspect", {{"source", std::string{valid_source}}});
     messages += tool_call(16, "icad.topology", {{"source", std::string{valid_source}}});
     messages += tool_call(25, "icad.visualize", {{"source", std::string{valid_source}}});
+    messages += tool_call(26, "icad.compare",
+                          {{"firstSource", std::string{valid_source}},
+                           {"secondSource", std::string{query_source}}});
+    messages += tool_call(27, "icad.agent.conceptualize",
+                          {{"prompt", "Design a substantially different industrial robot with scenes"}});
     messages += tool_call(17, "icad.language", {});
     messages += tool_call(18, "icad.distance",
                           {{"source", std::string{query_source}},
@@ -167,7 +172,7 @@ auto main() -> int {
             return fail("MCP emitted invalid JSON");
         parsed_responses.push_back(std::move(*parsed.value));
     }
-    if (parsed_responses.size() != 26) {
+    if (parsed_responses.size() != 28) {
         return fail("MCP emitted an unexpected response count");
     }
     const auto serialized = output.str();
@@ -179,6 +184,11 @@ auto main() -> int {
         !serialized.contains("\"name\":\"icad.agent.create\"") ||
         !serialized.contains("\"name\":\"icad.topology\"") ||
         !serialized.contains("\"name\":\"icad.visualize\"") ||
+        !serialized.contains("\"name\":\"icad.compare\"") ||
+        !serialized.contains("\"name\":\"icad.agent.conceptualize\"") ||
+        !serialized.contains("\"languageVersion\":\"1.0\"") ||
+        !serialized.contains("\"CAPABILITY_NEGOTIATION\"") ||
+        !serialized.contains("\"BODY_HISTORY\"") ||
         !serialized.contains("\"name\":\"icad.distance\"") ||
         !serialized.contains("\"schema\":\"icad.distance.v1\"") ||
         !serialized.contains("\"distanceMm\":10") ||
@@ -186,13 +196,19 @@ auto main() -> int {
         !serialized.contains("\"schema\":\"icad.section.v1\"") ||
         !serialized.contains("\"schema\":\"icad.topology.v1\"") ||
         !serialized.contains("\"schema\":\"icad.visual.snapshot.v1\"") ||
+        !serialized.contains("\"schema\":\"icad.agent.comparison.v2\"") ||
+        !serialized.contains("\"schema\":\"icad.agent.concept.v1\"") ||
+        !serialized.contains("\"format\":\"ICAD_GRAMMAR_ONLY\"") ||
+        !serialized.contains("\"firstOnlyBodies\":[\"part\"]") ||
+        !serialized.contains("\"viewDelta\":{") ||
+        !serialized.contains("\"optimizationMatrix\":[") ||
         !serialized.contains("\"schema\":\"icad.agent.bootstrap.v1\"") ||
         !serialized.contains("\"schema\":\"icad.agent.review.v1\"") ||
         !serialized.contains("\"schema\":\"icad.agent.create.v1\"") ||
         !serialized.contains("\"schema\":\"icad.agent.design-map.v1\"") ||
         !serialized.contains("\"selectedTemplate\":\"robotic_arm\"") ||
         !serialized.contains("\"editableParameters\"") ||
-        !serialized.contains("\"name\":\"preview_forearm_axis\"") ||
+        !serialized.contains("\"name\":\"forearm_axis\"") ||
         !serialized.contains("\"intent\":\"ROBOTIC_ARM\"") ||
         !serialized.contains("CIRCLE center-x center-y radius") || !serialized.contains("CW|CCW") ||
         !serialized.contains("POINT3 name") ||

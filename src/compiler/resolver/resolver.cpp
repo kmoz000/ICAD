@@ -59,6 +59,21 @@ auto resolve(const ast::Program& program) -> ResolveResult {
         add_symbol(result, names,
                    Symbol{SymbolKind::body, body.name, program.project_name, body.location});
         const std::string body_scope = program.project_name + "::" + body.name;
+        for (const auto& sketch : body.sketches) {
+            add_symbol(result, names,
+                       Symbol{SymbolKind::sketch, sketch.name, body_scope, sketch.location});
+            const std::string sketch_scope = body_scope + "::" + sketch.name;
+            for (const auto& point : sketch.points) {
+                add_symbol(result, names,
+                           Symbol{SymbolKind::sketch_point, point.name, sketch_scope,
+                                  point.location});
+            }
+            for (const auto& constraint : sketch.constraints) {
+                add_symbol(result, names,
+                           Symbol{SymbolKind::sketch_constraint, constraint.name, sketch_scope,
+                                  constraint.location});
+            }
+        }
         for (const auto& feature : body.features) {
             add_symbol(result, names,
                        Symbol{SymbolKind::feature, feature.name, body_scope, feature.location});

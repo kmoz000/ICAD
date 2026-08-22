@@ -5,6 +5,7 @@
 #include "icad/cad/intersection.hpp"
 #include "icad/cad/queries.hpp"
 #include "icad/compiler/compiler.hpp"
+#include "icad/compiler/language.hpp"
 #include "icad/constraints/validator.hpp"
 #include "icad/document/source.hpp"
 #include "icad/json/value.hpp"
@@ -103,6 +104,13 @@ auto send(std::ostream& output, const json::Value& message) -> void {
     return tool_result(parsed_value(agent::bootstrap(*prompt).json));
 }
 
+[[nodiscard]] auto agent_conceptualize(const json::Value* arguments) -> json::Value {
+    const auto* prompt = string_at(arguments, "prompt");
+    if (prompt == nullptr || prompt->empty())
+        return tool_error("ICAD-MCP-ARGS", "required non-empty string argument 'prompt' is missing");
+    return tool_result(parsed_value(agent::conceptualize_json(*prompt)));
+}
+
 [[nodiscard]] auto agent_review(const json::Value* arguments) -> json::Value {
     const auto* source = source_argument(arguments);
     if (source == nullptr)
@@ -153,6 +161,22 @@ auto send(std::ostream& output, const json::Value& message) -> void {
         return tool_result(parsed_value(ai::diagnostics_json(*source)), true);
     }
     return tool_result(parsed_value(ai::visual_snapshot_json(*compilation.ir_project)));
+}
+
+[[nodiscard]] auto comparison_source(const json::Value* arguments) -> json::Value {
+    const auto* first_source = string_at(arguments, "firstSource");
+    const auto* second_source = string_at(arguments, "secondSource");
+    if (first_source == nullptr || second_source == nullptr) {
+        return tool_error("ICAD-MCP-ARGS",
+                          "compare requires firstSource and secondSource strings");
+    }
+    const auto first = compiler::compile(*first_source);
+    if (!first.ok())
+        return tool_result(parsed_value(ai::diagnostics_json(*first_source)), true);
+    const auto second = compiler::compile(*second_source);
+    if (!second.ok())
+        return tool_result(parsed_value(ai::diagnostics_json(*second_source)), true);
+    return tool_result(parsed_value(ai::comparison_json(*first.ir_project, *second.ir_project)));
 }
 
 [[nodiscard]] auto distance_source(const json::Value* arguments) -> json::Value {
@@ -300,7 +324,9 @@ auto send(std::ostream& output, const json::Value& message) -> void {
 
 [[nodiscard]] auto language_guide() -> json::Value {
     constexpr std::string_view guide =
-        "ICAD source is line-oriented. Start with PROJECT name and UNITS mm. "
+        "ICAD source is line-oriented. Optional REQUIRES ICAD 1.0 and REQUIRES CAPABILITY "
+        "name declarations must appear before PROJECT; use the returned capabilities array "
+        "and never emit an unadvertised construct. Start with PROJECT name and UNITS mm. "
         "Declare PARAMETER name quantity and MATERIAL symbol PRESET. Spatial mechanism source "
         "uses ANGLE name quantity, POINT3 name X Y Z where coordinates may reference compatible "
         "parameters, normalized VECTOR name X Y Z, derived POINT3 name FROM point ALONG vector "
@@ -313,8 +339,18 @@ auto send(std::ostream& output, const json::Value& message) -> void {
         "moving joints require VALUE and LIMIT. A PROFILE uses at least "
         "three POINT x-unit y-unit lines, START followed by LINE or ARC endpoint CENTER center "
         "CW|CCW statements and CLOSE, or one CIRCLE center-x center-y radius statement. "
-        "BODY blocks contain optional MATERIAL symbol "
-        "and FEATURE blocks. Solid TYPE values are BOX, CYLINDER, CONE, SPHERE, EXTRUDE, "
+        "The primary solid workflow is a BODY-local ordered feature history: SKETCH name ON "
+        "PLANE XY|XZ|YZ, then PAD feature FROM sketch DEPTH value NEW; attach later sketches "
+        "with SKETCH name ON FACE earlier-feature X_MIN|X_MAX|Y_MIN|Y_MAX|Z_MIN|Z_MAX, then "
+        "PAD feature FROM sketch DEPTH value ADD or POCKET feature FROM sketch DEPTH value. "
+        "A sketch is either one CIRCLE or a named point boundary with optional constraints. "
+        "Every BODY-local sketch requires an explicit ON support and a later consuming operation. "
+        "Its canonical agent-visible identifier is body::sketch, so local sketch names may repeat "
+        "across bodies. PAD and POCKET commands remain distinct in visual feature history. "
+        "Feature names are stable agent-visible history references and declarations must follow "
+        "construction order. BODY blocks contain optional MATERIAL symbol and may "
+        "also use low-level FEATURE blocks for advanced operations. Solid TYPE values are "
+        "BOX, CYLINDER, CONE, SPHERE, EXTRUDE, "
         "REVOLVE, SWEEP, LOFT, or FREEFORM. SWEEP uses PROFILE and a PATH of at least two "
         "named POINT3 values. LOFT adds TARGET_PROFILE and HEIGHT. FREEFORM adds TWIST and "
         "COUNT sections. Ordered operands use OPERATION UNION, CUT, or INTERSECT. Modeling "
@@ -336,22 +372,31 @@ auto send(std::ostream& output, const json::Value& message) -> void {
         "or axis-aligned semantic EDGE selectors with TOLERANCE. SCENE blocks contain duration, "
         "FPS, background, BODY/CAMERA transform tracks, or JOINT tracks whose keyframes use "
         "VALUE within the joint limits. "
-        "Close every block with END. Call icad.compile, then icad.visualize to inspect front, "
+        "Close every block with END. For a new raw request, call icad.agent.conceptualize exactly "
+        "once, emit ICAD grammar only, and do not reconceptualize during repair. Call icad.compile, "
+        "then icad.visualize and use its direct icad.visual.snapshot.v1 result to inspect front, "
         "right, top, and isometric depth rasters with a body legend. Reject unintended overlap "
-        "or a poor silhouette before calling icad.validate and icad.topology to discover stable "
+        "or a poor silhouette. Use icad.compare when choosing between structurally different "
+        "designs; it reports body-set, topology, material, scene, and raster differences but is "
+        "not the visual feedback format. Then "
+        "call icad.validate and icad.topology to discover stable "
         "exact face and edge IDs, and only then icad.build.";
-    return tool_result(
-        object({{"language", "ICAD"},
-                {"version", std::string{server_version}},
-                {"guide", std::string{guide}},
-                {"examples", array({"examples/minimal.icad", "examples/advanced.icad",
-                                    "examples/robotic_arm.icad",
-                                    "examples/boolean_showcase.icad",
-                                    "examples/modeling_tools.icad",
-                                    "examples/advanced_surfaces.icad",
-                                    "examples/constrained_sketch.icad",
-                                    "examples/assembly_instances.icad",
-                                    "examples/assembly_semantics.icad"})}}));
+    json::Value::Array capabilities;
+    for (const auto capability : compiler::language::capabilities()) {
+        capabilities.emplace_back(std::string{capability});
+    }
+    return tool_result(object(
+        {{"language", "ICAD"},
+         {"version", std::string{server_version}},
+         {"languageVersion", std::string{compiler::language::version}},
+         {"capabilities", json::Value{std::move(capabilities)}},
+         {"guide", std::string{guide}},
+         {"examples", array({"examples/minimal.icad", "examples/advanced.icad",
+                             "examples/robotic_arm.icad", "examples/boolean_showcase.icad",
+                             "examples/modeling_tools.icad", "examples/advanced_surfaces.icad",
+                             "examples/constrained_sketch.icad", "examples/sketch_history.icad",
+                             "examples/assembly_instances.icad",
+                             "examples/assembly_semantics.icad"})}}));
 }
 
 [[nodiscard]] auto safe_relative_directory(const std::filesystem::path& workspace,
@@ -711,6 +756,7 @@ auto send(std::ostream& output, const json::Value& message) -> void {
 [[nodiscard]] auto tools_catalog() -> json::Value {
     constexpr std::string_view catalog = R"JSON([
 {"name":"icad.language","title":"ICAD language guide","description":"Return the compact ICAD authoring and workflow guide.","inputSchema":{"type":"object","additionalProperties":false},"annotations":{"readOnlyHint":true}},
+{"name":"icad.agent.conceptualize","title":"Compress and conceptualize a design request","description":"Compress raw design language into deterministic intent tokens, perform exactly one blueprint-aware conceptual pass, and require ICAD grammar-only output. Visual feedback is consumed directly from icad.visualize after compilation.","inputSchema":{"type":"object","properties":{"prompt":{"type":"string","minLength":1}},"required":["prompt"],"additionalProperties":false},"annotations":{"readOnlyHint":true}},
 {"name":"icad.agent.bootstrap","title":"Bootstrap design from prompt","description":"Classify a short design prompt and return a complete compiler-valid ICAD source template, acceptance criteria, parameter strategy, and shortest tool workflow.","inputSchema":{"type":"object","properties":{"prompt":{"type":"string","minLength":1}},"required":["prompt"],"additionalProperties":false},"annotations":{"readOnlyHint":true}},
 {"name":"icad.agent.create","title":"Create complete design from prompt","description":"In one call, classify a prompt, compile and review a maintained parametric design, commit its source with optimistic concurrency, and build the complete artifact package.","inputSchema":{"type":"object","properties":{"prompt":{"type":"string","minLength":1},"path":{"type":"string"},"expectedRevision":{"type":"string"},"outputDirectory":{"type":"string"},"modelName":{"type":"string","pattern":"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"}},"required":["prompt","path","expectedRevision","outputDirectory","modelName"],"additionalProperties":false},"annotations":{"readOnlyHint":false,"destructiveHint":false}},
 {"name":"icad.agent.review","title":"Review design readiness","description":"Compile and perform constraints, manufacturing, topology, metrics, and interference review in one call with focused next actions.","inputSchema":{"type":"object","properties":{"source":{"type":"string"}},"required":["source"],"additionalProperties":false},"annotations":{"readOnlyHint":true}},
@@ -720,6 +766,7 @@ auto send(std::ostream& output, const json::Value& message) -> void {
 {"name":"icad.measure","title":"Measure ICAD design","description":"Return surface area, volume, and world bounds for compiled ICAD source.","inputSchema":{"type":"object","properties":{"source":{"type":"string"}},"required":["source"],"additionalProperties":false},"annotations":{"readOnlyHint":true}},
 {"name":"icad.inspect","title":"Inspect ICAD design","description":"Return canonical design counts, revision fingerprint, body ownership, metrics, and validation state.","inputSchema":{"type":"object","properties":{"source":{"type":"string"}},"required":["source"],"additionalProperties":false},"annotations":{"readOnlyHint":true}},
 {"name":"icad.visualize","title":"Visualize ICAD design for an agent","description":"Return deterministic front, right, top, and isometric depth rasters with a body legend, bounds, triangle counts, and joint state so an agent can evaluate silhouette and placement after every edit.","inputSchema":{"type":"object","properties":{"source":{"type":"string"}},"required":["source"],"additionalProperties":false},"annotations":{"readOnlyHint":true}},
+{"name":"icad.compare","title":"Compare two agentic ICAD designs","description":"Return deterministic body and mechanism graph changes, shared-bounds silhouette/identity difference rasters, spatial envelopes, materials, scenes, and an intent-aware optimization matrix for two substantially different candidates.","inputSchema":{"type":"object","properties":{"firstSource":{"type":"string"},"secondSource":{"type":"string"}},"required":["firstSource","secondSource"],"additionalProperties":false},"annotations":{"readOnlyHint":true}},
 {"name":"icad.topology","title":"Inspect exact ICAD topology","description":"Return stable solid, shell, face, edge, and vertex IDs with analytic curve and surface kinds for agent references.","inputSchema":{"type":"object","properties":{"source":{"type":"string"}},"required":["source"],"additionalProperties":false},"annotations":{"readOnlyHint":true}},
 {"name":"icad.distance","title":"Query body distance","description":"Return exact-polyhedral minimum distance and closest points between two named bodies.","inputSchema":{"type":"object","properties":{"source":{"type":"string"},"firstBody":{"type":"string"},"secondBody":{"type":"string"}},"required":["source","firstBody","secondBody"],"additionalProperties":false},"annotations":{"readOnlyHint":true}},
 {"name":"icad.interference","title":"Query assembly interference","description":"Classify penetrating, contained, and surface-only body contacts.","inputSchema":{"type":"object","properties":{"source":{"type":"string"}},"required":["source"],"additionalProperties":false},"annotations":{"readOnlyHint":true}},
@@ -741,6 +788,8 @@ auto send(std::ostream& output, const json::Value& message) -> void {
                              const std::filesystem::path& workspace) -> std::optional<json::Value> {
     if (name == "icad.language")
         return language_guide();
+    if (name == "icad.agent.conceptualize")
+        return agent_conceptualize(arguments);
     if (name == "icad.agent.bootstrap")
         return agent_bootstrap(arguments);
     if (name == "icad.agent.create")
@@ -759,6 +808,8 @@ auto send(std::ostream& output, const json::Value& message) -> void {
         return inspect_source(arguments, false);
     if (name == "icad.visualize")
         return visual_source(arguments);
+    if (name == "icad.compare")
+        return comparison_source(arguments);
     if (name == "icad.topology")
         return topology_source(arguments);
     if (name == "icad.distance")

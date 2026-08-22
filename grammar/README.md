@@ -4,10 +4,57 @@
 parser. It is a reference for contributors and agent-tool authors; no parser
 generator or grammar runtime is required by the compiler.
 
-Within a `BODY`, features execute in declaration order. The first feature uses
-`OPERATION NEW` implicitly; following features may declare `UNION`, `CUT`, or
-`INTERSECT`. These keywords are language semantics implemented by the native
-geometry engine, not exporter hints.
+## Production grammar and v2 proposal
+
+- [`icad.ebnf`](icad.ebnf) is the only syntax accepted by the current compiler.
+- [`icad-v2-proposal.ebnf`](icad-v2-proposal.ebnf) is a non-production RFC for
+  multi-shape sketching, persistent topology, industrial features, parts,
+  assemblies, validation, drawings, and richer agent feedback.
+- The [language v2 RFC](../docs/grammar-v2-rfc.md) defines the semantics and the
+  implementation gates behind that proposal.
+- The [v2 compiler and engine architecture](../docs/compiler-v2-architecture.md)
+  specifies the lossless lexer, compiler passes, native modeling kernel,
+  incremental execution, and thread-safety boundaries.
+
+Agents must use `icad.language` capability results and must not emit proposed
+syntax until the running compiler advertises the corresponding capability.
+
+Production sources may now declare their contract before `PROJECT`:
+
+```icad
+REQUIRES ICAD 1.0
+REQUIRES CAPABILITY BODY_HISTORY
+```
+
+`REQUIRES ICAD MAJOR.MINOR` rejects a newer unsupported language before normal
+parsing. `REQUIRES CAPABILITY NAME` accepts only names returned by `icad
+language` and MCP `icad.language`. Requirements are retained in the AST, must
+precede every other declaration, and produce stable `ICAD-C0001` through
+`ICAD-C0005` diagnostics for malformed, unsupported, duplicate, or late
+headers. Compiler package version `0.21.0` and language contract version `1.0`
+are intentionally separate.
+
+The lexer reserves tokens needed by later slices: qualified-name dots,
+selector brackets, expression punctuation, JSON-style strings, comments, and
+decimal exponents. This is lexical preparation only. The production parser
+still rejects v2 constructs, and signed numeric literals remain compatible with
+the current grammar until expression parsing is implemented.
+
+Within a `BODY`, the primary grammar is an ordered CAD-style history. Start
+with `SKETCH name ON PLANE XY|XZ|YZ`, create the first solid with `PAD name FROM
+sketch DEPTH value NEW`, then use `SKETCH name ON FACE earlier-feature
+face-selector` before `PAD ... ADD` or `POCKET`. A face support must be declared
+earlier in the same body. Every body-local sketch requires an explicit `ON`
+support and must feed a later operation; unfinished construction sketches are
+rejected until construction-only semantics exist. Local sketch names are
+scoped by body and become stable `body::sketch` identifiers in canonical IR.
+These are language semantics implemented by the native geometry engine, not
+exporter hints.
+
+Low-level `FEATURE` blocks also execute in declaration order. The first feature
+uses `OPERATION NEW` implicitly; following features may declare `UNION`, `CUT`,
+or `INTERSECT`. They remain the advanced and compatibility surface for
+operations without a concise history statement.
 
 Modifier features follow an existing solid. `CHAMFER` and `FILLET` use `SELECT
 EDGE NEAREST point`; `LINEAR_PATTERN` uses `DIRECTION`, integer `COUNT`, and a
@@ -19,8 +66,13 @@ requires `PROFILE`, `TARGET_PROFILE`, and `HEIGHT`; `FREEFORM` adds `TWIST`
 and a section `COUNT` from 3 through 128. Full `REVOLVE` accepts line, arc, and
 circle profiles.
 
-`SKETCH name` blocks contain named `POINT name X Y [FIXED]` declarations and
-scoped constraints. `HORIZONTAL`, `VERTICAL`, and `COINCIDENT` take two point
+`SKETCH` blocks contain either one `CIRCLE center-x center-y radius` or named
+`POINT name X Y [FIXED]` declarations followed by an ordered boundary of
+`LINE name FROM point TO point` and `ARC name FROM point TO point CENTER point
+CW|CCW` entities. An explicit entity chain must close end-to-start and makes
+topology independent from point declaration order. Legacy point-only polygons
+remain accepted for compatibility. Circle and point/entity forms cannot be
+mixed. `HORIZONTAL`, `VERTICAL`, and `COINCIDENT` take two point
 references; `DISTANCE` adds a length value; `ANGLE` takes point–vertex–point
 references and an unsigned angle. Solved closed sketches are available as
 profiles under the sketch name.

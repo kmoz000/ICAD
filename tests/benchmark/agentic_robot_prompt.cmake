@@ -31,13 +31,13 @@ execute_process(
     ERROR_VARIABLE create_error
 )
 foreach(expected IN ITEMS "\"ready\":true" "\"bodies\":10" "\"joints\":10"
-                          "\"degreesOfFreedom\":7" "\"topologyValid\":true"
+                          "\"degreesOfFreedom\":9" "\"topologyValid\":true"
                           "\"intent\":\"ROBOTIC_ARM\"" "\"expectedModelIterations\":1"
                           "\"schema\":\"icad.agent.design-map.v1\""
                           "\"selectedTemplate\":\"robotic_arm\""
-                          "\"name\":\"preview_forearm_axis\""
-                          "\"child\":\"arm_02\""
-                          "components=10" "solids=24")
+                          "\"name\":\"forearm_axis\""
+                          "\"child\":\"forearm\""
+                          "components=10" "solids=25")
     if(NOT create_result EQUAL 0 OR NOT create_output MATCHES "${expected}")
         message(FATAL_ERROR "one-command robotic creation is missing ${expected}: ${create_error}${create_output}")
     endif()
@@ -49,7 +49,7 @@ execute_process(
     OUTPUT_VARIABLE step_output
     ERROR_VARIABLE step_error
 )
-if(NOT step_result EQUAL 0 OR NOT step_output MATCHES "STEP_SOLIDS 24" OR
+if(NOT step_result EQUAL 0 OR NOT step_output MATCHES "STEP_SOLIDS 25" OR
    NOT step_output MATCHES "STEP_ASSEMBLY_COMPONENTS 10")
     message(FATAL_ERROR "robotic prompt STEP assembly failed: ${step_error}${step_output}")
 endif()
@@ -61,8 +61,10 @@ execute_process(
 )
 if(NOT visual_result EQUAL 0 OR
    NOT visual_output MATCHES "\"schema\":\"icad.visual.snapshot.v1\"" OR
-   NOT visual_output MATCHES "\"body\":\"gripper_1\",\"parts\":2,\"triangles\":72" OR
-   NOT visual_output MATCHES "\"body\":\"gear_1\",\"parts\":2,\"triangles\":220")
+   NOT visual_output MATCHES "\"body\":\"upper_jaw\",\"parts\":2,\"triangles\":180" OR
+   NOT visual_output MATCHES "\"body\":\"drive_gear\",\"parts\":2,\"triangles\":220" OR
+   NOT visual_output MATCHES "\"disconnectedJoints\":0" OR
+   NOT visual_output MATCHES "\"rootMaxDisplacementMm\":0")
     message(FATAL_ERROR "agent-created robot lacks the accepted visual snapshot: ${visual_error}${visual_output}")
 endif()
-message(STATUS "one-command robotic prompt passed against reference: 10 source components, 10 ICAD bodies, 10 joints, 7 DOF, 24 solids, and four agent-readable views")
+message(STATUS "one-command robotic prompt passed against reference: 10 source components, 10 ICAD bodies, 10 joints, 9 DOF, 25 solids, exact attachments, grounded scene samples, and four agent-readable views")

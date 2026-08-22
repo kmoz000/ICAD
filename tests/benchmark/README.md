@@ -6,9 +6,10 @@ syntax, semantic, geometry, exact-topology, constraint, manufacturing,
 read-back, and runtime outcomes.
 
 The bridge baseline contains 35 solids, 250 exact vertices, 375 exact edges,
-and 195 exact faces. The robotic-arm baseline contains 24 solids, 242 exact
-vertices, 363 exact edges, and 169 exact faces in addition to reference STEP/STL
-comparisons, four depth-raster views, and its semantic mechanism graph. The boolean showcase locks
+and 195 exact faces. The robotic-arm baseline contains 25 solids, 274 exact
+vertices, 411 exact edges, and 187 exact faces in addition to reference STEP/STL
+comparisons, four depth-raster views, actual mesh-volume joint attachment, three
+connected scene samples, a stationary root, and its semantic mechanism graph. The boolean showcase locks
 ordered union/cut/intersection behavior at 2,840 mm3, validates all repaired
 shells, and structurally reads back its STEP and STL outputs.
 The modeling-tools case locks semantic edge selection, fillet, chamfer, a
@@ -19,6 +20,10 @@ four validated solids and 2,148 facets, with structural STEP/STL read-back.
 The constrained-sketch case solves nine geometric and dimensional equations to
 zero remaining degrees of freedom, converts the solved loop into an extrusion
 profile, and reads the resulting solid back from STEP and STL.
+The sketch-history case executes a datum-plane pad, a face-attached additive
+pad, and a face-attached circular pocket. It locks the complete 100 x 60 x 32 mm
+envelope, agent-readable feature history, manifold solid, and STEP/STL
+read-back so coplanar face operations cannot silently discard the base solid.
 The incremental case compiles a two-body dependency graph, proves full reuse on
 an unchanged source, and then changes one parameter while requiring exactly one
 dirty body recomputation and one cached topology reuse.
@@ -31,8 +36,8 @@ all three STEP solids.
 
 The agentic prompt case invokes `agent-create` once with a short articulated
 robot-arm request. It requires the embedded low-iteration contract, 10 bodies,
-10 joints, 7 driven degrees of freedom, valid topology, and structural
-read-back of the generated 24-solid STEP assembly. It first validates the
+10 joints, 9 driven degrees of freedom, valid topology, and structural
+read-back of the generated 25-solid STEP assembly. It first validates the
 supplied reference folder's 10 STL components and 20-solid STEP baseline, then
 requires the generated response to contain the spatial/mechanism design map and
 a visual snapshot with detailed gear and gripper silhouettes.

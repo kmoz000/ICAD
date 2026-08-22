@@ -15,6 +15,9 @@ struct LexResult {
     [[nodiscard]] auto ok() const noexcept -> bool { return diagnostics.empty(); }
 };
 
+// Lexes one immutable source snapshot. Tokens retain their spelling for the
+// current parser and also carry zero-based byte spans plus one-based source
+// locations for editor and incremental-compiler consumers.
 [[nodiscard]] auto lex(std::string_view source) -> LexResult;
 
 } // namespace icad::compiler

@@ -7,15 +7,19 @@
 #include "icad/constraints/validator.hpp"
 #include "icad/document/revision.hpp"
 #include "icad/manufacturing/validator.hpp"
+#include "icad/scene/evaluator.hpp"
 
 #include "../cad/model.hpp"
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cmath>
 #include <iomanip>
 #include <iterator>
 #include <limits>
+#include <map>
+#include <optional>
 #include <sstream>
 #include <unordered_map>
 #include <unordered_set>
@@ -188,6 +192,17 @@ constexpr std::array snapshot_views{
                  {0.577350269189626, 0.577350269189626, 0.577350269189626}},
 };
 
+constexpr std::size_t snapshot_width = 64;
+constexpr std::size_t snapshot_height = 32;
+constexpr std::string_view snapshot_symbols =
+    "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+
+struct SnapshotRaster {
+    std::array<double, 4> bounds{};
+    std::vector<char> pixels;
+    std::size_t occupied_cells{};
+};
+
 [[nodiscard]] auto project_point(const cad::Point3& point, const SnapshotView& view)
     -> ProjectedPoint {
     const auto dot = [&](const std::array<double, 3>& axis) {
@@ -226,13 +241,8 @@ constexpr std::array snapshot_views{
            weights[2] >= tolerance;
 }
 
-auto write_snapshot_view(std::ostringstream& output, const cad::Model& model,
-                         const std::vector<std::string>& bodies, const SnapshotView& view)
-    -> void {
-    constexpr std::size_t width = 64;
-    constexpr std::size_t height = 32;
-    constexpr std::string_view symbols =
-        "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+[[nodiscard]] auto snapshot_bounds(const cad::Model& model, const SnapshotView& view)
+    -> std::array<double, 4> {
     double minimum_u = std::numeric_limits<double>::max();
     double minimum_v = std::numeric_limits<double>::max();
     double maximum_u = std::numeric_limits<double>::lowest();
@@ -256,10 +266,22 @@ auto write_snapshot_view(std::ostringstream& output, const cad::Model& model,
     maximum_u += span_u * 0.03;
     minimum_v -= span_v * 0.03;
     maximum_v += span_v * 0.03;
-    const double cell_u = (maximum_u - minimum_u) / static_cast<double>(width);
-    const double cell_v = (maximum_v - minimum_v) / static_cast<double>(height);
-    std::vector<char> pixels(width * height, '.');
-    std::vector<double> depths(width * height, std::numeric_limits<double>::lowest());
+    return {minimum_u, minimum_v, maximum_u, maximum_v};
+}
+
+[[nodiscard]] auto rasterize_snapshot(const cad::Model& model,
+                                      const std::vector<std::string>& bodies,
+                                      const SnapshotView& view,
+                                      const std::array<double, 4>& bounds) -> SnapshotRaster {
+    const double minimum_u = bounds[0];
+    const double minimum_v = bounds[1];
+    const double maximum_u = bounds[2];
+    const double maximum_v = bounds[3];
+    const double cell_u = (maximum_u - minimum_u) / static_cast<double>(snapshot_width);
+    const double cell_v = (maximum_v - minimum_v) / static_cast<double>(snapshot_height);
+    std::vector<char> pixels(snapshot_width * snapshot_height, '.');
+    std::vector<double> depths(snapshot_width * snapshot_height,
+                               std::numeric_limits<double>::lowest());
     std::unordered_map<std::string_view, std::size_t> body_indices;
     body_indices.reserve(bodies.size());
     for (std::size_t index = 0; index < bodies.size(); ++index)
@@ -270,7 +292,7 @@ auto write_snapshot_view(std::ostringstream& output, const cad::Model& model,
         if (body == body_indices.end())
             continue;
         const auto body_index = body->second;
-        if (body_index >= symbols.size())
+        if (body_index >= snapshot_symbols.size())
             continue;
         for (const auto& triangle : part.triangles) {
             const auto first = project_point(part.vertices[triangle[0]], view);
@@ -282,16 +304,16 @@ auto write_snapshot_view(std::ostringstream& output, const cad::Model& model,
             const double triangle_max_v = std::max({first.v, second.v, third.v});
             const auto min_column = static_cast<std::size_t>(std::clamp(
                 std::floor((triangle_min_u - minimum_u) / cell_u), 0.0,
-                static_cast<double>(width - 1)));
+                static_cast<double>(snapshot_width - 1)));
             const auto max_column = static_cast<std::size_t>(std::clamp(
                 std::floor((triangle_max_u - minimum_u) / cell_u), 0.0,
-                static_cast<double>(width - 1)));
+                static_cast<double>(snapshot_width - 1)));
             const auto min_row_from_bottom = static_cast<std::size_t>(std::clamp(
                 std::floor((triangle_min_v - minimum_v) / cell_v), 0.0,
-                static_cast<double>(height - 1)));
+                static_cast<double>(snapshot_height - 1)));
             const auto max_row_from_bottom = static_cast<std::size_t>(std::clamp(
                 std::floor((triangle_max_v - minimum_v) / cell_v), 0.0,
-                static_cast<double>(height - 1)));
+                static_cast<double>(snapshot_height - 1)));
             for (std::size_t row_from_bottom = min_row_from_bottom;
                  row_from_bottom <= max_row_from_bottom; ++row_from_bottom) {
                 for (std::size_t column = min_column; column <= max_column; ++column) {
@@ -303,29 +325,547 @@ auto write_snapshot_view(std::ostringstream& output, const cad::Model& model,
                         continue;
                     const double depth = weights[0] * first.depth + weights[1] * second.depth +
                                          weights[2] * third.depth;
-                    const std::size_t row = height - row_from_bottom - 1;
-                    const std::size_t pixel = row * width + column;
+                    const std::size_t row = snapshot_height - row_from_bottom - 1;
+                    const std::size_t pixel = row * snapshot_width + column;
                     if (depth >= depths[pixel]) {
                         depths[pixel] = depth;
-                        pixels[pixel] = symbols[body_index];
+                        pixels[pixel] = snapshot_symbols[body_index];
                     }
                 }
             }
         }
     }
 
+    const auto occupied = static_cast<std::size_t>(
+        std::ranges::count_if(pixels, [](char value) { return value != '.'; }));
+    return {bounds, std::move(pixels), occupied};
+}
+
+auto write_snapshot_raster(std::ostringstream& output, const SnapshotView& view,
+                           const SnapshotRaster& raster) -> void {
     output << "{\"name\":" << quoted(view.name) << ",\"horizontalAxis\":"
            << quoted(view.horizontal_axis) << ",\"verticalAxis\":"
-           << quoted(view.vertical_axis) << ",\"projectedBounds\":[" << minimum_u << ','
-           << minimum_v << ',' << maximum_u << ',' << maximum_v
-           << "],\"grid\":{\"width\":" << width << ",\"height\":" << height
-           << ",\"rows\":[";
-    for (std::size_t row = 0; row < height; ++row) {
+           << quoted(view.vertical_axis) << ",\"projectedBounds\":[" << raster.bounds[0]
+           << ',' << raster.bounds[1] << ',' << raster.bounds[2] << ',' << raster.bounds[3]
+           << "],\"occupiedCells\":" << raster.occupied_cells << ",\"grid\":{\"width\":"
+           << snapshot_width << ",\"height\":" << snapshot_height << ",\"rows\":[";
+    for (std::size_t row = 0; row < snapshot_height; ++row) {
         if (row != 0)
             output << ',';
-        output << quoted(std::string_view{pixels.data() + row * width, width});
+        output << quoted(std::string_view{raster.pixels.data() + row * snapshot_width,
+                                          snapshot_width});
     }
     output << "]}}";
+}
+
+auto write_snapshot_view(std::ostringstream& output, const cad::Model& model,
+                         const std::vector<std::string>& bodies, const SnapshotView& view)
+    -> void {
+    write_snapshot_raster(output, view,
+                          rasterize_snapshot(model, bodies, view, snapshot_bounds(model, view)));
+}
+
+struct ComparisonBodySummary {
+    std::size_t parts{};
+    std::size_t vertices{};
+    std::size_t triangles{};
+    std::string material;
+    std::string material_preset;
+    std::array<double, 3> minimum{std::numeric_limits<double>::max(),
+                                  std::numeric_limits<double>::max(),
+                                  std::numeric_limits<double>::max()};
+    std::array<double, 3> maximum{std::numeric_limits<double>::lowest(),
+                                  std::numeric_limits<double>::lowest(),
+                                  std::numeric_limits<double>::lowest()};
+};
+
+using ComparisonBodies = std::map<std::string, ComparisonBodySummary>;
+
+[[nodiscard]] auto comparison_bodies(const compiler::ir::Project& project,
+                                     const cad::Model& model) -> ComparisonBodies {
+    ComparisonBodies result;
+    std::unordered_map<std::string_view, std::string_view> presets;
+    presets.reserve(project.materials.size());
+    for (const auto& material : project.materials)
+        presets.emplace(material.name, material.preset);
+    for (const auto& body : project.bodies) {
+        auto& summary = result[body.name];
+        summary.material = body.material;
+        const auto preset = presets.find(body.material);
+        if (preset != presets.end())
+            summary.material_preset = preset->second;
+    }
+    for (const auto& part : model.parts) {
+        auto& summary = result[part.body];
+        ++summary.parts;
+        summary.vertices += part.vertices.size();
+        summary.triangles += part.triangles.size();
+        if (summary.material.empty())
+            summary.material = part.material;
+        for (const auto& vertex : part.vertices) {
+            summary.minimum[0] = std::min(summary.minimum[0], vertex.x);
+            summary.minimum[1] = std::min(summary.minimum[1], vertex.y);
+            summary.minimum[2] = std::min(summary.minimum[2], vertex.z);
+            summary.maximum[0] = std::max(summary.maximum[0], vertex.x);
+            summary.maximum[1] = std::max(summary.maximum[1], vertex.y);
+            summary.maximum[2] = std::max(summary.maximum[2], vertex.z);
+        }
+    }
+    return result;
+}
+
+[[nodiscard]] auto semantic_role_hint(std::string_view name) -> std::string_view {
+    std::string lowered{name};
+    std::ranges::transform(lowered, lowered.begin(), [](unsigned char character) {
+        return static_cast<char>(std::tolower(character));
+    });
+    if (lowered.contains("sensor") || lowered.contains("vision") || lowered.contains("camera"))
+        return "sensing";
+    if (lowered.contains("vacuum") || lowered.contains("suction") || lowered.contains("cup"))
+        return "vacuumEndEffector";
+    if (lowered.contains("gear") || lowered.contains("drive"))
+        return "transmission";
+    if (lowered.contains("grip") || lowered.contains("finger") || lowered.contains("claw") ||
+        lowered.contains("linkage"))
+        return "mechanicalEndEffector";
+    if (lowered.contains("arm") || lowered.contains("link") || lowered.contains("wrist"))
+        return "kinematicLink";
+    if (lowered.contains("base") || lowered.contains("waist") || lowered.contains("mount"))
+        return "support";
+    return "structure";
+}
+
+[[nodiscard]] auto moving_joint_count(const compiler::ir::Project& project) -> std::size_t {
+    return static_cast<std::size_t>(
+        std::ranges::count_if(project.joints, [](const auto& joint) {
+            return joint.kind != compiler::ir::JointKind::fixed;
+        }));
+}
+
+[[nodiscard]] auto scene_track_count(const compiler::ir::Project& project) -> std::size_t {
+    std::size_t count = 0;
+    for (const auto& scene : project.scenes)
+        count += scene.tracks.size();
+    return count;
+}
+
+[[nodiscard]] auto scene_keyframe_count(const compiler::ir::Project& project) -> std::size_t {
+    std::size_t count = 0;
+    for (const auto& scene : project.scenes) {
+        for (const auto& track : scene.tracks)
+            count += track.keyframes.size();
+    }
+    return count;
+}
+
+auto write_mechanism_summary(std::ostringstream& output,
+                             const compiler::ir::Project& project) -> void {
+    output << "{\"movingDof\":" << moving_joint_count(project)
+           << ",\"rootBodies\":[";
+    bool first_root = true;
+    for (const auto& joint : project.joints) {
+        if (joint.parent_body != "WORLD")
+            continue;
+        if (!first_root)
+            output << ',';
+        first_root = false;
+        output << quoted(joint.child_body);
+    }
+    output << "],\"edges\":[";
+    for (std::size_t index = 0; index < project.joints.size(); ++index) {
+        if (index != 0)
+            output << ',';
+        const auto& joint = project.joints[index];
+        output << "{\"joint\":" << quoted(joint.name) << ",\"type\":"
+               << quoted(joint_kind_name(joint.kind)) << ",\"parent\":"
+               << quoted(joint.parent_body) << ",\"child\":" << quoted(joint.child_body)
+               << ",\"anchor\":" << quoted(joint.point) << ",\"axis\":"
+               << quoted(joint.axis) << ",\"value\":" << joint.value << ",\"limits\":["
+               << joint.lower_limit << ',' << joint.upper_limit << "]}";
+    }
+    output << "]}";
+}
+
+[[nodiscard]] auto body_for_pixel(char pixel, const std::vector<std::string>& bodies)
+    -> std::string_view {
+    const auto index = snapshot_symbols.find(pixel);
+    return index == std::string_view::npos || index >= bodies.size() ? std::string_view{}
+                                                                     : bodies[index];
+}
+
+auto write_view_delta(std::ostringstream& output, const cad::Model& first_model,
+                      const cad::Model& second_model) -> void {
+    const auto first_bodies = body_names(first_model);
+    const auto second_bodies = body_names(second_model);
+    output << "{\"representation\":\"shared-world-bounds-cell-diff\","
+              "\"legend\":{\".\":\"empty\",\"=\":\"same named body\","
+              "\"!\":\"both occupied by different bodies\","
+              "\"A\":\"first only\",\"B\":\"second only\"},\"views\":[";
+    for (std::size_t view_index = 0; view_index < snapshot_views.size(); ++view_index) {
+        if (view_index != 0)
+            output << ',';
+        const auto& view = snapshot_views[view_index];
+        const auto first_bounds = snapshot_bounds(first_model, view);
+        const auto second_bounds = snapshot_bounds(second_model, view);
+        const std::array shared_bounds{
+            std::min(first_bounds[0], second_bounds[0]),
+            std::min(first_bounds[1], second_bounds[1]),
+            std::max(first_bounds[2], second_bounds[2]),
+            std::max(first_bounds[3], second_bounds[3]),
+        };
+        const auto first = rasterize_snapshot(first_model, first_bodies, view, shared_bounds);
+        const auto second = rasterize_snapshot(second_model, second_bodies, view, shared_bounds);
+        std::vector<char> difference(snapshot_width * snapshot_height, '.');
+        std::size_t first_only = 0;
+        std::size_t second_only = 0;
+        std::size_t same_body = 0;
+        std::size_t different_body = 0;
+        for (std::size_t pixel = 0; pixel < difference.size(); ++pixel) {
+            const bool first_occupied = first.pixels[pixel] != '.';
+            const bool second_occupied = second.pixels[pixel] != '.';
+            if (first_occupied && !second_occupied) {
+                difference[pixel] = 'A';
+                ++first_only;
+            } else if (!first_occupied && second_occupied) {
+                difference[pixel] = 'B';
+                ++second_only;
+            } else if (first_occupied) {
+                const auto first_body = body_for_pixel(first.pixels[pixel], first_bodies);
+                const auto second_body = body_for_pixel(second.pixels[pixel], second_bodies);
+                if (first_body == second_body) {
+                    difference[pixel] = '=';
+                    ++same_body;
+                } else {
+                    difference[pixel] = '!';
+                    ++different_body;
+                }
+            }
+        }
+        const std::size_t intersection = same_body + different_body;
+        const std::size_t union_cells = intersection + first_only + second_only;
+        const double silhouette_iou = union_cells == 0
+                                          ? 1.0
+                                          : static_cast<double>(intersection) /
+                                                static_cast<double>(union_cells);
+        const double identity_agreement = intersection == 0
+                                              ? 1.0
+                                              : static_cast<double>(same_body) /
+                                                    static_cast<double>(intersection);
+        const double changed_fraction = union_cells == 0
+                                            ? 0.0
+                                            : static_cast<double>(first_only + second_only +
+                                                                  different_body) /
+                                                  static_cast<double>(union_cells);
+        output << "{\"name\":" << quoted(view.name) << ",\"sharedProjectedBounds\":["
+               << shared_bounds[0] << ',' << shared_bounds[1] << ',' << shared_bounds[2] << ','
+               << shared_bounds[3] << "],\"cells\":{\"firstOccupied\":"
+               << first.occupied_cells << ",\"secondOccupied\":" << second.occupied_cells
+               << ",\"firstOnly\":" << first_only << ",\"secondOnly\":" << second_only
+               << ",\"sameBody\":" << same_body << ",\"differentBody\":"
+               << different_body << "},\"silhouetteIntersectionOverUnion\":"
+               << silhouette_iou << ",\"bodyIdentityAgreement\":" << identity_agreement
+               << ",\"changedFraction\":" << changed_fraction
+               << ",\"differenceGrid\":{\"width\":" << snapshot_width
+               << ",\"height\":" << snapshot_height << ",\"rows\":[";
+        for (std::size_t row = 0; row < snapshot_height; ++row) {
+            if (row != 0)
+                output << ',';
+            output << quoted(std::string_view{difference.data() + row * snapshot_width,
+                                              snapshot_width});
+        }
+        output << "]}}";
+    }
+    output << "]}";
+}
+
+[[nodiscard]] auto subtract(const cad::Point3& first, const cad::Point3& second) -> cad::Point3 {
+    return {first.x - second.x, first.y - second.y, first.z - second.z};
+}
+
+[[nodiscard]] auto add(const cad::Point3& first, const cad::Point3& second) -> cad::Point3 {
+    return {first.x + second.x, first.y + second.y, first.z + second.z};
+}
+
+[[nodiscard]] auto scale(const cad::Point3& point, double amount) -> cad::Point3 {
+    return {point.x * amount, point.y * amount, point.z * amount};
+}
+
+[[nodiscard]] auto dot(const cad::Point3& first, const cad::Point3& second) -> double {
+    return first.x * second.x + first.y * second.y + first.z * second.z;
+}
+
+[[nodiscard]] auto cross(const cad::Point3& first, const cad::Point3& second) -> cad::Point3 {
+    return {first.y * second.z - first.z * second.y,
+            first.z * second.x - first.x * second.z,
+            first.x * second.y - first.y * second.x};
+}
+
+[[nodiscard]] auto point_triangle_distance(const cad::Point3& point, const cad::Point3& a,
+                                           const cad::Point3& b, const cad::Point3& c) -> double {
+    const auto ab = subtract(b, a);
+    const auto ac = subtract(c, a);
+    const auto ap = subtract(point, a);
+    const double d1 = dot(ab, ap);
+    const double d2 = dot(ac, ap);
+    if (d1 <= 0.0 && d2 <= 0.0)
+        return std::sqrt(dot(ap, ap));
+
+    const auto bp = subtract(point, b);
+    const double d3 = dot(ab, bp);
+    const double d4 = dot(ac, bp);
+    if (d3 >= 0.0 && d4 <= d3)
+        return std::sqrt(dot(bp, bp));
+
+    const double vc = d1 * d4 - d3 * d2;
+    if (vc <= 0.0 && d1 >= 0.0 && d3 <= 0.0) {
+        const auto projection = add(a, scale(ab, d1 / (d1 - d3)));
+        const auto delta = subtract(point, projection);
+        return std::sqrt(dot(delta, delta));
+    }
+
+    const auto cp = subtract(point, c);
+    const double d5 = dot(ab, cp);
+    const double d6 = dot(ac, cp);
+    if (d6 >= 0.0 && d5 <= d6)
+        return std::sqrt(dot(cp, cp));
+
+    const double vb = d5 * d2 - d1 * d6;
+    if (vb <= 0.0 && d2 >= 0.0 && d6 <= 0.0) {
+        const auto projection = add(a, scale(ac, d2 / (d2 - d6)));
+        const auto delta = subtract(point, projection);
+        return std::sqrt(dot(delta, delta));
+    }
+
+    const double va = d3 * d6 - d5 * d4;
+    if (va <= 0.0 && d4 - d3 >= 0.0 && d5 - d6 >= 0.0) {
+        const auto edge = subtract(c, b);
+        const auto projection = add(b, scale(edge, (d4 - d3) / ((d4 - d3) + (d5 - d6))));
+        const auto delta = subtract(point, projection);
+        return std::sqrt(dot(delta, delta));
+    }
+
+    const auto normal = cross(ab, ac);
+    const double normal_length = std::sqrt(dot(normal, normal));
+    return normal_length <= 1.0e-15 ? std::numeric_limits<double>::max()
+                                   : std::abs(dot(ap, normal)) / normal_length;
+}
+
+[[nodiscard]] auto ray_triangle_hit(const cad::Point3& origin, const cad::Point3& direction,
+                                    const cad::Point3& a, const cad::Point3& b,
+                                    const cad::Point3& c) -> std::optional<double> {
+    constexpr double epsilon = 1.0e-10;
+    const auto first_edge = subtract(b, a);
+    const auto second_edge = subtract(c, a);
+    const auto h = cross(direction, second_edge);
+    const double determinant = dot(first_edge, h);
+    if (std::abs(determinant) <= epsilon)
+        return std::nullopt;
+    const double inverse = 1.0 / determinant;
+    const auto s = subtract(origin, a);
+    const double u = inverse * dot(s, h);
+    if (u < -epsilon || u > 1.0 + epsilon)
+        return std::nullopt;
+    const auto q = cross(s, first_edge);
+    const double v = inverse * dot(direction, q);
+    if (v < -epsilon || u + v > 1.0 + epsilon)
+        return std::nullopt;
+    const double distance = inverse * dot(second_edge, q);
+    return distance > epsilon ? std::optional<double>{distance} : std::nullopt;
+}
+
+[[nodiscard]] auto point_inside_part(const cad::Part& part, const cad::Point3& point) -> bool {
+    const cad::Point3 direction{0.8192319205190405, 0.3047588739149585,
+                                0.4853216186274828};
+    std::vector<double> hits;
+    for (const auto& triangle : part.triangles) {
+        const auto hit = ray_triangle_hit(point, direction, part.vertices[triangle[0]],
+                                          part.vertices[triangle[1]], part.vertices[triangle[2]]);
+        if (hit)
+            hits.push_back(*hit);
+    }
+    std::ranges::sort(hits);
+    std::size_t unique_hits = 0;
+    double previous = std::numeric_limits<double>::lowest();
+    for (const double hit : hits) {
+        if (unique_hits == 0 || std::abs(hit - previous) > 1.0e-7) {
+            ++unique_hits;
+            previous = hit;
+        }
+    }
+    return unique_hits % 2 == 1;
+}
+
+[[nodiscard]] auto body_geometry_gap(const cad::Model& model, std::string_view body,
+                                     const std::array<double, 3>& position,
+                                     double tolerance) -> std::optional<double> {
+    const cad::Point3 point{position[0], position[1], position[2]};
+    double minimum = std::numeric_limits<double>::max();
+    bool found = false;
+    for (const auto& part : model.parts) {
+        if (part.body != body)
+            continue;
+        found = true;
+        double surface_distance = std::numeric_limits<double>::max();
+        for (const auto& triangle : part.triangles) {
+            surface_distance = std::min(
+                surface_distance,
+                point_triangle_distance(point, part.vertices[triangle[0]],
+                                        part.vertices[triangle[1]], part.vertices[triangle[2]]));
+        }
+        if (surface_distance <= tolerance || point_inside_part(part, point))
+            return 0.0;
+        minimum = std::min(minimum, surface_distance);
+    }
+    return found ? std::optional<double>{minimum} : std::nullopt;
+}
+
+auto write_string_array(std::ostringstream& output, const std::vector<std::string>& values)
+    -> void {
+    output << '[';
+    for (std::size_t index = 0; index < values.size(); ++index) {
+        if (index != 0)
+            output << ',';
+        output << quoted(values[index]);
+    }
+    output << ']';
+}
+
+auto write_comparison_design(std::ostringstream& output, const compiler::ir::Project& project,
+                             const cad::Model& model, const cad::TopologyModel& topology,
+                             const ComparisonBodies& bodies) -> void {
+    const auto analysis = cad::analyze(project);
+    std::map<std::string_view, std::size_t> role_histogram;
+    for (const auto& [name, body] : bodies) {
+        static_cast<void>(body);
+        ++role_histogram[semantic_role_hint(name)];
+    }
+    output << "{\"project\":" << quoted(project.name) << ",\"revision\":"
+           << quoted(document::revision_id(document::fingerprint(project)))
+           << ",\"counts\":{\"bodies\":" << project.bodies.size()
+           << ",\"features\":" << feature_count(project) << ",\"parts\":"
+           << model.parts.size() << ",\"vertices\":" << model.vertex_count()
+           << ",\"triangles\":" << model.triangle_count() << ",\"solids\":"
+           << topology.solids.size() << ",\"topologyVertices\":"
+           << topology.vertex_count() << ",\"topologyEdges\":" << topology.edge_count()
+           << ",\"topologyFaces\":" << topology.face_count() << ",\"joints\":"
+           << project.joints.size() << ",\"movingDof\":" << moving_joint_count(project)
+           << ",\"materials\":" << project.materials.size() << ",\"scenes\":"
+           << project.scenes.size() << "},\"boundsMm\":{\"minimum\":["
+           << analysis.bounds.minimum[0] << ',' << analysis.bounds.minimum[1] << ','
+           << analysis.bounds.minimum[2] << "],\"maximum\":[" << analysis.bounds.maximum[0]
+           << ',' << analysis.bounds.maximum[1] << ',' << analysis.bounds.maximum[2]
+           << "],\"size\":[" << analysis.bounds.maximum[0] - analysis.bounds.minimum[0] << ','
+           << analysis.bounds.maximum[1] - analysis.bounds.minimum[1] << ','
+           << analysis.bounds.maximum[2] - analysis.bounds.minimum[2]
+           << "],\"envelopeVolumeMm3\":"
+           << (analysis.bounds.maximum[0] - analysis.bounds.minimum[0]) *
+                  (analysis.bounds.maximum[1] - analysis.bounds.minimum[1]) *
+                  (analysis.bounds.maximum[2] - analysis.bounds.minimum[2])
+           << "},\"materials\":[";
+    for (std::size_t index = 0; index < project.materials.size(); ++index) {
+        if (index != 0)
+            output << ',';
+        const auto& material = project.materials[index];
+        output << "{\"name\":" << quoted(material.name) << ",\"preset\":"
+               << quoted(material.preset) << ",\"texture\":" << quoted(material.texture)
+               << '}';
+    }
+    output << "],\"scenes\":[";
+    for (std::size_t index = 0; index < project.scenes.size(); ++index) {
+        if (index != 0)
+            output << ',';
+        const auto& scene = project.scenes[index];
+        std::size_t keyframes = 0;
+        for (const auto& track : scene.tracks)
+            keyframes += track.keyframes.size();
+        output << "{\"name\":" << quoted(scene.name) << ",\"durationSeconds\":"
+               << scene.duration_seconds << ",\"fps\":" << scene.frames_per_second
+               << ",\"tracks\":" << scene.tracks.size() << ",\"keyframes\":"
+               << keyframes << '}';
+    }
+    output << "],\"bodies\":[";
+    std::size_t index = 0;
+    for (const auto& [name, body] : bodies) {
+        if (index++ != 0)
+            output << ',';
+        const std::array center{
+            (body.minimum[0] + body.maximum[0]) * 0.5,
+            (body.minimum[1] + body.maximum[1]) * 0.5,
+            (body.minimum[2] + body.maximum[2]) * 0.5,
+        };
+        output << "{\"name\":" << quoted(name) << ",\"semanticRoleHint\":"
+               << quoted(semantic_role_hint(name)) << ",\"parts\":" << body.parts
+               << ",\"vertices\":" << body.vertices << ",\"triangles\":"
+               << body.triangles << ",\"material\":" << quoted(body.material)
+               << ",\"materialPreset\":" << quoted(body.material_preset)
+               << ",\"boundsMm\":{\"minimum\":[" << body.minimum[0] << ','
+               << body.minimum[1] << ',' << body.minimum[2] << "],\"maximum\":["
+               << body.maximum[0] << ',' << body.maximum[1] << ',' << body.maximum[2]
+               << "],\"center\":[" << center[0] << ',' << center[1] << ',' << center[2]
+               << "],\"size\":[" << body.maximum[0] - body.minimum[0] << ','
+               << body.maximum[1] - body.minimum[1] << ','
+               << body.maximum[2] - body.minimum[2] << "]}}";
+    }
+    output << "],\"architecture\":{\"roleHintsAreHeuristic\":true,\"roleHistogram\":{";
+    index = 0;
+    for (const auto& [role, count] : role_histogram) {
+        if (index++ != 0)
+            output << ',';
+        output << quoted(role) << ':' << count;
+    }
+    output << "},\"mechanism\":";
+    write_mechanism_summary(output, project);
+    output << "},\"visual\":" << visual_snapshot_json(project) << '}';
+}
+
+auto write_optimization_matrix(std::ostringstream& output,
+                               const compiler::ir::Project& first,
+                               const compiler::ir::Project& second,
+                               const cad::Model& first_model,
+                               const cad::Model& second_model,
+                               const cad::TopologyModel& first_topology,
+                               const cad::TopologyModel& second_topology) -> void {
+    const auto first_analysis = cad::analyze(first);
+    const auto second_analysis = cad::analyze(second);
+    const auto envelope_volume = [](const cad::ProjectAnalysis& analysis) {
+        return (analysis.bounds.maximum[0] - analysis.bounds.minimum[0]) *
+               (analysis.bounds.maximum[1] - analysis.bounds.minimum[1]) *
+               (analysis.bounds.maximum[2] - analysis.bounds.minimum[2]);
+    };
+    bool first_metric = true;
+    const auto write_metric = [&](std::string_view metric, std::string_view unit,
+                                  std::string_view goal, double first_value,
+                                  double second_value) {
+        if (!first_metric)
+            output << ',';
+        first_metric = false;
+        output << "{\"metric\":" << quoted(metric) << ",\"unit\":" << quoted(unit)
+               << ",\"goal\":" << quoted(goal) << ",\"first\":" << first_value
+               << ",\"second\":" << second_value << ",\"deltaSecondMinusFirst\":"
+               << second_value - first_value << '}';
+    };
+    output << '[';
+    write_metric("triangleCount", "triangles", "minimizeWhenFunctionallyEquivalent",
+                 static_cast<double>(first_model.triangle_count()),
+                 static_cast<double>(second_model.triangle_count()));
+    write_metric("topologyFaceCount", "faces", "minimizeWhenFunctionallyEquivalent",
+                 static_cast<double>(first_topology.face_count()),
+                 static_cast<double>(second_topology.face_count()));
+    write_metric("envelopeVolume", "mm3", "minimizeWhenWorkspaceIsFixed",
+                 envelope_volume(first_analysis), envelope_volume(second_analysis));
+    write_metric("materialDiversity", "materials", "intentDependent",
+                 static_cast<double>(first.materials.size()),
+                 static_cast<double>(second.materials.size()));
+    write_metric("movingDof", "joints", "intentDependent",
+                 static_cast<double>(moving_joint_count(first)),
+                 static_cast<double>(moving_joint_count(second)));
+    write_metric("sceneTracks", "tracks", "maximizeUsefulCoverage",
+                 static_cast<double>(scene_track_count(first)),
+                 static_cast<double>(scene_track_count(second)));
+    write_metric("sceneKeyframes", "keyframes", "maximizeUsefulCoverage",
+                 static_cast<double>(scene_keyframe_count(first)),
+                 static_cast<double>(scene_keyframe_count(second)));
+    output << ']';
 }
 
 } // namespace
@@ -364,6 +904,36 @@ auto visual_snapshot_json(const compiler::ir::Project& project) -> std::string {
             summary.maximum[2] = std::max(summary.maximum[2], vertex.z);
         }
     }
+    const auto spatial_point = [&](std::string_view name) -> const compiler::ir::SpatialPoint* {
+        const auto found =
+            std::ranges::find(project.points, name, &compiler::ir::SpatialPoint::name);
+        return found == project.points.end() ? nullptr : &*found;
+    };
+    const double attachment_tolerance = std::max(project.tolerance.linear_mm, 1.0e-6);
+    std::size_t checked_attachments = 0;
+    std::size_t disconnected_joints = 0;
+    for (const auto& joint : project.joints) {
+        const auto* anchor = spatial_point(joint.point);
+        const auto child_gap = anchor == nullptr
+                                   ? std::optional<double>{}
+                                   : body_geometry_gap(model, joint.child_body,
+                                                       anchor->position_mm, attachment_tolerance);
+        const auto parent_gap = joint.parent_body == "WORLD"
+                                    ? std::optional<double>{0.0}
+                                : anchor == nullptr
+                                    ? std::optional<double>{}
+                                    : body_geometry_gap(model, joint.parent_body,
+                                                        anchor->position_mm,
+                                                        attachment_tolerance);
+        if (!child_gap || !parent_gap) {
+            ++disconnected_joints;
+            continue;
+        }
+        if (joint.parent_body != "WORLD")
+            ++checked_attachments;
+        if (*child_gap > attachment_tolerance || *parent_gap > attachment_tolerance)
+            ++disconnected_joints;
+    }
     constexpr std::string_view symbols =
         "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
     std::ostringstream output;
@@ -395,19 +965,261 @@ auto visual_snapshot_json(const compiler::ir::Project& project) -> std::string {
             output << ',';
         write_snapshot_view(output, model, bodies, snapshot_views[index]);
     }
-    output << "],\"joints\":[";
+    output << "],\"featureHistory\":[";
+    for (std::size_t body_index = 0; body_index < project.bodies.size(); ++body_index) {
+        if (body_index != 0)
+            output << ',';
+        const auto& body = project.bodies[body_index];
+        output << "{\"body\":" << quoted(body.name) << ",\"steps\":[";
+        for (std::size_t feature_index = 0; feature_index < body.features.size(); ++feature_index) {
+            if (feature_index != 0)
+                output << ',';
+            const auto& feature = body.features[feature_index];
+            const auto operation = feature.operation == compiler::ir::FeatureOperation::create
+                                       ? "NEW"
+                                   : feature.operation == compiler::ir::FeatureOperation::unite
+                                       ? "ADD"
+                                   : feature.operation == compiler::ir::FeatureOperation::cut
+                                       ? "CUT"
+                                       : "INTERSECT";
+            output << "{\"name\":" << quoted(feature.name) << ",\"command\":"
+                   << quoted(feature.source_keyword) << ",\"type\":" << quoted(feature.type)
+                   << ",\"operation\":" << quoted(operation);
+            if (!feature.profile.empty()) {
+                const auto separator = feature.profile.rfind("::");
+                const auto sketch_name = separator == std::string::npos
+                                             ? std::string_view{feature.profile}
+                                             : std::string_view{feature.profile}.substr(separator + 2);
+                output << ",\"sketch\":" << quoted(sketch_name)
+                       << ",\"sketchId\":" << quoted(feature.profile)
+                       << ",\"plane\":" << quoted(feature.sketch_plane);
+            }
+            if (!feature.support_feature.empty())
+                output << ",\"supportFeature\":" << quoted(feature.support_feature)
+                       << ",\"supportFace\":" << quoted(feature.support_face);
+            output << '}';
+        }
+        output << "]}";
+    }
+    output << "],\"attachmentSummary\":{\"checkedJoints\":" << checked_attachments
+           << ",\"disconnectedJoints\":" << disconnected_joints
+           << ",\"toleranceMm\":" << attachment_tolerance << "},\"joints\":[";
     for (std::size_t index = 0; index < project.joints.size(); ++index) {
         if (index != 0)
             output << ',';
         const auto& joint = project.joints[index];
+        const auto* anchor = spatial_point(joint.point);
+        const auto child_gap = anchor == nullptr
+                                   ? std::optional<double>{}
+                                   : body_geometry_gap(model, joint.child_body,
+                                                       anchor->position_mm, attachment_tolerance);
+        const auto parent_gap = joint.parent_body == "WORLD"
+                                    ? std::optional<double>{0.0}
+                                : anchor == nullptr
+                                    ? std::optional<double>{}
+                                    : body_geometry_gap(model, joint.parent_body,
+                                                        anchor->position_mm,
+                                                        attachment_tolerance);
         output << "{\"name\":" << quoted(joint.name) << ",\"parent\":"
                << quoted(joint.parent_body) << ",\"child\":" << quoted(joint.child_body)
                << ",\"type\":" << quoted(joint_kind_name(joint.kind)) << ",\"point\":"
                << quoted(joint.point) << ",\"axis\":" << quoted(joint.axis)
                << ",\"value\":" << joint.value << ",\"limits\":[" << joint.lower_limit
-               << ',' << joint.upper_limit << "]}";
+               << ',' << joint.upper_limit << "],\"attachment\":{";
+        if (!child_gap || !parent_gap) {
+            output << "\"resolved\":false,\"connected\":false";
+        } else {
+            output << "\"resolved\":true,\"parentGapMm\":";
+            if (joint.parent_body == "WORLD")
+                output << "null";
+            else
+                output << *parent_gap;
+            output << ",\"childGapMm\":" << *child_gap
+                   << ",\"connected\":"
+                   << (*parent_gap <= attachment_tolerance &&
+                               *child_gap <= attachment_tolerance
+                           ? "true"
+                           : "false");
+        }
+        output << "}}";
+    }
+    output << "],\"sceneSamples\":[";
+    bool first_sample = true;
+    for (const auto& scene_value : project.scenes) {
+        const std::array sample_times{0.0, scene_value.duration_seconds * 0.5,
+                                      scene_value.duration_seconds};
+        for (const double time : sample_times) {
+            if (!first_sample)
+                output << ',';
+            first_sample = false;
+            const auto values = scene::joint_values_at(scene_value, time);
+            const auto sampled_model = scene::sample_model(project, model, scene_value, time);
+            std::size_t disconnected = 0;
+            for (const auto& joint : project.joints) {
+                const auto* anchor_source = spatial_point(joint.point);
+                if (anchor_source == nullptr) {
+                    ++disconnected;
+                    continue;
+                }
+                cad::Point3 anchor{anchor_source->position_mm[0], anchor_source->position_mm[1],
+                                   anchor_source->position_mm[2]};
+                if (joint.parent_body != "WORLD")
+                    anchor = scene::transform_joint_point(project, joint.parent_body, anchor,
+                                                          values);
+                const std::array position{anchor.x, anchor.y, anchor.z};
+                const auto child_gap = body_geometry_gap(sampled_model, joint.child_body,
+                                                         position, attachment_tolerance);
+                const auto parent_gap = joint.parent_body == "WORLD"
+                                            ? std::optional<double>{0.0}
+                                            : body_geometry_gap(sampled_model, joint.parent_body,
+                                                                position,
+                                                                attachment_tolerance);
+                if (!child_gap || !parent_gap || *child_gap > attachment_tolerance ||
+                    *parent_gap > attachment_tolerance)
+                    ++disconnected;
+            }
+            double root_displacement = 0.0;
+            for (const auto& root_joint : project.joints) {
+                if (root_joint.parent_body != "WORLD")
+                    continue;
+                for (std::size_t part = 0; part < model.parts.size(); ++part) {
+                    if (model.parts[part].body != root_joint.child_body ||
+                        sampled_model.parts[part].vertices.size() !=
+                            model.parts[part].vertices.size())
+                        continue;
+                    for (std::size_t vertex = 0; vertex < model.parts[part].vertices.size();
+                         ++vertex) {
+                        const auto delta = subtract(sampled_model.parts[part].vertices[vertex],
+                                                    model.parts[part].vertices[vertex]);
+                        root_displacement =
+                            std::max(root_displacement, std::sqrt(dot(delta, delta)));
+                    }
+                }
+            }
+            output << "{\"scene\":" << quoted(scene_value.name) << ",\"timeSeconds\":" << time
+                   << ",\"disconnectedJoints\":" << disconnected
+                   << ",\"rootMaxDisplacementMm\":" << root_displacement << '}';
+        }
     }
     output << "]}";
+    return output.str();
+}
+
+auto comparison_json(const compiler::ir::Project& first,
+                     const compiler::ir::Project& second) -> std::string {
+    const auto first_model = cad::build_model(first);
+    const auto second_model = cad::build_model(second);
+    const auto first_topology = cad::build_topology(first);
+    const auto second_topology = cad::build_topology(second);
+    const auto first_bodies = comparison_bodies(first, first_model);
+    const auto second_bodies = comparison_bodies(second, second_model);
+    std::vector<std::string> first_only;
+    std::vector<std::string> second_only;
+    std::vector<std::string> common;
+    for (const auto& [name, summary] : first_bodies) {
+        static_cast<void>(summary);
+        if (second_bodies.contains(name))
+            common.push_back(name);
+        else
+            first_only.push_back(name);
+    }
+    for (const auto& [name, summary] : second_bodies) {
+        static_cast<void>(summary);
+        if (!first_bodies.contains(name))
+            second_only.push_back(name);
+    }
+    std::map<std::string, const compiler::ir::Joint*> first_joints;
+    std::map<std::string, const compiler::ir::Joint*> second_joints;
+    for (const auto& joint : first.joints)
+        first_joints.emplace(joint.name, &joint);
+    for (const auto& joint : second.joints)
+        second_joints.emplace(joint.name, &joint);
+    std::vector<std::string> first_only_joints;
+    std::vector<std::string> second_only_joints;
+    for (const auto& [name, joint] : first_joints) {
+        static_cast<void>(joint);
+        if (!second_joints.contains(name))
+            first_only_joints.push_back(name);
+    }
+    for (const auto& [name, joint] : second_joints) {
+        static_cast<void>(joint);
+        if (!first_joints.contains(name))
+            second_only_joints.push_back(name);
+    }
+    std::vector<std::string> first_scene_names;
+    std::vector<std::string> second_scene_names;
+    for (const auto& scene : first.scenes)
+        first_scene_names.push_back(scene.name);
+    for (const auto& scene : second.scenes)
+        second_scene_names.push_back(scene.name);
+
+    std::ostringstream output;
+    output << std::setprecision(17)
+           << "{\"schema\":\"icad.agent.comparison.v2\",\"selectionDimensions\":["
+              "\"endEffectorArchitecture\",\"componentStructure\",\"materialSystem\","
+              "\"mechanismGraph\",\"sceneProgram\",\"spatialEnvelope\","
+              "\"silhouetteAndOcclusion\",\"topologyCost\",\"runtimeCost\"],"
+              "\"structuralDelta\":{\"firstOnlyBodies\":";
+    write_string_array(output, first_only);
+    output << ",\"secondOnlyBodies\":";
+    write_string_array(output, second_only);
+    output << ",\"commonBodies\":";
+    write_string_array(output, common);
+    output << ",\"changedBodies\":[";
+    std::size_t changed_count = 0;
+    for (const auto& name : common) {
+        const auto& first_body = first_bodies.at(name);
+        const auto& second_body = second_bodies.at(name);
+        if (first_body.parts == second_body.parts &&
+            first_body.vertices == second_body.vertices &&
+            first_body.triangles == second_body.triangles &&
+            first_body.material == second_body.material &&
+            first_body.material_preset == second_body.material_preset) {
+            continue;
+        }
+        if (changed_count++ != 0)
+            output << ',';
+        output << "{\"body\":" << quoted(name) << ",\"parts\":[" << first_body.parts
+               << ',' << second_body.parts << "],\"vertices\":[" << first_body.vertices << ','
+               << second_body.vertices << "],\"triangles\":[" << first_body.triangles << ','
+               << second_body.triangles << "],\"triangleDelta\":"
+               << static_cast<long long>(second_body.triangles) -
+                      static_cast<long long>(first_body.triangles)
+               << ",\"materials\":[{\"name\":" << quoted(first_body.material)
+               << ",\"preset\":" << quoted(first_body.material_preset)
+               << "},{\"name\":" << quoted(second_body.material) << ",\"preset\":"
+               << quoted(second_body.material_preset) << "}]}";
+    }
+    output << "],\"bodyMembershipChanges\":" << first_only.size() + second_only.size()
+           << ",\"changedBodyCount\":" << changed_count << ",\"mechanismDelta\":{"
+              "\"firstOnlyJoints\":";
+    write_string_array(output, first_only_joints);
+    output << ",\"secondOnlyJoints\":";
+    write_string_array(output, second_only_joints);
+    output << ",\"movingDof\":[" << moving_joint_count(first) << ','
+           << moving_joint_count(second) << "]},\"sceneDelta\":{\"firstScenes\":";
+    write_string_array(output, first_scene_names);
+    output << ",\"secondScenes\":";
+    write_string_array(output, second_scene_names);
+    output << ",\"trackCounts\":[" << scene_track_count(first) << ','
+           << scene_track_count(second) << "],\"keyframeCounts\":["
+           << scene_keyframe_count(first) << ',' << scene_keyframe_count(second)
+           << "]}},\"viewDelta\":";
+    write_view_delta(output, first_model, second_model);
+    output << ",\"optimizationMatrix\":";
+    write_optimization_matrix(output, first, second, first_model, second_model,
+                              first_topology, second_topology);
+    output << ",\"decisionPolicy\":{\"automaticWinner\":null,"
+              "\"requiresDesignPriority\":true,\"rule\":"
+              "\"Select by required task architecture first; optimize numeric costs only "
+              "after functional equivalence is established\",\"nextOptimizationOrder\":["
+              "\"selected end-effector function\",\"kinematic reach and constraints\","
+              "\"interference and clearances\",\"topology and triangle cost\","
+              "\"materials and scene coverage\"]},\"first\":";
+    write_comparison_design(output, first, first_model, first_topology, first_bodies);
+    output << ",\"second\":";
+    write_comparison_design(output, second, second_model, second_topology, second_bodies);
+    output << '}';
     return output.str();
 }
 
@@ -621,7 +1433,14 @@ auto project_json(const compiler::ir::Project& project) -> std::string {
         if (sketch_index != 0)
             output << ',';
         const auto& sketch = project.sketches[sketch_index];
-        output << "{\"name\":" << quoted(sketch.name)
+        output << "{\"name\":" << quoted(sketch.name);
+        if (!sketch.body.empty())
+            output << ",\"body\":" << quoted(sketch.body);
+        output << ",\"plane\":" << quoted(sketch.plane);
+        if (!sketch.support_feature.empty())
+            output << ",\"supportFeature\":" << quoted(sketch.support_feature)
+                   << ",\"supportFace\":" << quoted(sketch.support_face);
+        output
                << ",\"status\":" << quoted(sketch_status_name(sketch.status))
                << ",\"degreesOfFreedom\":" << sketch.degrees_of_freedom
                << ",\"iterations\":" << sketch.iterations
@@ -635,6 +1454,25 @@ auto project_json(const compiler::ir::Project& project) -> std::string {
                    << ",\"initialMm\":[" << point_value.initial.x_mm << ','
                    << point_value.initial.y_mm << "],\"solvedMm\":[" << point_value.solved.x_mm
                    << ',' << point_value.solved.y_mm << "]}";
+        }
+        output << "],\"entities\":[";
+        for (std::size_t entity_index = 0; entity_index < sketch.entities.size();
+             ++entity_index) {
+            if (entity_index != 0)
+                output << ',';
+            const auto& entity = sketch.entities[entity_index];
+            output << "{\"name\":" << quoted(entity.name)
+                   << ",\"type\":"
+                   << quoted(entity.kind == compiler::ir::ProfileSegmentKind::circular_arc
+                                 ? "ARC"
+                                 : "LINE")
+                   << ",\"from\":" << quoted(entity.start)
+                   << ",\"to\":" << quoted(entity.end);
+            if (entity.kind == compiler::ir::ProfileSegmentKind::circular_arc)
+                output << ",\"center\":" << quoted(entity.center)
+                       << ",\"direction\":"
+                       << quoted(entity.counterclockwise ? "CCW" : "CW");
+            output << '}';
         }
         output << "],\"constraints\":[";
         for (std::size_t constraint_index = 0;

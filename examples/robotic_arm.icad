@@ -1,199 +1,187 @@
-# Native ICAD robotic-arm assembly benchmark based on the reference files in
-# examples/Robotic_Arm_3D_Model. Ten articulated components use mechanical
-# silhouettes, toothed gears, tapered arm shells, and hooked gripper fingers.
+# ICAD industrial articulated robot rebuilt from a single coherent datum chain.
+# Every link outline physically overlaps both pivots that define its joint span.
 PROJECT robotic_arm
 UNITS mm
 
-PARAMETER joint_radius 24 mm
-PARAMETER link_width 42 mm
-PARAMETER link_depth 24 mm
-PARAMETER shoulder_height 122 mm
-PARAMETER preview_upper_length 116 mm
-PARAMETER preview_forearm_length 138 mm
+PARAMETER base_radius 75 mm
+PARAMETER column_radius 55 mm
+PARAMETER major_joint_radius 30 mm
+PARAMETER elbow_joint_radius 25 mm
+PARAMETER wrist_joint_radius 20 mm
+PARAMETER arm_depth 32 mm
+PARAMETER jaw_depth 14 mm
 
-ANGLE zero_angle 0 deg
-ANGLE waist_angle 25 deg
-ANGLE shoulder_angle -35 deg
-ANGLE elbow_angle 55 deg
-ANGLE wrist_angle -15 deg
+ANGLE home_angle 0 deg
 
 POINT3 world_origin 0 mm 0 mm 0 mm
-POINT3 waist_center 0 mm 0 mm 62 mm
-POINT3 shoulder_center 0 mm 0 mm shoulder_height
-POINT3 elbow_center 98 mm 0 mm 184 mm
-POINT3 wrist_center 235 mm 0 mm 200 mm
-POINT3 palm_center 310 mm 0 mm 187 mm
-POINT3 gear_1_center 310 mm 0 mm 198 mm
-POINT3 gear_2_center 336 mm 0 mm 198 mm
-POINT3 tool_center 360 mm 0 mm 190 mm
-POINT3 tool_target 360 mm 0 mm 190 mm
-POINT3 finger_tip FROM palm_center ALONG x_axis DISTANCE 50 mm
-POINT3 preview_elbow FROM shoulder_center ALONG preview_upper_axis DISTANCE preview_upper_length
-POINT3 preview_wrist FROM preview_elbow ALONG preview_forearm_axis DISTANCE preview_forearm_length
+POINT3 waist_center 0 mm 0 mm 75 mm
+POINT3 shoulder_center 0 mm 0 mm 150 mm
+POINT3 elbow_center -70 mm 0 mm 275 mm
+POINT3 wrist_center 75 mm 0 mm 250 mm
+POINT3 palm_center 145 mm 0 mm 225 mm
+POINT3 upper_jaw_pivot 180 mm 0 mm 241 mm
+POINT3 lower_jaw_pivot 180 mm 0 mm 209 mm
+POINT3 drive_gear_center 164 mm 0 mm 233 mm
+POINT3 follower_gear_center 164 mm 0 mm 207 mm
+POINT3 tool_center 250 mm 0 mm 225 mm
+POINT3 tool_target 250 mm 0 mm 225 mm
 
 VECTOR x_axis 1 0 0
 VECTOR y_axis 0 1 0
 VECTOR z_axis 0 0 1
-VECTOR reach_axis FROM shoulder_center TO finger_tip
-VECTOR preview_upper_axis ROTATE x_axis AROUND y_axis BY shoulder_angle
-VECTOR preview_forearm_axis ROTATE preview_upper_axis AROUND y_axis BY elbow_angle
+VECTOR upper_arm_axis FROM shoulder_center TO elbow_center
+VECTOR forearm_axis FROM elbow_center TO wrist_center
+VECTOR wrist_axis FROM wrist_center TO palm_center
+VECTOR tool_axis FROM palm_center TO tool_center
 
-POSE base AT world_origin ROTATION zero_angle zero_angle zero_angle
-
-JOINT base_mount FIXED WORLD base AT world_origin AXIS z_axis
-JOINT waist_turn REVOLUTE base waist AT waist_center AXIS z_axis VALUE waist_angle LIMIT -180 deg 180 deg
-JOINT shoulder_hinge REVOLUTE waist arm_01 AT shoulder_center AXIS y_axis VALUE shoulder_angle LIMIT -90 deg 90 deg
-JOINT elbow_hinge REVOLUTE arm_01 arm_02 AT elbow_center AXIS y_axis VALUE elbow_angle LIMIT -135 deg 135 deg
-JOINT wrist_hinge REVOLUTE arm_02 arm_03 AT wrist_center AXIS y_axis VALUE wrist_angle LIMIT -120 deg 120 deg
-JOINT palm_mount FIXED arm_03 gripper_base AT palm_center AXIS x_axis
-JOINT gripper_slide PRISMATIC gripper_base gripper_1 AT palm_center AXIS x_axis VALUE 0 mm LIMIT 0 mm 20 mm
-JOINT gear_1_drive REVOLUTE gripper_base gear_1 AT gear_1_center AXIS y_axis VALUE zero_angle LIMIT -360 deg 360 deg
-JOINT gear_2_drive REVOLUTE gripper_base gear_2 AT gear_2_center AXIS y_axis VALUE zero_angle LIMIT -360 deg 360 deg
-JOINT linkage_mount FIXED gripper_1 grip_link_1 AT tool_center AXIS x_axis
-
-CONSTRAINT tool_alignment PARALLEL x_axis x_axis
-CONSTRAINT wrist_axis PERPENDICULAR x_axis z_axis
-CONSTRAINT tool_on_target COINCIDENT tool_center tool_target 0.01 mm
-CONSTRAINT preview_elbow_motion ANGLE_BETWEEN preview_upper_axis preview_forearm_axis elbow_angle
-
-MATERIAL blue_shell PLASTIC
+MATERIAL blue_shell
+PRESET PLASTIC
+BASE_COLOR 0.035 0.19 0.62 1
+METALLIC 0.35
+ROUGHNESS 0.28
+TEXTURE_SCALE 18 mm
+UV_MODE BOX
+END
 MATERIAL steel_joint STRUCTURAL_STEEL
 MATERIAL dark_grip CARBON_FIBER
 
-PROFILE arm_link
-START 0 mm 0 mm
-LINE 95 mm 0 mm
-ARC 107 mm 12 mm CENTER 95 mm 12 mm CCW
-ARC 95 mm 24 mm CENTER 95 mm 12 mm CCW
-LINE 0 mm 24 mm
-ARC -12 mm 12 mm CENTER 0 mm 12 mm CCW
-ARC 0 mm 0 mm CENTER 0 mm 12 mm CCW
+# Front-view outlines use world X and Z as profile X and Y. ROTATION_X 90 deg
+# maps profile Y to world Z and centers the extrusion across world Y.
+PROFILE upper_arm_outline
+START -24 mm 137 mm
+LINE -8 mm 125 mm
+LINE 13 mm 136 mm
+LINE -47 mm 249 mm
+LINE -48 mm 270 mm
+LINE -62 mm 293 mm
+LINE -83 mm 294 mm
+LINE -97 mm 276 mm
+LINE -89 mm 255 mm
+LINE -22 mm 143 mm
 CLOSE
 END
 
-PROFILE upper_link_shell
-START 0 mm 0 mm
-LINE 102 mm 0 mm
-LINE 124 mm 9 mm
-LINE 121 mm 31 mm
-LINE 108 mm 42 mm
-LINE 14 mm 42 mm
-LINE 0 mm 31 mm
+PROFILE forearm_outline
+START -86 mm 254 mm
+LINE -76 mm 245 mm
+LINE -57 mm 251 mm
+LINE 52 mm 232 mm
+LINE 79 mm 229 mm
+LINE 96 mm 243 mm
+LINE 92 mm 263 mm
+LINE 78 mm 273 mm
+LINE 55 mm 269 mm
+LINE -56 mm 288 mm
+LINE -78 mm 289 mm
+LINE -91 mm 276 mm
 CLOSE
 END
 
-PROFILE wrist_link_shell
-START 0 mm 0 mm
-LINE 43 mm 0 mm
-LINE 58 mm 7 mm
-LINE 61 mm 17 mm
-LINE 52 mm 27 mm
-LINE 7 mm 27 mm
-LINE 0 mm 20 mm
+PROFILE wrist_outline
+START 57 mm 237 mm
+LINE 68 mm 228 mm
+LINE 84 mm 231 mm
+LINE 132 mm 213 mm
+LINE 151 mm 207 mm
+LINE 165 mm 217 mm
+LINE 162 mm 235 mm
+LINE 151 mm 243 mm
+LINE 135 mm 241 mm
+LINE 83 mm 261 mm
+LINE 66 mm 263 mm
+LINE 55 mm 253 mm
 CLOSE
 END
 
-PROFILE upper_gripper_finger
-START 0 mm 0 mm
-LINE 8 mm -6 mm
-LINE 42 mm -20 mm
-LINE 64 mm -27 mm
-LINE 73 mm -40 mm
-LINE 82 mm -38 mm
-LINE 77 mm -22 mm
-LINE 65 mm -10 mm
-LINE 43 mm 4 mm
-LINE 7 mm 12 mm
+PROFILE upper_jaw_outline
+START 171 mm 232 mm
+LINE 184 mm 229 mm
+LINE 201 mm 234 mm
+LINE 232 mm 238 mm
+LINE 248 mm 235 mm
+LINE 257 mm 226 mm
+LINE 255 mm 216 mm
+LINE 247 mm 211 mm
+LINE 240 mm 217 mm
+LINE 241 mm 226 mm
+LINE 229 mm 229 mm
+LINE 199 mm 225 mm
+LINE 181 mm 219 mm
+LINE 171 mm 223 mm
 CLOSE
 END
 
-PROFILE lower_gripper_finger
-START 0 mm 0 mm
-LINE 8 mm 6 mm
-LINE 42 mm 20 mm
-LINE 64 mm 27 mm
-LINE 73 mm 40 mm
-LINE 82 mm 38 mm
-LINE 77 mm 22 mm
-LINE 65 mm 10 mm
-LINE 43 mm -4 mm
-LINE 7 mm -12 mm
-CLOSE
-END
-
-PROFILE upper_linkage_bar
-START 0 mm 0 mm
-LINE 38 mm -3 mm
-LINE 46 mm 1 mm
-LINE 42 mm 8 mm
-LINE 6 mm 10 mm
-LINE -3 mm 6 mm
-CLOSE
-END
-
-PROFILE lower_linkage_bar
-START 0 mm 0 mm
-LINE 38 mm 3 mm
-LINE 46 mm -1 mm
-LINE 42 mm -8 mm
-LINE 6 mm -10 mm
-LINE -3 mm -6 mm
+PROFILE lower_jaw_outline
+START 171 mm 218 mm
+LINE 181 mm 222 mm
+LINE 199 mm 216 mm
+LINE 229 mm 212 mm
+LINE 241 mm 215 mm
+LINE 240 mm 224 mm
+LINE 247 mm 231 mm
+LINE 255 mm 226 mm
+LINE 257 mm 216 mm
+LINE 248 mm 207 mm
+LINE 232 mm 204 mm
+LINE 201 mm 208 mm
+LINE 184 mm 213 mm
+LINE 171 mm 210 mm
 CLOSE
 END
 
 PROFILE drive_gear_teeth
-START 16 mm 0 mm
-LINE 12.56 mm 3.36 mm
-LINE 13.86 mm 8 mm
-LINE 9.19 mm 9.19 mm
-LINE 8 mm 13.86 mm
-LINE 3.36 mm 12.56 mm
-LINE 0 mm 16 mm
-LINE -3.36 mm 12.56 mm
-LINE -8 mm 13.86 mm
-LINE -9.19 mm 9.19 mm
-LINE -13.86 mm 8 mm
-LINE -12.56 mm 3.36 mm
-LINE -16 mm 0 mm
-LINE -12.56 mm -3.36 mm
-LINE -13.86 mm -8 mm
-LINE -9.19 mm -9.19 mm
-LINE -8 mm -13.86 mm
-LINE -3.36 mm -12.56 mm
-LINE 0 mm -16 mm
-LINE 3.36 mm -12.56 mm
-LINE 8 mm -13.86 mm
-LINE 9.19 mm -9.19 mm
-LINE 13.86 mm -8 mm
-LINE 12.56 mm -3.36 mm
+START 14 mm 0 mm
+LINE 11.09 mm 2.97 mm
+LINE 12.12 mm 7 mm
+LINE 8.13 mm 8.13 mm
+LINE 7 mm 12.12 mm
+LINE 2.97 mm 11.09 mm
+LINE 0 mm 14 mm
+LINE -2.97 mm 11.09 mm
+LINE -7 mm 12.12 mm
+LINE -8.13 mm 8.13 mm
+LINE -12.12 mm 7 mm
+LINE -11.09 mm 2.97 mm
+LINE -14 mm 0 mm
+LINE -11.09 mm -2.97 mm
+LINE -12.12 mm -7 mm
+LINE -8.13 mm -8.13 mm
+LINE -7 mm -12.12 mm
+LINE -2.97 mm -11.09 mm
+LINE 0 mm -14 mm
+LINE 2.97 mm -11.09 mm
+LINE 7 mm -12.12 mm
+LINE 8.13 mm -8.13 mm
+LINE 12.12 mm -7 mm
+LINE 11.09 mm -2.97 mm
 CLOSE
 END
 
 PROFILE follower_gear_teeth
-START 14 mm 0 mm
-LINE 10.92 mm 2.93 mm
-LINE 12.12 mm 7 mm
-LINE 7.99 mm 7.99 mm
-LINE 7 mm 12.12 mm
-LINE 2.93 mm 10.92 mm
-LINE 0 mm 14 mm
-LINE -2.93 mm 10.92 mm
-LINE -7 mm 12.12 mm
-LINE -7.99 mm 7.99 mm
-LINE -12.12 mm 7 mm
-LINE -10.92 mm 2.93 mm
-LINE -14 mm 0 mm
-LINE -10.92 mm -2.93 mm
-LINE -12.12 mm -7 mm
-LINE -7.99 mm -7.99 mm
-LINE -7 mm -12.12 mm
-LINE -2.93 mm -10.92 mm
-LINE 0 mm -14 mm
-LINE 2.93 mm -10.92 mm
-LINE 7 mm -12.12 mm
-LINE 7.99 mm -7.99 mm
-LINE 12.12 mm -7 mm
-LINE 10.92 mm -2.93 mm
+START 12 mm 0 mm
+LINE 9.66 mm 2.59 mm
+LINE 10.39 mm 6 mm
+LINE 7.07 mm 7.07 mm
+LINE 6 mm 10.39 mm
+LINE 2.59 mm 9.66 mm
+LINE 0 mm 12 mm
+LINE -2.59 mm 9.66 mm
+LINE -6 mm 10.39 mm
+LINE -7.07 mm 7.07 mm
+LINE -10.39 mm 6 mm
+LINE -9.66 mm 2.59 mm
+LINE -12 mm 0 mm
+LINE -9.66 mm -2.59 mm
+LINE -10.39 mm -6 mm
+LINE -7.07 mm -7.07 mm
+LINE -6 mm -10.39 mm
+LINE -2.59 mm -9.66 mm
+LINE 0 mm -12 mm
+LINE 2.59 mm -9.66 mm
+LINE 6 mm -10.39 mm
+LINE 7.07 mm -7.07 mm
+LINE 10.39 mm -6 mm
+LINE 9.66 mm -2.59 mm
 CLOSE
 END
 
@@ -201,42 +189,42 @@ BODY base
 MATERIAL steel_joint
 FEATURE mounting_flange
 TYPE CYLINDER
-RADIUS 70 mm
+RADIUS base_radius
+HEIGHT 12 mm
+END
+FEATURE column
+TYPE CYLINDER
+RADIUS column_radius
+HEIGHT 63 mm
+ORIGIN_Z 12 mm
+END
+FEATURE bolt_front
+TYPE CYLINDER
+RADIUS 4 mm
 HEIGHT 8 mm
-END
-FEATURE flange_bolt_front
-TYPE CYLINDER
-RADIUS 3.5 mm
-HEIGHT 6 mm
-ORIGIN_X 52 mm
+ORIGIN_X 55 mm
 ORIGIN_Z 4 mm
 END
-FEATURE flange_bolt_back
+FEATURE bolt_back
 TYPE CYLINDER
-RADIUS 3.5 mm
-HEIGHT 6 mm
-ORIGIN_X -52 mm
+RADIUS 4 mm
+HEIGHT 8 mm
+ORIGIN_X -55 mm
 ORIGIN_Z 4 mm
 END
-FEATURE flange_bolt_left
+FEATURE bolt_left
 TYPE CYLINDER
-RADIUS 3.5 mm
-HEIGHT 6 mm
-ORIGIN_Y 52 mm
+RADIUS 4 mm
+HEIGHT 8 mm
+ORIGIN_Y 55 mm
 ORIGIN_Z 4 mm
 END
-FEATURE flange_bolt_right
+FEATURE bolt_right
 TYPE CYLINDER
-RADIUS 3.5 mm
-HEIGHT 6 mm
-ORIGIN_Y -52 mm
+RADIUS 4 mm
+HEIGHT 8 mm
+ORIGIN_Y -55 mm
 ORIGIN_Z 4 mm
-END
-FEATURE base_column
-TYPE CYLINDER
-RADIUS 58 mm
-HEIGHT 48 mm
-ORIGIN_Z 8 mm
 END
 END
 
@@ -244,217 +232,268 @@ BODY waist
 MATERIAL blue_shell
 FEATURE turntable
 TYPE CYLINDER
-RADIUS 52 mm
-HEIGHT 12 mm
-ORIGIN_Z 56 mm
+RADIUS 50 mm
+HEIGHT 20 mm
+ORIGIN_Z 75 mm
 END
-FEATURE waist_housing
+FEATURE shoulder_pedestal
 TYPE BOX
-WIDTH 64 mm
-DEPTH 58 mm
-HEIGHT 72 mm
-ORIGIN_X -32 mm
-ORIGIN_Y -29 mm
-ORIGIN_Z 68 mm
+WIDTH 70 mm
+DEPTH 66 mm
+HEIGHT 70 mm
+ORIGIN_X -35 mm
+ORIGIN_Y -33 mm
+ORIGIN_Z 90 mm
+END
+FEATURE shoulder_back
+TYPE BOX
+WIDTH 52 mm
+DEPTH 76 mm
+HEIGHT 42 mm
+ORIGIN_X -26 mm
+ORIGIN_Y -38 mm
+ORIGIN_Z 142 mm
 END
 END
 
-BODY arm_01
+BODY upper_arm
 MATERIAL blue_shell
 FEATURE shoulder_joint
 TYPE CYLINDER
-RADIUS joint_radius
-HEIGHT link_depth
-ORIGIN_X -12 mm
-ORIGIN_Y 0 mm
-ORIGIN_Z 122 mm
+RADIUS major_joint_radius
+HEIGHT arm_depth
+ORIGIN_Y 16 mm
+ORIGIN_Z 150 mm
 ROTATION_X 90 deg
 END
-FEATURE lower_link
+FEATURE upper_arm_shell
 TYPE EXTRUDE
-PROFILE arm_link
-HEIGHT link_depth
-ORIGIN_X -6 mm
-ORIGIN_Y -12 mm
-ORIGIN_Z 138 mm
-ROTATION_Y -68 deg
+PROFILE upper_arm_outline
+HEIGHT arm_depth
+ORIGIN_Y 16 mm
+ROTATION_X 90 deg
 END
 END
 
-BODY arm_02
+BODY forearm
 MATERIAL blue_shell
 FEATURE elbow_joint
 TYPE CYLINDER
-RADIUS joint_radius
-HEIGHT link_depth
-ORIGIN_X 98 mm
-ORIGIN_Y 0 mm
-ORIGIN_Z 184 mm
+RADIUS elbow_joint_radius
+HEIGHT arm_depth
+ORIGIN_X -70 mm
+ORIGIN_Y 16 mm
+ORIGIN_Z 275 mm
 ROTATION_X 90 deg
 END
-FEATURE upper_link
+FEATURE forearm_shell
 TYPE EXTRUDE
-PROFILE upper_link_shell
-HEIGHT link_depth
-ORIGIN_X 110 mm
-ORIGIN_Y 12 mm
-ORIGIN_Z 174 mm
+PROFILE forearm_outline
+HEIGHT arm_depth
+ORIGIN_Y 16 mm
 ROTATION_X 90 deg
-ROTATION_Y 12 deg
 END
 END
 
-BODY arm_03
+BODY wrist
 MATERIAL blue_shell
 FEATURE wrist_joint
 TYPE CYLINDER
-RADIUS 18 mm
-HEIGHT link_depth
-ORIGIN_X 235 mm
-ORIGIN_Y 0 mm
-ORIGIN_Z 200 mm
+RADIUS wrist_joint_radius
+HEIGHT 28 mm
+ORIGIN_X 75 mm
+ORIGIN_Y 14 mm
+ORIGIN_Z 250 mm
 ROTATION_X 90 deg
 END
-FEATURE wrist_link
+FEATURE wrist_shell
 TYPE EXTRUDE
-PROFILE wrist_link_shell
-HEIGHT 20 mm
-ORIGIN_X 245 mm
-ORIGIN_Y 10 mm
-ORIGIN_Z 190 mm
+PROFILE wrist_outline
+HEIGHT 28 mm
+ORIGIN_Y 14 mm
 ROTATION_X 90 deg
-ROTATION_Y -15 deg
 END
 END
 
-BODY gripper_base
+BODY palm
 MATERIAL steel_joint
-FEATURE palm
+FEATURE palm_housing
 TYPE BOX
-WIDTH 38 mm
-DEPTH 28 mm
-HEIGHT 22 mm
-ORIGIN_X 292 mm
-ORIGIN_Y -14 mm
-ORIGIN_Z 176 mm
+WIDTH 52 mm
+DEPTH 34 mm
+HEIGHT 54 mm
+ORIGIN_X 136 mm
+ORIGIN_Y -17 mm
+ORIGIN_Z 198 mm
 END
-FEATURE palm_axis
+FEATURE tool_mount
+TYPE CYLINDER
+RADIUS 17 mm
+HEIGHT 28 mm
+ORIGIN_X 145 mm
+ORIGIN_Y 14 mm
+ORIGIN_Z 225 mm
+ROTATION_X 90 deg
+END
+END
+
+BODY upper_jaw
+MATERIAL dark_grip
+FEATURE upper_jaw_plate
+TYPE EXTRUDE
+PROFILE upper_jaw_outline
+HEIGHT jaw_depth
+ORIGIN_Y 7 mm
+ROTATION_X 90 deg
+END
+FEATURE upper_jaw_pin
 TYPE CYLINDER
 RADIUS 10 mm
-HEIGHT 34 mm
-ORIGIN_X 310 mm
-ORIGIN_Y -17 mm
-ORIGIN_Z 187 mm
+HEIGHT 20 mm
+ORIGIN_X 180 mm
+ORIGIN_Y 10 mm
+ORIGIN_Z 241 mm
 ROTATION_X 90 deg
 END
 END
 
-BODY gripper_1
+BODY lower_jaw
 MATERIAL dark_grip
-FEATURE upper_finger
+FEATURE lower_jaw_plate
 TYPE EXTRUDE
-PROFILE upper_gripper_finger
-HEIGHT 8 mm
-ORIGIN_X 320 mm
-ORIGIN_Y 16 mm
-ORIGIN_Z 190 mm
+PROFILE lower_jaw_outline
+HEIGHT jaw_depth
+ORIGIN_Y 7 mm
 ROTATION_X 90 deg
 END
-FEATURE lower_finger
-TYPE EXTRUDE
-PROFILE lower_gripper_finger
-HEIGHT 8 mm
-ORIGIN_X 320 mm
-ORIGIN_Y -8 mm
-ORIGIN_Z 178 mm
+FEATURE lower_jaw_pin
+TYPE CYLINDER
+RADIUS 10 mm
+HEIGHT 20 mm
+ORIGIN_X 180 mm
+ORIGIN_Y 10 mm
+ORIGIN_Z 209 mm
 ROTATION_X 90 deg
 END
 END
 
-BODY gear_1
+BODY drive_gear
 MATERIAL steel_joint
-FEATURE drive_gear
+FEATURE drive_teeth
 TYPE EXTRUDE
 PROFILE drive_gear_teeth
-HEIGHT 8 mm
-ORIGIN_X 310 mm
-ORIGIN_Y 4 mm
-ORIGIN_Z 198 mm
+HEIGHT 10 mm
+ORIGIN_X 164 mm
+ORIGIN_Y 5 mm
+ORIGIN_Z 233 mm
 ROTATION_X 90 deg
 END
 FEATURE drive_hub
 TYPE CYLINDER
-RADIUS 6 mm
-HEIGHT 12 mm
-ORIGIN_X 310 mm
-ORIGIN_Y -6 mm
-ORIGIN_Z 198 mm
+RADIUS 5 mm
+HEIGHT 18 mm
+ORIGIN_X 164 mm
+ORIGIN_Y 9 mm
+ORIGIN_Z 233 mm
 ROTATION_X 90 deg
 END
 END
 
-BODY gear_2
+BODY follower_gear
 MATERIAL steel_joint
-FEATURE follower_gear
+FEATURE follower_teeth
 TYPE EXTRUDE
 PROFILE follower_gear_teeth
-HEIGHT 8 mm
-ORIGIN_X 336 mm
-ORIGIN_Y 4 mm
-ORIGIN_Z 198 mm
+HEIGHT 10 mm
+ORIGIN_X 164 mm
+ORIGIN_Y 5 mm
+ORIGIN_Z 207 mm
 ROTATION_X 90 deg
 END
 FEATURE follower_hub
 TYPE CYLINDER
 RADIUS 5 mm
-HEIGHT 12 mm
-ORIGIN_X 336 mm
-ORIGIN_Y -6 mm
-ORIGIN_Z 198 mm
+HEIGHT 18 mm
+ORIGIN_X 164 mm
+ORIGIN_Y 9 mm
+ORIGIN_Z 207 mm
 ROTATION_X 90 deg
 END
 END
 
-BODY grip_link_1
-MATERIAL dark_grip
-FEATURE upper_linkage
-TYPE EXTRUDE
-PROFILE upper_linkage_bar
-HEIGHT 6 mm
-ORIGIN_X 330 mm
-ORIGIN_Y 19 mm
-ORIGIN_Z 200 mm
-ROTATION_X 90 deg
-ROTATION_Y -20 deg
-END
-FEATURE lower_linkage
-TYPE EXTRUDE
-PROFILE lower_linkage_bar
-HEIGHT 6 mm
-ORIGIN_X 330 mm
-ORIGIN_Y -13 mm
-ORIGIN_Z 168 mm
-ROTATION_X 90 deg
-ROTATION_Y 20 deg
-END
-END
+POSE base AT world_origin ROTATION home_angle home_angle home_angle
+
+JOINT base_mount FIXED WORLD base AT world_origin AXIS z_axis
+JOINT waist_turn REVOLUTE base waist AT waist_center AXIS z_axis VALUE home_angle LIMIT -180 deg 180 deg
+JOINT shoulder_hinge REVOLUTE waist upper_arm AT shoulder_center AXIS y_axis VALUE home_angle LIMIT -75 deg 75 deg
+JOINT elbow_hinge REVOLUTE upper_arm forearm AT elbow_center AXIS y_axis VALUE home_angle LIMIT -120 deg 120 deg
+JOINT wrist_pitch REVOLUTE forearm wrist AT wrist_center AXIS y_axis VALUE home_angle LIMIT -100 deg 100 deg
+JOINT wrist_roll REVOLUTE wrist palm AT palm_center AXIS wrist_axis VALUE home_angle LIMIT -180 deg 180 deg
+JOINT upper_jaw_hinge REVOLUTE palm upper_jaw AT upper_jaw_pivot AXIS y_axis VALUE home_angle LIMIT 0 deg 25 deg
+JOINT lower_jaw_hinge REVOLUTE palm lower_jaw AT lower_jaw_pivot AXIS y_axis VALUE home_angle LIMIT -25 deg 0 deg
+JOINT drive_gear_joint REVOLUTE palm drive_gear AT drive_gear_center AXIS y_axis VALUE home_angle LIMIT -180 deg 180 deg
+JOINT follower_gear_joint REVOLUTE palm follower_gear AT follower_gear_center AXIS y_axis VALUE home_angle LIMIT -180 deg 180 deg
+
+CONSTRAINT tool_axis_defined PARALLEL tool_axis tool_axis
+CONSTRAINT joint_plane PERPENDICULAR y_axis z_axis
+CONSTRAINT tool_on_target COINCIDENT tool_center tool_target 0.01 mm
 
 SCENE articulation
 DURATION 8 s
 FPS 30
 BACKGROUND STUDIO
-TRACK orbit CAMERA assembly_camera
-KEYFRAME 0 s POSITION 0 mm 0 mm 0 mm ROTATION 0 deg 0 deg 0 deg
-KEYFRAME 8 s POSITION 0 mm 0 mm 0 mm ROTATION 0 deg 0 deg 360 deg
+TRACK waist_motion JOINT waist_turn
+EASING EASE_IN_OUT
+KEYFRAME 0 s VALUE 0 deg
+KEYFRAME 4 s VALUE 30 deg
+KEYFRAME 8 s VALUE 0 deg
 END
-TRACK elbow_motion BODY arm_02
-KEYFRAME 0 s POSITION 0 mm 0 mm 0 mm ROTATION 0 deg 0 deg 0 deg
-KEYFRAME 4 s POSITION 0 mm 0 mm 0 mm ROTATION 0 deg -30 deg 0 deg
-KEYFRAME 8 s POSITION 0 mm 0 mm 0 mm ROTATION 0 deg 0 deg 0 deg
+TRACK shoulder_motion JOINT shoulder_hinge
+EASING EASE_IN_OUT
+KEYFRAME 0 s VALUE 0 deg
+KEYFRAME 4 s VALUE 18 deg
+KEYFRAME 8 s VALUE 0 deg
 END
-TRACK gripper_motion BODY gripper_1
-KEYFRAME 0 s POSITION 0 mm 0 mm 0 mm ROTATION 0 deg 0 deg 0 deg
-KEYFRAME 4 s POSITION 4 mm 0 mm 0 mm ROTATION 0 deg 0 deg 0 deg
-KEYFRAME 8 s POSITION 0 mm 0 mm 0 mm ROTATION 0 deg 0 deg 0 deg
+TRACK elbow_motion JOINT elbow_hinge
+EASING EASE_IN_OUT
+KEYFRAME 0 s VALUE 0 deg
+KEYFRAME 4 s VALUE -28 deg
+KEYFRAME 8 s VALUE 0 deg
+END
+TRACK wrist_pitch_motion JOINT wrist_pitch
+EASING EASE_IN_OUT
+KEYFRAME 0 s VALUE 0 deg
+KEYFRAME 4 s VALUE 24 deg
+KEYFRAME 8 s VALUE 0 deg
+END
+TRACK wrist_roll_motion JOINT wrist_roll
+EASING EASE_IN_OUT
+KEYFRAME 0 s VALUE 0 deg
+KEYFRAME 4 s VALUE 90 deg
+KEYFRAME 8 s VALUE 0 deg
+END
+TRACK upper_jaw_motion JOINT upper_jaw_hinge
+EASING EASE_IN_OUT
+KEYFRAME 0 s VALUE 0 deg
+KEYFRAME 4 s VALUE 16 deg
+KEYFRAME 8 s VALUE 0 deg
+END
+TRACK lower_jaw_motion JOINT lower_jaw_hinge
+EASING EASE_IN_OUT
+KEYFRAME 0 s VALUE 0 deg
+KEYFRAME 4 s VALUE -16 deg
+KEYFRAME 8 s VALUE 0 deg
+END
+TRACK drive_gear_motion JOINT drive_gear_joint
+EASING EASE_IN_OUT
+KEYFRAME 0 s VALUE 0 deg
+KEYFRAME 4 s VALUE 90 deg
+KEYFRAME 8 s VALUE 0 deg
+END
+TRACK follower_gear_motion JOINT follower_gear_joint
+EASING EASE_IN_OUT
+KEYFRAME 0 s VALUE 0 deg
+KEYFRAME 4 s VALUE -90 deg
+KEYFRAME 8 s VALUE 0 deg
 END
 END

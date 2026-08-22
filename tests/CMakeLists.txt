@@ -10,6 +10,7 @@ function(icad_add_unit_test component source)
 endfunction()
 
 icad_add_unit_test(lexer unit/lexer_test.cpp)
+icad_add_unit_test(language unit/language_test.cpp)
 icad_add_unit_test(parser unit/parser_test.cpp)
 icad_add_unit_test(units unit/units_test.cpp)
 icad_add_unit_test(resolver unit/resolver_test.cpp)
@@ -19,6 +20,12 @@ icad_add_unit_test(boolean unit/boolean_test.cpp)
 icad_add_unit_test(modeling_tools unit/modeling_tools_test.cpp)
 icad_add_unit_test(surfaces unit/surfaces_test.cpp)
 icad_add_unit_test(sketch_solver unit/sketch_solver_test.cpp)
+icad_add_unit_test(feature_history unit/feature_history_test.cpp)
+add_executable(icad_engine_api_test unit/engine_api_test.cpp)
+target_link_libraries(icad_engine_api_test PRIVATE ICAD::engine icad_project_options)
+add_test(NAME unit.engine_api COMMAND icad_engine_api_test)
+set_tests_properties(unit.engine_api PROPERTIES LABELS "unit;engine")
+list(APPEND ICAD_UNIT_TEST_TARGETS icad_engine_api_test)
 icad_add_unit_test(incremental unit/incremental_test.cpp)
 icad_add_unit_test(importer unit/importer_test.cpp)
 icad_add_unit_test(queries unit/queries_test.cpp)
@@ -73,6 +80,36 @@ add_test(
         -P ${CMAKE_CURRENT_SOURCE_DIR}/integration/cli_check.cmake
 )
 set_tests_properties(integration.cli_check_semantic_error PROPERTIES LABELS "integration")
+
+add_test(
+    NAME integration.cli_check_unsupported_language
+    COMMAND ${CMAKE_COMMAND}
+        -DICAD_EXECUTABLE=$<TARGET_FILE:icad>
+        -DICAD_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/invalid/unsupported_language.icad
+        -DEXPECT_SUCCESS=OFF
+        -DEXPECT_CODE=ICAD-C0002
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/integration/cli_check.cmake
+)
+set_tests_properties(integration.cli_check_unsupported_language
+                     PROPERTIES LABELS "integration;language")
+
+add_test(
+    NAME integration.cli_language
+    COMMAND ${CMAKE_COMMAND}
+        -DICAD_EXECUTABLE=$<TARGET_FILE:icad>
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/integration/cli_language.cmake
+)
+set_tests_properties(integration.cli_language PROPERTIES LABELS "integration;language")
+
+add_test(
+    NAME integration.cli_compare
+    COMMAND ${CMAKE_COMMAND}
+        -DICAD_EXECUTABLE=$<TARGET_FILE:icad>
+        -DFIRST_SOURCE=${PROJECT_SOURCE_DIR}/examples/minimal.icad
+        -DSECOND_SOURCE=${PROJECT_SOURCE_DIR}/examples/robotic_arm.icad
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/integration/cli_compare.cmake
+)
+set_tests_properties(integration.cli_compare PROPERTIES LABELS "integration;agent")
 
 add_test(
     NAME integration.release_metadata
@@ -174,6 +211,16 @@ add_test(
         -P ${CMAKE_CURRENT_SOURCE_DIR}/benchmark/constrained_sketch.cmake
 )
 set_tests_properties(benchmark.constrained_sketch PROPERTIES LABELS "benchmark" TIMEOUT 60)
+add_test(
+    NAME benchmark.sketch_history
+    COMMAND ${CMAKE_COMMAND}
+        -DICAD_EXECUTABLE=$<TARGET_FILE:icad>
+        -DICAD_SOURCE=${PROJECT_SOURCE_DIR}/examples/sketch_history.icad
+        -DOUTPUT_ROOT=${CMAKE_CURRENT_BINARY_DIR}/benchmark-sketch-history
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/benchmark/sketch_history.cmake
+)
+set_tests_properties(benchmark.sketch_history
+                     PROPERTIES LABELS "benchmark;feature_history" TIMEOUT 60)
 add_test(
     NAME benchmark.geometric_queries
     COMMAND ${CMAKE_COMMAND}

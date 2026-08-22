@@ -9,6 +9,16 @@
 
 namespace icad::compiler::ast {
 
+enum class RequirementKind { language_version, capability };
+
+struct RequirementDecl {
+    RequirementKind kind{RequirementKind::language_version};
+    std::size_t version_major{};
+    std::size_t version_minor{};
+    std::string capability;
+    SourceLocation location;
+};
+
 struct QuantityLiteral {
     double value{};
     std::string unit;
@@ -159,10 +169,29 @@ struct SketchConstraintDecl {
     SourceLocation location;
 };
 
+enum class SketchEntityKind { line, circular_arc };
+
+struct SketchEntityDecl {
+    std::string name;
+    SketchEntityKind kind{SketchEntityKind::line};
+    std::string start;
+    std::string end;
+    std::string center;
+    bool counterclockwise{};
+    SourceLocation location;
+};
+
 struct SketchDecl {
     std::string name;
+    std::string plane{"XY"};
+    std::string support_feature;
+    std::string support_face;
     std::vector<SketchPointDecl> points;
+    std::vector<SketchEntityDecl> entities;
     std::vector<SketchConstraintDecl> constraints;
+    std::array<ValueDecl, 2> circle_center;
+    ValueDecl circle_radius;
+    bool circle{};
     SourceLocation location;
 };
 
@@ -188,6 +217,7 @@ struct MateDecl {
 
 struct FeatureDecl {
     std::string name;
+    std::string source_keyword{"FEATURE"};
     std::string type;
     std::string profile;
     std::string target_profile;
@@ -196,6 +226,9 @@ struct FeatureDecl {
     std::string direction;
     std::string plane_point;
     std::string plane_normal;
+    std::string sketch_plane{"XY"};
+    std::string support_feature;
+    std::string support_face;
     std::vector<std::string> path_points;
     std::size_t count{};
     bool has_count{};
@@ -206,6 +239,7 @@ struct FeatureDecl {
 struct BodyDecl {
     std::string name;
     std::string material;
+    std::vector<SketchDecl> sketches;
     std::vector<FeatureDecl> features;
     SourceLocation location;
 };
@@ -264,6 +298,7 @@ struct SceneDecl {
 struct Program {
     std::string project_name;
     std::string default_length_unit;
+    std::vector<RequirementDecl> requirements;
     ToleranceDecl tolerance;
     std::vector<ParameterDecl> parameters;
     std::vector<AngleDecl> angles;

@@ -1,0 +1,33 @@
+# A CAD-designer-style parametric history: sketch, pad, face sketch, pad, face sketch, pocket.
+PROJECT sketch_history
+UNITS mm
+
+PARAMETER base_depth 12 mm
+PARAMETER boss_depth 20 mm
+PARAMETER bore_depth 20 mm
+
+MATERIAL finish ALUMINUM
+
+BODY mounting_bracket
+MATERIAL finish
+SKETCH base ON PLANE XY
+POINT p0 0 mm 0 mm FIXED
+POINT p1 100 mm 0 mm FIXED
+POINT p2 100 mm 60 mm FIXED
+POINT p3 0 mm 60 mm FIXED
+END
+PAD base_solid FROM base DEPTH base_depth NEW
+
+SKETCH boss ON FACE base_solid Z_MAX
+POINT p0 25 mm 15 mm FIXED
+POINT p1 75 mm 15 mm FIXED
+POINT p2 75 mm 45 mm FIXED
+POINT p3 25 mm 45 mm FIXED
+END
+PAD raised_boss FROM boss DEPTH boss_depth ADD
+
+SKETCH bore ON FACE raised_boss Z_MAX
+CIRCLE 50 mm 30 mm 8 mm
+END
+POCKET mounting_bore FROM bore DEPTH bore_depth
+END

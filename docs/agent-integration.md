@@ -26,6 +26,24 @@ schemas unchanged to any model API that supports tool calling.
 
 ## Recommended design loop
 
+Start with exactly one `icad.agent.conceptualize` call to compress the raw request and form a blueprint-aware internal brief. Emit ICAD grammar only and keep declarations in dependency order. After compilation, call `icad.visualize` and use its direct `icad.visual.snapshot.v1` object as `visual.json` feedback. Revise named parameters and entities without another concept pass. `icad.compare` is for final A/B evaluation; its output is not visual feedback.
+
+For each manufactured part, prefer an explicit body-local construction
+history. Begin with `SKETCH name ON PLANE XY|XZ|YZ`, create material using
+`PAD name FROM sketch DEPTH value NEW`, attach later sketches to an earlier
+result using `SKETCH name ON FACE feature face-selector`, and continue with
+`PAD ... ADD` or `POCKET`. Use stable, descriptive history names. The direct
+`visual.json` response includes this ordered `featureHistory`, so an agent can
+connect a bad silhouette or opening to the operation that created it. Reserve
+low-level `FEATURE` blocks for advanced operations that do not yet have a
+history shorthand.
+
+Never emit an implicit or unused sketch inside a body: each sketch needs an
+explicit datum or face support and a later consuming operation. Names are local
+to the body; use the canonical `body::sketch` value from `sketchId` and the
+preserved `PAD` or `POCKET` command when correlating dependency and visual
+feedback.
+
 1. Prefer `icad.agent.create` for recognized robot-arm or bridge requests. One
    call selects a maintained parametric source, performs the complete readiness
    review, commits it with `expectedRevision`, and builds every artifact.
@@ -41,12 +59,20 @@ schemas unchanged to any model API that supports tool calling.
    metrics, and interference, so the model only sees actionable failures. Read
    its `designMap` in order: overall bounds, body centers/sizes, named points and
    vectors, parent-child joints, contacts, then animation tracks.
-4. Keep the exact hexadecimal revision returned by each durable operation.
+4. For design-space exploration, call `icad.compare` with exactly two complete
+   candidates. Its `icad.agent.comparison.v2` response exposes first-only and
+   second-only bodies and joints, changed common bodies, complete mechanism
+   edges, per-body spatial envelopes and semantic role hints, material presets,
+   scene programs, mesh/topology costs, and both visual snapshots. Shared-scale
+   view-difference grids make silhouette and occlusion changes measurable. Ask
+   the user to pick one architecture before producing the next pair; do not
+   hide structural differences behind angle or color-only variants.
+5. Keep the exact hexadecimal revision returned by each durable operation.
    Group dimensional decisions into one `icad.project.set_parameters` call;
    reread on `ICAD-PROJECT-CONFLICT`.
-5. Require user confirmation in the host UI for consequential designs, then
+6. Require user confirmation in the host UI for consequential designs, then
    build the reviewed revision if `icad.agent.create` was not used.
-6. Verify returned artifacts, including `.topology.json`, and use
+7. Verify returned artifacts, including `.topology.json`, and use
    `inspect-step`/`inspect-stl` for structural read-back.
 
 The embedded templates are deterministic design accelerators, not an opaque
@@ -96,6 +122,19 @@ symbol-to-body legend, body bounds and triangle counts, current joint values,
 and 64x32 front/right/top/isometric depth rasters. Call it after every geometry
 or joint edit. A view is an agent reasoning aid rather than a substitute for
 topology, manufacturing, or interference validation.
+
+`icad.compare` returns `icad.agent.comparison.v2`. The comparison is
+deterministic and symmetric in evidence (each side retains its own complete
+summary and visual snapshot), while deltas are expressed from first to second.
+Body-set differences reveal architecture changes directly; common-body records
+reveal geometry complexity, material-system changes, center, bounds, and size
+without asking a model to diff mesh files. `viewDelta` rasterizes both models
+inside the same projected world bounds: `A` is first-only silhouette, `B` is
+second-only, `=` is the same semantic body, and `!` is occupied by different
+bodies. Per-view silhouette IoU, body-identity agreement, and changed fraction
+give the model quantitative evidence. The optimization matrix has explicit
+goal semantics and intentionally returns no automatic winner until the task
+priority establishes functional equivalence.
 
 `icad.inspect` also returns bounds, center, and size for every body plus a named
 cross-body contact graph. Use those summaries before requesting full topology:

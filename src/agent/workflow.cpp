@@ -12,7 +12,9 @@
 
 #include <algorithm>
 #include <cctype>
+#include <sstream>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace icad::agent {
@@ -79,7 +81,7 @@ END
 [[nodiscard]] auto requirements(DesignIntent intent) -> json::Value {
     if (intent == DesignIntent::robotic_arm) {
         return array({"10 named component bodies", "10-joint mechanism graph",
-                      "7 driven degrees of freedom", "joint limits and animated inspection scene",
+                      "9 driven degrees of freedom", "joint limits and animated inspection scene",
                       "manufacturing materials and embedded textures",
                       "STEP assembly plus STL, OBJ, glTF/GLB, 3MF, drawings, BOM, and viewer"});
     }
@@ -129,8 +131,8 @@ END
             signals.emplace_back("programmable articulation scene");
         if (normalized.contains("industrial"))
             signals.emplace_back("industrial material and manufacturing package");
-        assumptions.emplace_back("10 named component bodies and 20 closed solids");
-        assumptions.emplace_back("7 driven degrees of freedom with explicit joint limits");
+        assumptions.emplace_back("10 named component bodies and 25 closed solids");
+        assumptions.emplace_back("9 driven degrees of freedom with explicit joint limits");
         assumptions.emplace_back("millimetre dimensions and deterministic embedded materials");
         assumptions.emplace_back("default link dimensions remain editable through named parameters");
     } else if (intent == DesignIntent::bridge) {
@@ -154,6 +156,87 @@ END
 [[nodiscard]] auto selected(const json::Value& source, std::string_view name) -> json::Value {
     const auto* value = source.find(name);
     return value == nullptr ? json::Value{nullptr} : *value;
+}
+
+auto add_concept_token(json::Value::Array& tokens, std::unordered_set<std::string>& seen,
+                       std::string token) -> void {
+    if (seen.insert(token).second)
+        tokens.emplace_back(std::move(token));
+}
+
+[[nodiscard]] auto compressed_prompt_tokens(std::string_view prompt) -> json::Value {
+    const auto normalized = lowercase(prompt);
+    json::Value::Array tokens;
+    std::unordered_set<std::string> seen;
+    const auto match = [&](std::string_view needle, std::string token) {
+        if (normalized.contains(needle))
+            add_concept_token(tokens, seen, std::move(token));
+    };
+    if (normalized.contains("create") || normalized.contains("make") ||
+        normalized.contains("build") || normalized.contains("design"))
+        add_concept_token(tokens, seen, "ACTION:DESIGN");
+    match("robot", "DOMAIN:ROBOTIC_MANIPULATOR");
+    match("bridge", "DOMAIN:BRIDGE");
+    match("assembly", "STRUCTURE:ASSEMBLY");
+    match("grip", "FUNCTION:MECHANICAL_GRIP");
+    match("claw", "FUNCTION:MECHANICAL_GRIP");
+    match("vacuum", "FUNCTION:VACUUM_PICK");
+    match("suction", "FUNCTION:VACUUM_PICK");
+    match("vision", "FUNCTION:VISION_GUIDANCE");
+    match("camera", "FUNCTION:VISION_GUIDANCE");
+    match("weld", "FUNCTION:WELDING");
+    match("mill", "FUNCTION:MACHINING");
+    match("animate", "MOTION:PROGRAMMABLE_SCENE");
+    match("scene", "MOTION:PROGRAMMABLE_SCENE");
+    match("revolute", "MOTION:REVOLUTE");
+    match("rotate", "MOTION:REVOLUTE");
+    match("prismatic", "MOTION:PRISMATIC");
+    match("slide", "MOTION:PRISMATIC");
+    match("aluminum", "MATERIAL:ALUMINUM");
+    match("aluminium", "MATERIAL:ALUMINUM");
+    match("steel", "MATERIAL:STRUCTURAL_STEEL");
+    match("rubber", "MATERIAL:RUBBER");
+    match("glass", "MATERIAL:GLASS");
+    match("industrial", "QUALITY:INDUSTRIAL");
+    match("manufactur", "QUALITY:MANUFACTURABLE");
+    match("detail", "QUALITY:HIGH_DETAIL");
+    match("precise", "QUALITY:PRECISION");
+    match("tolerance", "CONTROL:TOLERANCE");
+    match("constraint", "CONTROL:CONSTRAINTS");
+    match("orthographic", "VIEW:ORTHOGRAPHIC");
+    match("section", "VIEW:SECTION");
+    match("auxiliary", "VIEW:AUXILIARY");
+    match("step", "OUTPUT:STEP_ASSEMBLY");
+    match("stl", "OUTPUT:STL");
+    match("obj", "OUTPUT:OBJ");
+    match("drawing", "OUTPUT:DRAWING");
+
+    std::istringstream words{std::string{prompt}};
+    std::vector<std::string> raw_words;
+    for (std::string word; words >> word;)
+        raw_words.push_back(std::move(word));
+    constexpr std::array units{"mm", "cm", "m", "in", "inch", "inches", "deg", "degree",
+                               "degrees", "s", "fps"};
+    for (std::size_t index = 0; index < raw_words.size(); ++index) {
+        if (!std::ranges::any_of(raw_words[index], [](unsigned char character) {
+                return std::isdigit(character) != 0;
+            })) {
+            continue;
+        }
+        std::string quantity = "VALUE:" + raw_words[index];
+        if (index + 1 < raw_words.size()) {
+            auto possible_unit = lowercase(raw_words[index + 1]);
+            while (!possible_unit.empty() &&
+                   !std::isalnum(static_cast<unsigned char>(possible_unit.back())))
+                possible_unit.pop_back();
+            if (std::ranges::find(units, possible_unit) != units.end())
+                quantity += possible_unit;
+        }
+        add_concept_token(tokens, seen, std::move(quantity));
+    }
+    if (tokens.empty())
+        tokens.emplace_back("ACTION:CONCEPTUALIZE");
+    return json::Value{std::move(tokens)};
 }
 
 [[nodiscard]] auto design_map(const compiler::ir::Project& project) -> json::Value {
@@ -189,6 +272,70 @@ auto intent_name(DesignIntent intent) -> std::string_view {
     if (intent == DesignIntent::bridge)
         return "BRIDGE";
     return "GENERIC_PART";
+}
+
+auto conceptualize_json(std::string_view prompt) -> std::string {
+    const auto prompt_copy = source_comment(prompt);
+    std::size_t raw_words = 0;
+    {
+        std::istringstream words{prompt_copy};
+        for (std::string word; words >> word;)
+            ++raw_words;
+    }
+    auto compressed = compressed_prompt_tokens(prompt_copy);
+    const auto compressed_count = compressed.array() == nullptr ? std::size_t{0}
+                                                                 : compressed.array()->size();
+    const double compression_ratio = raw_words == 0
+                                         ? 1.0
+                                         : static_cast<double>(compressed_count) /
+                                               static_cast<double>(raw_words);
+    return json::serialize(object({
+        {"schema", "icad.agent.concept.v1"},
+        {"conceptualIterations", 1.0},
+        {"rawInput", prompt_copy},
+        {"rawWordCount", static_cast<double>(raw_words)},
+        {"compressedTokenCount", static_cast<double>(compressed_count)},
+        {"compressionRatio", compression_ratio},
+        {"compressedTokens", std::move(compressed)},
+        {"blueprintReading", object({
+             {"titleBlock", array({"design identity", "units and scale", "material callouts",
+                                    "general tolerances", "notes and revision"})},
+             {"billOfMaterials", array({"named components", "quantity", "material",
+                                         "assembly ownership"})},
+             {"dimensions", array({"size dimensions", "location dimensions",
+                                    "linear and angular tolerances", "diameter and radius"})},
+             {"views", array({"choose primary view with clearest detail and least hidden lines",
+                               "use sufficient front/top/side orthographic views",
+                               "use section view for hidden internal detail",
+                               "use auxiliary view for true inclined-surface shape"})},
+         })},
+        {"conceptualRequest",
+         "Expand the compressed tokens once into a complete component hierarchy, spatial envelope, "
+         "size/location dimensions, materials, kinematic graph, constraints, manufacturing intent, "
+         "and inspection scene. Then emit only dependency-ordered ICAD grammar."},
+        {"outputContract", object({
+             {"format", "ICAD_GRAMMAR_ONLY"},
+             {"allowMarkdown", false},
+             {"allowProse", false},
+             {"requiredOrder", array({"PROJECT and UNITS", "PARAMETER and ANGLE",
+                                       "POINT3 and VECTOR", "MATERIAL",
+                                       "BODY: SKETCH then PAD or POCKET history",
+                                       "POSE, JOINT, CONSTRAINT and MATE",
+                                       "SCENE, TRACK and KEYFRAME"})},
+         })},
+        {"visualFeedback", object({{"available", false},
+                                    {"requiredSchema", "icad.visual.snapshot.v1"},
+                                    {"next", "Compile source and call icad.visualize directly"}})},
+        {"iterationProtocol", array({
+             "Run this conceptualization pass exactly once",
+             "Emit one complete ICAD source document only",
+             "Compile and repair stable diagnostics without reconceptualizing",
+             "Call icad.visualize and consume icad.visual.snapshot.v1",
+             "Revise named parameters, profiles, bodies, joints, or scenes based on view evidence",
+             "Repeat compile and visual feedback until silhouette, body identity, bounds, and joints match intent",
+             "Run engineering review and build only after visual acceptance",
+         })},
+    }));
 }
 
 auto bootstrap(std::string_view prompt) -> BootstrapResult {

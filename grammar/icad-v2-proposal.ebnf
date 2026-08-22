@@ -1,0 +1,406 @@
+(*
+ * ICAD language v2 proposal
+ *
+ * STATUS: RFC ONLY. This file is not accepted by the production parser.
+ * The authoritative implemented grammar remains grammar/icad.ebnf.
+ * A construct may move into that grammar only after its lexer, parser,
+ * semantic, engine, visual.json, diagnostic, and test gates have landed.
+ *)
+
+program              = { requirement | import | declaration | newline } ;
+
+requirement          = "REQUIRES", ( "ICAD", version |
+                                      "CAPABILITY", identifier ), newline ;
+import               = ( "IMPORT" | "INJECT" ), string,
+                       [ "AS", identifier ], newline ;
+declaration          = project | units | tolerance | parameter | angle |
+                       point3 | vector3 | datum | engineering_material |
+                       appearance | sketch | body | part | assembly |
+                       validation | simulation | drawing | scene ;
+
+(* Project, values, expressions, and variants. *)
+project              = "PROJECT", identifier, [ "REVISION", string ], newline ;
+units                = "UNITS", length_unit, newline ;
+tolerance            = "TOLERANCE", "LINEAR", length_value,
+                       "ANGULAR", angle_value, newline ;
+parameter            = "PARAMETER", identifier, typed_value,
+                       [ "RANGE", typed_value, typed_value ], newline ;
+angle                = "ANGLE", identifier, angle_value,
+                       [ "RANGE", angle_value, angle_value ], newline ;
+
+typed_value          = scalar_expression, [ unit ] ;
+length_value         = scalar_expression, [ length_unit ] ;
+angle_value          = scalar_expression, [ angle_unit ] ;
+time_value           = scalar_expression, [ time_unit ] ;
+mass_value           = scalar_expression, [ mass_unit ] ;
+scalar_value         = scalar_expression, [ unit ] ;
+scalar_expression    = additive_expression ;
+additive_expression  = multiplicative_expression,
+                       { ( "+" | "-" ), multiplicative_expression } ;
+multiplicative_expression
+                     = unary_expression,
+                       { ( "*" | "/" ), unary_expression } ;
+unary_expression     = [ "+" | "-" ], primary_expression ;
+primary_expression   = number | qualified_name |
+                       "(", scalar_expression, ")" ;
+
+point3               = "POINT3", identifier,
+                       ( scalar_value, scalar_value, scalar_value |
+                         "FROM", qualified_name, "ALONG", qualified_name,
+                         "DISTANCE", length_value ), newline ;
+vector3              = "VECTOR", identifier,
+                       ( number, number, number |
+                         "FROM", qualified_name, "TO", qualified_name |
+                         "CROSS", qualified_name, qualified_name |
+                         "ROTATE", qualified_name, "AROUND", qualified_name,
+                         "BY", angle_value ), newline ;
+datum                = datum_point | datum_axis | datum_plane | coordinate_system ;
+datum_point          = "DATUM_POINT", identifier, "AT", qualified_name, newline ;
+datum_axis           = "DATUM_AXIS", identifier, "AT", qualified_name,
+                       "DIRECTION", qualified_name, newline ;
+datum_plane          = "DATUM_PLANE", identifier,
+                       ( "OFFSET", "FROM", qualified_name, "BY", length_value |
+                         "THROUGH", qualified_name, qualified_name,
+                         qualified_name |
+                         "AT", qualified_name, "NORMAL", qualified_name ), newline ;
+coordinate_system    = "COORDINATE_SYSTEM", identifier, "AT", qualified_name,
+                       "X", qualified_name, "Y", qualified_name, newline ;
+
+(* A sketch is a planar constraint workspace containing named shapes. *)
+sketch               = "SKETCH", identifier, "ON", sketch_support, newline,
+                       { sketch_datum | shape | sketch_constraint },
+                       [ "SOLVE", solve_requirement, newline ],
+                       "END", newline ;
+sketch_support       = "PLANE", qualified_name |
+                       "FACE", topology_reference |
+                       "DATUM", qualified_name ;
+sketch_datum         = "DATUM", identifier, "AT", coordinate2, newline |
+                       "AXIS", identifier, "FROM", point_reference,
+                       "TO", point_reference, newline ;
+solve_requirement    = "FULL" | "ALLOW_UNDER" | "REFERENCE_ONLY" ;
+
+shape                = "SHAPE", identifier, ( "OPEN" | "CLOSED" ),
+                       "ROLE", shape_role, newline,
+                       { sketch_point | sketch_entity }, "END", newline ;
+shape_role           = "STOCK" | "ADDITIVE" | "HOLE" | "SLOT" |
+                       "ENGRAVE" | "CUT_PATH" | "CONSTRUCTION" |
+                       "REFERENCE" ;
+sketch_point         = "POINT", identifier, coordinate2,
+                       [ "FIXED" ], newline ;
+coordinate2          = scalar_value, scalar_value ;
+sketch_entity        = sketch_line | sketch_arc | sketch_circle |
+                       sketch_ellipse | sketch_spline | sketch_slot |
+                       sketch_polygon | projected_entity ;
+sketch_line          = "LINE", identifier, "FROM", point_reference,
+                       "TO", point_reference, newline ;
+sketch_arc           = "ARC", identifier, "FROM", point_reference,
+                       "TO", point_reference, "CENTER", point_reference,
+                       ( "CW" | "CCW" ), newline ;
+sketch_circle        = "CIRCLE", identifier, "CENTER", point_reference,
+                       "RADIUS", length_value, newline ;
+sketch_ellipse       = "ELLIPSE", identifier, "CENTER", point_reference,
+                       "RX", length_value, "RY", length_value,
+                       [ "ROTATION", angle_value ], newline ;
+sketch_spline        = "SPLINE", identifier, "THROUGH", point_reference,
+                       point_reference, point_reference,
+                       { point_reference }, [ "DEGREE", integer ],
+                       [ "CLOSED" ], newline ;
+sketch_slot          = "SLOT", identifier, "FROM", point_reference,
+                       "TO", point_reference, "WIDTH", length_value, newline ;
+sketch_polygon       = "POLYGON", identifier, "CENTER", point_reference,
+                       "SIDES", integer, "RADIUS", length_value,
+                       [ "ROTATION", angle_value ], newline ;
+projected_entity     = "PROJECT", identifier, "FROM", topology_reference,
+                       [ "MODE", ( "REFERENCE" | "ASSOCIATIVE" ) ], newline ;
+
+sketch_constraint    = "CONSTRAINT", identifier, sketch_relation, newline ;
+sketch_relation      = unary_relation | binary_relation | ternary_relation |
+                       dimensional_relation ;
+unary_relation       = ( "FIXED" | "HORIZONTAL" | "VERTICAL" |
+                         "CONSTRUCTION" ), sketch_reference ;
+binary_relation      = ( "COINCIDENT" | "PARALLEL" | "PERPENDICULAR" |
+                         "TANGENT" | "CONCENTRIC" | "EQUAL_LENGTH" |
+                         "EQUAL_RADIUS" ), sketch_reference, sketch_reference ;
+ternary_relation     = ( "MIDPOINT" | "SYMMETRIC" ), sketch_reference,
+                       sketch_reference, "ABOUT", sketch_reference ;
+dimensional_relation = "DISTANCE", sketch_reference, sketch_reference,
+                       length_value |
+                       "H_DISTANCE", sketch_reference, sketch_reference,
+                       length_value |
+                       "V_DISTANCE", sketch_reference, sketch_reference,
+                       length_value |
+                       "RADIUS", sketch_reference, length_value |
+                       "DIAMETER", sketch_reference, length_value |
+                       "ANGLE", sketch_reference, sketch_reference,
+                       angle_value ;
+
+(* A body is one continuous solid and owns an ordered feature history. *)
+body                 = "BODY", identifier, newline,
+                       { body_item }, "END", newline ;
+body_item            = sketch | datum | feature | body_assignment ;
+body_assignment      = "MATERIAL", qualified_name, newline |
+                       "APPEARANCE", qualified_name, newline ;
+feature              = form_feature | remove_feature | modify_feature |
+                       repeat_feature | reference_feature ;
+
+form_feature         = pad | revolve | sweep | loft | rib | shell | thicken ;
+pad                  = "PAD", identifier, "FROM", region_reference,
+                       feature_extent, result_operation, newline ;
+revolve              = "REVOLVE", identifier, "FROM", region_reference,
+                       "AROUND", qualified_name, "ANGLE", angle_value,
+                       result_operation, newline ;
+sweep                = "SWEEP", identifier, "FROM", region_reference,
+                       "ALONG", qualified_name,
+                       [ "ORIENTATION", ( "NORMAL" | "PARALLEL" ) ],
+                       result_operation, newline ;
+loft                 = "LOFT", identifier, "THROUGH", region_reference,
+                       region_reference, { region_reference },
+                       [ "GUIDES", qualified_name, { qualified_name } ],
+                       result_operation, newline ;
+rib                  = "RIB", identifier, "FROM", qualified_name,
+                       "THICKNESS", length_value,
+                       [ "DIRECTION", ( "NORMAL" | "PARALLEL" ) ],
+                       "ADD", newline ;
+shell                = "SHELL", identifier, "TARGET", qualified_name,
+                       "REMOVE", topology_reference,
+                       { topology_reference }, "THICKNESS", length_value,
+                       [ "DIRECTION", ( "INWARD" | "OUTWARD" ) ], newline ;
+thicken              = "THICKEN", identifier, "TARGET", topology_reference,
+                       "THICKNESS", length_value, result_operation, newline ;
+
+remove_feature       = pocket | hole | groove | split ;
+pocket               = "POCKET", identifier, "FROM", region_reference,
+                       feature_extent, newline ;
+hole                 = "HOLE", identifier, "AT", sketch_reference,
+                       hole_definition, feature_extent, newline ;
+hole_definition      = "SIMPLE", "DIAMETER", length_value |
+                       "COUNTERBORE", "DIAMETER", length_value,
+                       "BORE_DIAMETER", length_value,
+                       "BORE_DEPTH", length_value |
+                       "COUNTERSINK", "DIAMETER", length_value,
+                       "ANGLE", angle_value |
+                       "THREADED", thread_designation ;
+groove               = "GROOVE", identifier, "FROM", region_reference,
+                       "AROUND", qualified_name, "ANGLE", angle_value, newline ;
+split                = "SPLIT", identifier, "TARGET", qualified_name,
+                       "WITH", topology_reference, newline ;
+
+modify_feature       = fillet | chamfer | draft | offset_face | move_face ;
+fillet               = "FILLET", identifier, "ON", qualified_name, newline,
+                       selection, "RADIUS", length_value, newline,
+                       "END", newline ;
+chamfer              = "CHAMFER", identifier, "ON", qualified_name, newline,
+                       selection, chamfer_size, newline, "END", newline ;
+chamfer_size         = "DISTANCE", length_value |
+                       "DISTANCE_ANGLE", length_value, angle_value |
+                       "TWO_DISTANCES", length_value, length_value ;
+draft                = "DRAFT", identifier, "ON", qualified_name, newline,
+                       selection, "PULL", qualified_name,
+                       "ANGLE", angle_value, newline, "END", newline ;
+offset_face          = "OFFSET_FACE", identifier, "TARGET",
+                       topology_reference, "BY", length_value, newline ;
+move_face            = "MOVE_FACE", identifier, "TARGET",
+                       topology_reference, "ALONG", qualified_name,
+                       "BY", length_value, newline ;
+
+repeat_feature       = linear_pattern | circular_pattern | mirror | table_pattern ;
+linear_pattern       = "LINEAR_PATTERN", identifier, "FEATURES",
+                       qualified_name, { qualified_name }, "DIRECTION",
+                       qualified_name, "COUNT", integer,
+                       "SPACING", length_value, newline ;
+circular_pattern     = "CIRCULAR_PATTERN", identifier, "FEATURES",
+                       qualified_name, { qualified_name }, "AXIS",
+                       qualified_name, "COUNT", integer,
+                       "ANGLE", angle_value, newline ;
+mirror               = "MIRROR", identifier, "FEATURES", qualified_name,
+                       { qualified_name }, "ABOUT", qualified_name, newline ;
+table_pattern        = "TABLE_PATTERN", identifier, "FEATURES",
+                       qualified_name, { qualified_name }, newline,
+                       pattern_row, pattern_row, { pattern_row },
+                       "END", newline ;
+pattern_row          = "AT", scalar_value, scalar_value, scalar_value, newline ;
+reference_feature    = datum ;
+
+feature_extent       = "DEPTH", length_value |
+                       "THROUGH", "ALL" |
+                       "UP_TO", topology_reference |
+                       "SYMMETRIC", "DEPTH", length_value ;
+result_operation     = "NEW" | "ADD" | "CUT" | "INTERSECT" ;
+
+(* Explicit selections survive regeneration through semantic provenance. *)
+selection            = "SELECT", selection_kind, selection_query, newline ;
+selection_kind       = "FACE" | "FACES" | "EDGE" | "EDGES" |
+                       "VERTEX" | "VERTICES" ;
+selection_query      = topology_reference |
+                       "GENERATED_BY", qualified_name,
+                       [ "ROLE", topology_role ] |
+                       "TANGENT_TO", topology_reference |
+                       "NEAREST", qualified_name |
+                       "NORMAL_TO", qualified_name |
+                       "PARALLEL_TO", qualified_name ;
+topology_role        = "TOP" | "BOTTOM" | "SIDE" | "START" | "END" |
+                       "INNER" | "OUTER" | "PROFILE_EDGE" ;
+topology_reference   = qualified_name ;
+region_reference     = qualified_name |
+                       qualified_name, "[", "ROLE", shape_role, "]" ;
+sketch_reference     = qualified_name ;
+point_reference      = qualified_name ;
+
+(* A part is a reusable manufactured definition; assemblies contain occurrences. *)
+part                 = "PART", identifier, newline,
+                       [ "PART_NUMBER", string, newline ],
+                       [ "DESCRIPTION", string, newline ],
+                       { body | part_item }, "END", newline ;
+part_item            = body_assignment | interface | manufacturing |
+                       part_property ;
+interface            = "INTERFACE", identifier,
+                       ( "POINT", qualified_name |
+                         "AXIS", qualified_name |
+                         "PLANE", qualified_name |
+                         "FACE", topology_reference |
+                         "COORDINATE_SYSTEM", qualified_name ), newline ;
+part_property        = "PROPERTY", identifier, typed_value, newline ;
+manufacturing        = "MANUFACTURING", process_kind, newline,
+                       { manufacturing_rule }, "END", newline ;
+process_kind         = "MILLING" | "TURNING" | "LASER" | "SHEET_METAL" |
+                       "ADDITIVE" | "CASTING" | "MOLDING" ;
+manufacturing_rule   = "MIN_WALL", length_value, newline |
+                       "MIN_RADIUS", length_value, newline |
+                       "MAX_OVERHANG", angle_value, newline |
+                       "TOLERANCE_CLASS", identifier, newline |
+                       "STANDARD", identifier, newline ;
+
+assembly             = "ASSEMBLY", identifier, newline,
+                       { occurrence | subassembly | mate | joint |
+                         assembly_property }, "END", newline ;
+occurrence           = "OCCURRENCE", identifier, "OF", qualified_name,
+                       [ "AT", qualified_name ], [ "FIXED" ], newline ;
+subassembly          = "SUBASSEMBLY", identifier, "OF", qualified_name,
+                       [ "AT", qualified_name ], newline ;
+mate                 = "MATE", identifier, mate_relation,
+                       qualified_name, qualified_name,
+                       [ "OFFSET", scalar_value ], newline ;
+mate_relation        = "COINCIDENT" | "CONCENTRIC" | "PARALLEL" |
+                       "PERPENDICULAR" | "TANGENT" | "DISTANCE" |
+                       "ANGLE" ;
+joint                = "JOINT", identifier, joint_kind,
+                       qualified_name, qualified_name, newline,
+                       [ "VALUE", scalar_value, newline ],
+                       [ "LIMIT", scalar_value, scalar_value, newline ],
+                       [ "HOME", scalar_value, newline ],
+                       "END", newline ;
+joint_kind           = "FIXED" | "REVOLUTE" | "PRISMATIC" |
+                       "CYLINDRICAL" | "PLANAR" | "BALL" ;
+assembly_property    = "PROPERTY", identifier, typed_value, newline ;
+
+(* Physical material and visible appearance are separate domains. *)
+engineering_material = "MATERIAL", identifier, newline,
+                       [ "STANDARD", identifier, newline ],
+                       "DENSITY", scalar_value, density_unit, newline,
+                       [ "ELASTIC_MODULUS", scalar_value, pressure_unit, newline ],
+                       [ "POISSON_RATIO", number, newline ],
+                       [ "YIELD_STRENGTH", scalar_value, pressure_unit, newline ],
+                       [ "ULTIMATE_STRENGTH", scalar_value, pressure_unit, newline ],
+                       [ "THERMAL_EXPANSION", scalar_value, identifier, newline ],
+                       "END", newline ;
+appearance           = "APPEARANCE", identifier, newline,
+                       [ "PRESET", identifier, newline ],
+                       [ "BASE_COLOR", number, number, number, number, newline ],
+                       [ "METALLIC", number, newline ],
+                       [ "ROUGHNESS", number, newline ],
+                       [ "OPACITY", number, newline ],
+                       [ texture ], [ "UV_MODE", uv_mode, newline ],
+                       "END", newline ;
+texture              = "TEXTURE", ( identifier | string ),
+                       [ "SEED", integer ], [ "SCALE", length_value ], newline ;
+uv_mode              = "BOX" | "PLANAR" | "CYLINDRICAL" | "SPHERICAL" ;
+
+(* Validation is compiled, queryable output rather than an informal note. *)
+validation           = "VALIDATE", identifier, newline,
+                       validation_rule, { validation_rule }, "END", newline ;
+validation_rule      = "CHECK", validation_kind,
+                       [ "TARGET", qualified_name ],
+                       [ "LIMIT", scalar_value ], newline ;
+validation_kind      = "FULLY_CONSTRAINED" | "MANIFOLD" | "INTERFERENCE" |
+                       "CLEARANCE" | "MASS" | "CENTER_OF_MASS" |
+                       "MIN_WALL" | "DRAFT" | "JOINT_LIMITS" |
+                       "DISCONNECTED" | "STANDARD" ;
+simulation           = "SIMULATION", identifier, simulation_kind, newline,
+                       { simulation_item }, "END", newline ;
+simulation_kind      = "MOTION" | "STATIC" | "THERMAL" ;
+simulation_item      = "TARGET", qualified_name, newline |
+                       "LOAD", qualified_name, scalar_value, newline |
+                       "FIX", qualified_name, newline |
+                       "SAMPLE", time_value, newline ;
+
+(* Drawings remain associative with model topology and product structure. *)
+drawing              = "DRAWING", identifier, "OF", qualified_name, newline,
+                       "SHEET", sheet_format, "SCALE", ratio, newline,
+                       { drawing_view | drawing_dimension | gdt | bom },
+                       "END", newline ;
+sheet_format         = "A0" | "A1" | "A2" | "A3" | "A4" |
+                       "ANSI_A" | "ANSI_B" | "ANSI_C" | "ANSI_D" ;
+drawing_view         = "VIEW", identifier, view_orientation,
+                       "AT", number, number,
+                       [ "STYLE", ( "VISIBLE" | "HIDDEN" | "SHADED" ) ], newline ;
+view_orientation     = "FRONT" | "BACK" | "LEFT" | "RIGHT" |
+                       "TOP" | "BOTTOM" | "ISOMETRIC" |
+                       "SECTION", qualified_name ;
+drawing_dimension    = "DIMENSION", identifier, dimension_kind,
+                       qualified_name, { qualified_name },
+                       [ "TOLERANCE", scalar_value ], newline ;
+dimension_kind       = "LINEAR" | "ALIGNED" | "ANGULAR" | "RADIUS" |
+                       "DIAMETER" | "ORDINATE" ;
+gdt                  = "GDT", identifier, gdt_kind, scalar_value,
+                       [ "DATUMS", qualified_name, { qualified_name } ], newline ;
+gdt_kind             = "FLATNESS" | "STRAIGHTNESS" | "PARALLELISM" |
+                       "PERPENDICULARITY" | "POSITION" | "RUNOUT" |
+                       "PROFILE" ;
+bom                  = "BOM", identifier, "OF", qualified_name, newline ;
+
+(* Scenes animate assembly joints or occurrences; they do not alter design history. *)
+scene                = "SCENE", identifier, newline,
+                       "DURATION", time_value, newline,
+                       "FPS", integer, newline,
+                       [ "BACKGROUND", identifier, newline ],
+                       [ "LOOP", integer, newline ],
+                       { light | event | track }, "END", newline ;
+light                = "LIGHT", identifier, ( "DIRECTIONAL" | "POINT" |
+                       "AREA" ), "COLOR", number, number, number,
+                       "INTENSITY", number, [ "AT", qualified_name ], newline ;
+event                = "EVENT", time_value, identifier, newline ;
+track                = "TRACK", identifier, track_kind, qualified_name, newline,
+                       [ "EASING", easing, newline ],
+                       keyframe, keyframe, { keyframe }, "END", newline ;
+track_kind           = "JOINT" | "OCCURRENCE" | "CAMERA" | "VISIBILITY" ;
+easing               = "LINEAR" | "EASE_IN" | "EASE_OUT" |
+                       "EASE_IN_OUT" | "STEP" ;
+keyframe             = "KEYFRAME", time_value,
+                       ( "VALUE", scalar_value |
+                         "POSE", qualified_name |
+                         "VISIBLE", ( "ON" | "OFF" ) ), newline ;
+
+(* Lexical forms. Strings use JSON-compatible escaping in the proposal. *)
+qualified_name       = identifier, { ".", identifier } ;
+thread_designation   = identifier | string ;
+ratio                = integer, ":", integer ;
+version              = integer, ".", integer ;
+unit                 = length_unit | angle_unit | time_unit | mass_unit |
+                       density_unit | pressure_unit ;
+length_unit          = "mm" | "cm" | "m" | "in" | "ft" ;
+angle_unit           = "deg" | "rad" ;
+time_unit            = "ms" | "s" | "min" ;
+mass_unit            = "g" | "kg" | "lb" ;
+density_unit         = "kg_m3" | "g_cm3" | "lb_in3" ;
+pressure_unit        = "Pa" | "kPa" | "MPa" | "GPa" | "psi" ;
+identifier           = letter, { letter | digit | "_" } ;
+integer              = digit, { digit } ;
+number               = digit, { digit }, [ ".", digit, { digit } ] |
+                       ".", digit, { digit } ;
+string               = '"', { string_character }, '"' ;
+string_character     = ? any Unicode scalar except quote, backslash, or newline,
+                         or a valid JSON escape ? ;
+newline              = "\n" ;
+letter               = ? Unicode XID_Start character ? ;
+digit                = "0" | "1" | "2" | "3" | "4" |
+                       "5" | "6" | "7" | "8" | "9" ;

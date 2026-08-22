@@ -152,6 +152,10 @@ auto fingerprint(const compiler::ir::Project& project) -> std::uint64_t {
     }
     for (const auto& sketch : project.sketches) {
         hash.add(sketch.name);
+        hash.add(sketch.body);
+        hash.add(sketch.plane);
+        hash.add(sketch.support_feature);
+        hash.add(sketch.support_face);
         for (const auto& point : sketch.points) {
             hash.add(point.name);
             hash.add(point.initial.x_mm);
@@ -159,6 +163,15 @@ auto fingerprint(const compiler::ir::Project& project) -> std::uint64_t {
             hash.add(point.solved.x_mm);
             hash.add(point.solved.y_mm);
             hash.add(static_cast<double>(point.fixed));
+        }
+        for (const auto& entity : sketch.entities) {
+            hash.add(entity.name);
+            hash.add(static_cast<double>(entity.kind ==
+                                         compiler::ir::ProfileSegmentKind::circular_arc));
+            hash.add(entity.start);
+            hash.add(entity.end);
+            hash.add(entity.center);
+            hash.add(static_cast<double>(entity.counterclockwise));
         }
         for (const auto& constraint : sketch.constraints) {
             hash.add(constraint.name);
@@ -183,6 +196,7 @@ auto fingerprint(const compiler::ir::Project& project) -> std::uint64_t {
         hash.add(body.material);
         for (const auto& feature : body.features) {
             hash.add(feature.name);
+            hash.add(feature.source_keyword);
             hash.add(feature.type);
             hash.add(feature.profile);
             hash.add(feature.target_profile);
@@ -198,6 +212,9 @@ auto fingerprint(const compiler::ir::Project& project) -> std::uint64_t {
             hash.add(feature.direction);
             hash.add(feature.plane_point);
             hash.add(feature.plane_normal);
+            hash.add(feature.sketch_plane);
+            hash.add(feature.support_feature);
+            hash.add(feature.support_face);
             for (const auto& point : feature.path_points)
                 hash.add(point);
             hash.add(static_cast<double>(feature.count));

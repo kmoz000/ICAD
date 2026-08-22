@@ -5,7 +5,8 @@
 
 auto main() -> int {
     const auto lexed =
-        icad::compiler::lex("PROJECT parser_test\n"
+        icad::compiler::lex("# retained lexer comment\n"
+                            "PROJECT parser_test // parser ignores retained comments\n"
                             "UNITS mm\n"
                             "PARAMETER span 2 m\n"
                             "PROFILE rounded\nSTART 0 mm 0 mm\nLINE 10 mm 0 mm\n"
@@ -51,6 +52,13 @@ auto main() -> int {
             .tokens);
     if (open_profile.ok()) {
         std::cerr << "parser accepted a path profile without CLOSE\n";
+        return 1;
+    }
+    const auto proposed_part_tokens =
+        icad::compiler::lex("PROJECT future\nUNITS mm\nPART bracket\nEND\n");
+    const auto proposed_part = icad::compiler::parse(proposed_part_tokens.tokens);
+    if (!proposed_part_tokens.ok() || proposed_part.ok()) {
+        std::cerr << "lexer/parser boundary incorrectly enabled proposed PART syntax\n";
         return 1;
     }
     return 0;

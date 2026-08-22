@@ -1,9 +1,9 @@
 #define WEBVIEW_HEADER
 #include <webview/webview.h>
 
+#include "icad/engine/session.hpp"
 #include "icad/json/value.hpp"
 #include "icad/viewer_source.hpp"
-#include "icad/viewer/live_session.hpp"
 
 #include <cctype>
 #include <condition_variable>
@@ -94,7 +94,7 @@ auto usage(std::ostream& output) -> void {
 
 struct Context {
     webview_t window{};
-    icad::viewer::LiveSession* session{};
+    icad::engine::Session* session{};
     struct PreviewJob {
         std::string id;
         std::string source;
@@ -145,7 +145,7 @@ struct Context {
     return diagnostics;
 }
 
-[[nodiscard]] auto preview_value(const icad::viewer::PreviewResult& preview) -> icad::json::Value {
+[[nodiscard]] auto preview_value(const icad::engine::PreviewResult& preview) -> icad::json::Value {
     return icad::json::Value::Object{
         {"success", preview.success},
         {"message", preview.message},
@@ -163,7 +163,7 @@ struct Context {
     };
 }
 
-[[nodiscard]] auto preview_payload(const icad::viewer::PreviewResult& preview) -> std::string {
+[[nodiscard]] auto preview_payload(const icad::engine::PreviewResult& preview) -> std::string {
     auto payload = icad::json::serialize(preview_value(preview));
     if (preview.success && !preview.model_json.empty()) {
         payload.pop_back();
@@ -174,7 +174,7 @@ struct Context {
     return payload;
 }
 
-[[nodiscard]] auto package_value(const icad::viewer::PackageResult& package)
+[[nodiscard]] auto package_value(const icad::engine::PackageResult& package)
     -> icad::json::Value {
     return icad::json::Value::Object{
         {"success", package.success},
@@ -363,7 +363,7 @@ auto style_native_title_bar(webview_t window) -> void {
 }
 
 [[nodiscard]] auto run_source(const std::filesystem::path& source_path) -> int {
-    icad::viewer::LiveSession session{source_path};
+    icad::engine::Session session{source_path};
     if (!session.ready()) {
         std::cerr << "icad-viewer: " << session.error() << ": " << source_path << '\n';
         return 2;

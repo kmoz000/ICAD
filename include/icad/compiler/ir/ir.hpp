@@ -137,11 +137,25 @@ struct SketchConstraint {
     std::string target_reference;
 };
 
+struct SketchEntity {
+    std::string name;
+    ProfileSegmentKind kind{ProfileSegmentKind::line};
+    std::string start;
+    std::string end;
+    std::string center;
+    bool counterclockwise{};
+};
+
 enum class SketchSolveStatus { fully_constrained, under_constrained, inconsistent };
 
 struct Sketch {
     std::string name;
+    std::string body;
+    std::string plane{"XY"};
+    std::string support_feature;
+    std::string support_face;
     std::vector<SketchPoint> points;
+    std::vector<SketchEntity> entities;
     std::vector<SketchConstraint> constraints;
     SketchSolveStatus status{SketchSolveStatus::under_constrained};
     std::size_t degrees_of_freedom{};
@@ -153,6 +167,7 @@ enum class FeatureOperation { create, unite, cut, intersect };
 
 struct Feature {
     std::string name;
+    std::string source_keyword{"FEATURE"};
     std::string type;
     std::string profile;
     std::string target_profile;
@@ -161,6 +176,9 @@ struct Feature {
     std::string direction;
     std::string plane_point;
     std::string plane_normal;
+    std::string sketch_plane{"XY"};
+    std::string support_feature;
+    std::string support_face;
     std::vector<std::string> path_points;
     std::size_t count{};
     std::vector<Property> properties;

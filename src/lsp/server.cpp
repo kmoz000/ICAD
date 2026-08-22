@@ -1,6 +1,7 @@
 #include "icad/lsp/server.hpp"
 
 #include "icad/compiler/compiler.hpp"
+#include "icad/compiler/language.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -272,9 +273,11 @@ struct DefinitionLocation {
 
 [[nodiscard]] auto completion_items() -> std::string {
     constexpr std::string_view items[]{
-        "PROJECT", "IMPORT", "INJECT", "UNITS", "TOLERANCE", "PARAMETER", "ANGLE", "POINT3", "VECTOR",
+        "REQUIRES", "ICAD", "CAPABILITY", "PROJECT", "IMPORT", "INJECT", "UNITS", "TOLERANCE", "PARAMETER", "ANGLE", "POINT3", "VECTOR",
         "POSE", "INSTANCE", "JOINT", "MATERIAL", "PRESET", "BASE_COLOR", "METALLIC",
         "ROUGHNESS", "TEXTURE_SCALE", "UV_MODE", "PROFILE", "SKETCH", "BODY", "FEATURE",
+        "PAD", "POCKET", "FROM", "DEPTH", "NEW", "ADD", "ON", "PLANE", "FACE",
+        "XY", "XZ", "YZ", "X_MIN", "X_MAX", "Y_MIN", "Y_MAX", "Z_MIN", "Z_MAX",
         "TYPE", "OPERATION", "CONSTRAINT", "MATE", "SCENE", "DURATION", "FPS",
         "BACKGROUND", "LOOP", "LIGHT", "COLOR", "INTENSITY", "EVENT", "TRACK", "EASING",
         "KEYFRAME", "VISIBLE", "END",
@@ -285,11 +288,19 @@ struct DefinitionLocation {
         "CARBON_FIBER", "CERAMIC", "PLASTER", "FABRIC", "LEATHER", "EARTH", "GRASS",
         "WATER", "ICE", "EMISSIVE_WHITE"};
     std::string result{"["};
-    for (std::size_t index = 0; index < std::size(items); ++index) {
-        if (index != 0)
+    bool first = true;
+    const auto append_item = [&](std::string_view item) {
+        if (!first)
             result.push_back(',');
-        result += "{\"label\":\"" + std::string{items[index]} +
+        first = false;
+        result += "{\"label\":\"" + std::string{item} +
                   "\",\"kind\":14,\"detail\":\"ICAD language\"}";
+    };
+    for (std::size_t index = 0; index < std::size(items); ++index) {
+        append_item(items[index]);
+    }
+    for (const auto capability : compiler::language::capabilities()) {
+        append_item(capability);
     }
     result.push_back(']');
     return result;

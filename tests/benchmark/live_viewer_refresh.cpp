@@ -32,11 +32,11 @@ auto main(int argc, char** argv) -> int {
         return fail("unchanged large-project preview was not reused");
 
     std::string edited = session.source();
-    constexpr std::string_view original = "PARAMETER joint_radius 24 mm";
+    constexpr std::string_view original = "PARAMETER jaw_depth 14 mm";
     const auto position = edited.find(original);
     if (position == std::string::npos)
         return fail("robotic-arm refresh parameter is missing");
-    edited.replace(position, original.size(), "PARAMETER joint_radius 25 mm");
+    edited.replace(position, original.size(), "PARAMETER jaw_depth 15 mm");
     const auto refreshed = session.preview(edited);
     if (!refreshed.success || refreshed.recomputed_bodies == 0 ||
         refreshed.reused_bodies == 0 ||

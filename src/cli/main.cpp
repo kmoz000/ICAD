@@ -4,6 +4,7 @@
 #include "icad/cad/intersection.hpp"
 #include "icad/cad/queries.hpp"
 #include "icad/compiler/compiler.hpp"
+#include "icad/compiler/language.hpp"
 #include "icad/compiler/lexer/lexer.hpp"
 #include "icad/compiler/lexer/token.hpp"
 #include "icad/constraints/validator.hpp"
@@ -37,6 +38,7 @@ auto print_usage(std::ostream& output) -> void {
               "       icad inspect <source.icad>\n"
               "       icad inspect-json <source.icad>\n"
               "       icad visual-json <source.icad>\n"
+              "       icad compare-json <first.icad> <second.icad>\n"
               "       icad topology-json <source.icad>\n"
               "       icad diagnostics-json <source.icad>\n"
               "       icad measure <source.icad>\n"
@@ -50,10 +52,12 @@ auto print_usage(std::ostream& output) -> void {
               "       icad inspect-gltf <model.gltf|model.glb>\n"
               "       icad inspect-3mf <model.3mf>\n"
               "       icad inspect-dxf <drawing.dxf>\n"
+              "       icad agent-concept <prompt>\n"
               "       icad agent-bootstrap <prompt> [--source-out <source.icad>]\n"
               "       icad agent-create <prompt> --source-out <source.icad> --output-dir <directory>\n"
               "       icad agent-review <source.icad>\n"
               "       icad build <source.icad> [--output-dir <directory>]\n"
+              "       icad language\n"
               "       icad materials\n"
               "       icad lsp\n"
               "       icad mcp [--workspace <directory>]\n"
@@ -78,6 +82,14 @@ auto print_diagnostics(const std::filesystem::path& path,
 }
 
 auto print_ast(const icad::compiler::ast::Program& program) -> void {
+    for (const auto& requirement : program.requirements) {
+        if (requirement.kind == icad::compiler::ast::RequirementKind::language_version) {
+            std::cout << "Requires ICAD " << requirement.version_major << '.'
+                      << requirement.version_minor << '\n';
+        } else {
+            std::cout << "Requires capability " << requirement.capability << '\n';
+        }
+    }
     std::cout << "Project " << program.project_name << "\n"
               << "  Units " << program.default_length_unit << '\n';
     for (const auto& parameter : program.parameters) {
@@ -95,11 +107,34 @@ auto print_ast(const icad::compiler::ast::Program& program) -> void {
         if (!body.material.empty()) {
             std::cout << "    Material " << body.material << '\n';
         }
+        for (const auto& sketch : body.sketches) {
+            std::cout << "    Sketch " << sketch.name;
+            if (sketch.support_feature.empty()) {
+                std::cout << " on plane " << sketch.plane;
+            } else {
+                std::cout << " on face " << sketch.support_feature << ' '
+                          << sketch.support_face;
+            }
+            if (sketch.circle)
+                std::cout << " : circle\n";
+            else
+                std::cout << " : " << sketch.points.size() << " points, "
+                          << sketch.entities.size() << " explicit entities\n";
+        }
         for (const auto& feature : body.features) {
-            std::cout << "    Feature " << feature.name << " : " << feature.type << '\n';
+            std::cout << "    " << (feature.source_keyword == "FEATURE" ? "Feature"
+                                                                           : feature.source_keyword)
+                      << ' ' << feature.name << " : " << feature.type;
+            if (!feature.profile.empty())
+                std::cout << " from " << feature.profile;
+            std::cout << '\n';
             for (const auto& property : feature.properties) {
-                std::cout << "      " << property.name << " = " << property.value.value << ' '
-                          << property.value.unit << '\n';
+                std::cout << "      " << property.name << " = ";
+                if (!property.parameter_reference.empty())
+                    std::cout << property.parameter_reference;
+                else
+                    std::cout << property.value.value << ' ' << property.value.unit;
+                std::cout << '\n';
             }
         }
     }
@@ -208,6 +243,13 @@ auto main(int argc, char** argv) -> int {
         }
         return 0;
     }
+    if (argc == 2 && std::string_view{argv[1]} == "language") {
+        std::cout << "ICAD_LANGUAGE " << icad::compiler::language::version << '\n';
+        for (const auto capability : icad::compiler::language::capabilities()) {
+            std::cout << "CAPABILITY " << capability << '\n';
+        }
+        return 0;
+    }
     if (argc == 2 && std::string_view{argv[1]} == "lsp") {
         return icad::lsp::run(std::cin, std::cout);
     }
@@ -225,6 +267,14 @@ auto main(int argc, char** argv) -> int {
 
     const std::string_view command{argv[1]};
     const std::filesystem::path source_path{argv[2]};
+    if (command == "agent-concept") {
+        if (argc != 3) {
+            print_usage(std::cerr);
+            return 2;
+        }
+        std::cout << icad::agent::conceptualize_json(argv[2]) << '\n';
+        return 0;
+    }
     if (command == "agent-bootstrap") {
         if (argc != 3 && argc != 5) {
             print_usage(std::cerr);
@@ -323,6 +373,35 @@ auto main(int argc, char** argv) -> int {
             return 1;
         }
         std::cout << "DXF_VALID 1\n";
+        return 0;
+    }
+    if (command == "compare-json") {
+        if (argc != 4) {
+            print_usage(std::cerr);
+            return 2;
+        }
+        const std::filesystem::path second_path{argv[3]};
+        const auto first_source = read_file(source_path);
+        const auto second_source = read_file(second_path);
+        if (!first_source || !second_source) {
+            std::cerr << "icad: cannot read comparison source file\n";
+            return 2;
+        }
+        const icad::compiler::CompileOptions first_options{
+            .build_topology = true,
+            .imports = {.source_path = source_path, .project_root = source_path.parent_path()}};
+        const icad::compiler::CompileOptions second_options{
+            .build_topology = true,
+            .imports = {.source_path = second_path, .project_root = second_path.parent_path()}};
+        const auto first = icad::compiler::compile(*first_source, first_options);
+        const auto second = icad::compiler::compile(*second_source, second_options);
+        if (!first.ok())
+            print_diagnostics(source_path, first.diagnostics);
+        if (!second.ok())
+            print_diagnostics(second_path, second.diagnostics);
+        if (!first.ok() || !second.ok())
+            return 1;
+        std::cout << icad::ai::comparison_json(*first.ir_project, *second.ir_project) << '\n';
         return 0;
     }
     const auto source = read_file(source_path);

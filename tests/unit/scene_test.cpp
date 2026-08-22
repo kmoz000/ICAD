@@ -1,7 +1,11 @@
 #include "icad/compiler/compiler.hpp"
+#include "icad/cad/model.hpp"
 #include "icad/materials/library.hpp"
+#include "icad/scene/evaluator.hpp"
 #include "icad/scene/exporter.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -102,6 +106,7 @@ auto main() -> int {
         !contains(library_content, "icad-view-cube") ||
         !contains(library_content, "icad-component-menu") ||
         !contains(library_content, "pointInTriangle") ||
+        !contains(library_content, "value - partCenter") ||
         !std::filesystem::exists(base.string() + ".html") ||
         !std::filesystem::exists(base.string() + ".viewer.js") ||
         !std::filesystem::exists(base.parent_path() / "icad-viewer.js")) {
@@ -123,6 +128,44 @@ auto main() -> int {
         "END\nEND\n");
     if (bad_timeline.ok()) {
         std::cerr << "non-increasing animation timeline was accepted\n";
+        return 1;
+    }
+    const auto direct_joint_animation = icad::compiler::compile(
+        "PROJECT joint_scene\nUNITS mm\nANGLE home 10 deg\n"
+        "POINT3 origin 0 mm 0 mm 0 mm\nVECTOR z_axis 0 0 1\n"
+        "BODY base\nFEATURE solid\nTYPE BOX\nWIDTH 10 mm\nDEPTH 10 mm\nHEIGHT 10 mm\nEND\nEND\n"
+        "BODY link\nFEATURE solid\nTYPE BOX\nWIDTH 30 mm\nDEPTH 5 mm\nHEIGHT 5 mm\nEND\nEND\n"
+        "JOINT mount FIXED WORLD base AT origin AXIS z_axis\n"
+        "JOINT hinge REVOLUTE base link AT origin AXIS z_axis VALUE home LIMIT -90 deg 90 deg\n"
+        "SCENE motion\nDURATION 1 s\nFPS 30\nBACKGROUND STUDIO\n"
+        "TRACK articulate JOINT hinge\nKEYFRAME 0 s VALUE 10 deg\n"
+        "KEYFRAME 1 s VALUE 45 deg\nEND\nEND\n");
+    if (!direct_joint_animation.ok()) {
+        std::cerr << "direct body JOINT animation was rejected\n";
+        return 1;
+    }
+    const auto rest_model = icad::cad::build_model(*direct_joint_animation.ir_project);
+    const auto sampled = icad::scene::sample_model(
+        *direct_joint_animation.ir_project, rest_model,
+        direct_joint_animation.ir_project->scenes.front(), 1.0);
+    const auto base_rest = std::ranges::find(rest_model.parts, "base", &icad::cad::Part::body);
+    const auto base_sampled = std::ranges::find(sampled.parts, "base", &icad::cad::Part::body);
+    const auto link_rest = std::ranges::find(rest_model.parts, "link", &icad::cad::Part::body);
+    const auto link_sampled = std::ranges::find(sampled.parts, "link", &icad::cad::Part::body);
+    const auto maximum_motion = [](const auto& first, const auto& second) {
+        double maximum = 0.0;
+        for (std::size_t index = 0; index < first.vertices.size(); ++index) {
+            const auto& a = first.vertices[index];
+            const auto& b = second.vertices[index];
+            maximum = std::max(maximum, std::hypot(std::hypot(a.x - b.x, a.y - b.y), a.z - b.z));
+        }
+        return maximum;
+    };
+    if (base_rest == rest_model.parts.end() || base_sampled == sampled.parts.end() ||
+        link_rest == rest_model.parts.end() || link_sampled == sampled.parts.end() ||
+        maximum_motion(*base_rest, *base_sampled) > 1.0e-9 ||
+        maximum_motion(*link_rest, *link_sampled) < 1.0) {
+        std::cerr << "native scene evaluator moved the ground or failed to articulate the child\n";
         return 1;
     }
     return 0;
