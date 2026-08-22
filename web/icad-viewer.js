@@ -175,7 +175,7 @@
     const jointsByChild = new Map(model.joints.map(joint => [joint.child, joint]));
     const selected = [];
     let sceneIndex = 0;
-    let playing = true;
+    let playing = false;
     let started = performance.now();
     let viewRotation = [58, 0, -28];
     let zoom = 1;
@@ -188,7 +188,7 @@
     controls.setAttribute("role", "toolbar");
     controls.setAttribute("aria-label", "ICAD viewer controls");
     const play = document.createElement("button");
-    play.textContent = "Pause";
+    play.textContent = "Play";
     play.setAttribute("aria-label", "Play or pause scene animation");
     play.onclick = () => { playing = !playing; play.textContent = playing ? "Pause" : "Play"; started = performance.now(); if (playing) requestAnimationFrame(draw); };
     controls.appendChild(play);
@@ -213,12 +213,11 @@
     }
     root.parentElement.insertBefore(controls, root);
 
-    const tree = document.createElement("aside");
-    tree.className = "icad-semantic-tree";
-    tree.setAttribute("aria-label", "Design component tree");
+    const componentDrop = addDropMenu(root.parentElement, "Components", "icad-component-menu");
     const status = document.createElement("output");
     status.className = "icad-measurement";
-    tree.appendChild(status);
+    componentDrop.content.appendChild(status);
+    const componentButtons = new Map();
     for (const body of [...new Set(model.parts.map(part => part.body))]) {
       const item = document.createElement("button");
       item.textContent = body;
@@ -229,9 +228,21 @@
         draw(performance.now());
       };
       item.setAttribute("aria-pressed", "false");
-      tree.appendChild(item);
+      componentButtons.set(body, item);
+      componentDrop.content.appendChild(item);
     }
-    root.parentElement.appendChild(tree);
+    const sceneDrop = addDropMenu(root.parentElement, "Scenes", "icad-scene-menu");
+    if (model.scenes.length === 0) {
+      const empty = document.createElement("span"); empty.textContent = "Static model";
+      sceneDrop.content.appendChild(empty);
+    }
+    model.scenes.forEach((sceneValue, index) => {
+      const item = document.createElement("button");
+      item.textContent = `▶ ${sceneValue.name}`;
+      item.onclick = () => { sceneIndex = index; playing = true; started = performance.now(); play.textContent = "Pause"; requestAnimationFrame(draw); sceneDrop.menu.open = false; };
+      sceneDrop.content.appendChild(item);
+    });
+    addViewCube(root.parentElement, rotation => { viewRotation = rotation; draw(performance.now()); });
 
     root.tabIndex = 0;
     root.setAttribute("aria-label", "Interactive ICAD WebGL design viewport");
