@@ -1,5 +1,6 @@
 # Native ICAD robotic-arm assembly benchmark based on the reference files in
-# examples/Robotic_Arm_3D_Model. Ten source components contain twenty solids.
+# examples/Robotic_Arm_3D_Model. Ten articulated components use mechanical
+# silhouettes, toothed gears, tapered arm shells, and hooked gripper fingers.
 PROJECT robotic_arm
 UNITS mm
 
@@ -70,12 +71,166 @@ ARC 0 mm 0 mm CENTER 0 mm 12 mm CCW
 CLOSE
 END
 
+PROFILE upper_link_shell
+START 0 mm 0 mm
+LINE 102 mm 0 mm
+LINE 124 mm 9 mm
+LINE 121 mm 31 mm
+LINE 108 mm 42 mm
+LINE 14 mm 42 mm
+LINE 0 mm 31 mm
+CLOSE
+END
+
+PROFILE wrist_link_shell
+START 0 mm 0 mm
+LINE 43 mm 0 mm
+LINE 58 mm 7 mm
+LINE 61 mm 17 mm
+LINE 52 mm 27 mm
+LINE 7 mm 27 mm
+LINE 0 mm 20 mm
+CLOSE
+END
+
+PROFILE upper_gripper_finger
+START 0 mm 0 mm
+LINE 8 mm -6 mm
+LINE 42 mm -20 mm
+LINE 64 mm -27 mm
+LINE 73 mm -40 mm
+LINE 82 mm -38 mm
+LINE 77 mm -22 mm
+LINE 65 mm -10 mm
+LINE 43 mm 4 mm
+LINE 7 mm 12 mm
+CLOSE
+END
+
+PROFILE lower_gripper_finger
+START 0 mm 0 mm
+LINE 8 mm 6 mm
+LINE 42 mm 20 mm
+LINE 64 mm 27 mm
+LINE 73 mm 40 mm
+LINE 82 mm 38 mm
+LINE 77 mm 22 mm
+LINE 65 mm 10 mm
+LINE 43 mm -4 mm
+LINE 7 mm -12 mm
+CLOSE
+END
+
+PROFILE upper_linkage_bar
+START 0 mm 0 mm
+LINE 38 mm -3 mm
+LINE 46 mm 1 mm
+LINE 42 mm 8 mm
+LINE 6 mm 10 mm
+LINE -3 mm 6 mm
+CLOSE
+END
+
+PROFILE lower_linkage_bar
+START 0 mm 0 mm
+LINE 38 mm 3 mm
+LINE 46 mm -1 mm
+LINE 42 mm -8 mm
+LINE 6 mm -10 mm
+LINE -3 mm -6 mm
+CLOSE
+END
+
+PROFILE drive_gear_teeth
+START 16 mm 0 mm
+LINE 12.56 mm 3.36 mm
+LINE 13.86 mm 8 mm
+LINE 9.19 mm 9.19 mm
+LINE 8 mm 13.86 mm
+LINE 3.36 mm 12.56 mm
+LINE 0 mm 16 mm
+LINE -3.36 mm 12.56 mm
+LINE -8 mm 13.86 mm
+LINE -9.19 mm 9.19 mm
+LINE -13.86 mm 8 mm
+LINE -12.56 mm 3.36 mm
+LINE -16 mm 0 mm
+LINE -12.56 mm -3.36 mm
+LINE -13.86 mm -8 mm
+LINE -9.19 mm -9.19 mm
+LINE -8 mm -13.86 mm
+LINE -3.36 mm -12.56 mm
+LINE 0 mm -16 mm
+LINE 3.36 mm -12.56 mm
+LINE 8 mm -13.86 mm
+LINE 9.19 mm -9.19 mm
+LINE 13.86 mm -8 mm
+LINE 12.56 mm -3.36 mm
+CLOSE
+END
+
+PROFILE follower_gear_teeth
+START 14 mm 0 mm
+LINE 10.92 mm 2.93 mm
+LINE 12.12 mm 7 mm
+LINE 7.99 mm 7.99 mm
+LINE 7 mm 12.12 mm
+LINE 2.93 mm 10.92 mm
+LINE 0 mm 14 mm
+LINE -2.93 mm 10.92 mm
+LINE -7 mm 12.12 mm
+LINE -7.99 mm 7.99 mm
+LINE -12.12 mm 7 mm
+LINE -10.92 mm 2.93 mm
+LINE -14 mm 0 mm
+LINE -10.92 mm -2.93 mm
+LINE -12.12 mm -7 mm
+LINE -7.99 mm -7.99 mm
+LINE -7 mm -12.12 mm
+LINE -2.93 mm -10.92 mm
+LINE 0 mm -14 mm
+LINE 2.93 mm -10.92 mm
+LINE 7 mm -12.12 mm
+LINE 7.99 mm -7.99 mm
+LINE 12.12 mm -7 mm
+LINE 10.92 mm -2.93 mm
+CLOSE
+END
+
 BODY base
 MATERIAL steel_joint
 FEATURE mounting_flange
 TYPE CYLINDER
 RADIUS 70 mm
 HEIGHT 8 mm
+END
+FEATURE flange_bolt_front
+TYPE CYLINDER
+RADIUS 3.5 mm
+HEIGHT 6 mm
+ORIGIN_X 52 mm
+ORIGIN_Z 4 mm
+END
+FEATURE flange_bolt_back
+TYPE CYLINDER
+RADIUS 3.5 mm
+HEIGHT 6 mm
+ORIGIN_X -52 mm
+ORIGIN_Z 4 mm
+END
+FEATURE flange_bolt_left
+TYPE CYLINDER
+RADIUS 3.5 mm
+HEIGHT 6 mm
+ORIGIN_Y 52 mm
+ORIGIN_Z 4 mm
+END
+FEATURE flange_bolt_right
+TYPE CYLINDER
+RADIUS 3.5 mm
+HEIGHT 6 mm
+ORIGIN_Y -52 mm
+ORIGIN_Z 4 mm
 END
 FEATURE base_column
 TYPE CYLINDER
@@ -138,13 +293,13 @@ ORIGIN_Z 184 mm
 ROTATION_X 90 deg
 END
 FEATURE upper_link
-TYPE BOX
-WIDTH 125 mm
-DEPTH link_depth
-HEIGHT link_width
+TYPE EXTRUDE
+PROFILE upper_link_shell
+HEIGHT link_depth
 ORIGIN_X 110 mm
-ORIGIN_Y -12 mm
+ORIGIN_Y 12 mm
 ORIGIN_Z 174 mm
+ROTATION_X 90 deg
 ROTATION_Y 12 deg
 END
 END
@@ -161,13 +316,13 @@ ORIGIN_Z 200 mm
 ROTATION_X 90 deg
 END
 FEATURE wrist_link
-TYPE BOX
-WIDTH 55 mm
-DEPTH 20 mm
-HEIGHT 26 mm
+TYPE EXTRUDE
+PROFILE wrist_link_shell
+HEIGHT 20 mm
 ORIGIN_X 245 mm
-ORIGIN_Y -10 mm
+ORIGIN_Y 10 mm
 ORIGIN_Z 190 mm
+ROTATION_X 90 deg
 ROTATION_Y -15 deg
 END
 END
@@ -197,35 +352,33 @@ END
 BODY gripper_1
 MATERIAL dark_grip
 FEATURE upper_finger
-TYPE BOX
-WIDTH 72 mm
-DEPTH 8 mm
-HEIGHT 12 mm
-ORIGIN_X 325 mm
-ORIGIN_Y 8 mm
-ORIGIN_Z 191 mm
-ROTATION_Y -22 deg
+TYPE EXTRUDE
+PROFILE upper_gripper_finger
+HEIGHT 8 mm
+ORIGIN_X 320 mm
+ORIGIN_Y 16 mm
+ORIGIN_Z 190 mm
+ROTATION_X 90 deg
 END
 FEATURE lower_finger
-TYPE BOX
-WIDTH 72 mm
-DEPTH 8 mm
-HEIGHT 12 mm
-ORIGIN_X 325 mm
-ORIGIN_Y -16 mm
-ORIGIN_Z 171 mm
-ROTATION_Y 22 deg
+TYPE EXTRUDE
+PROFILE lower_gripper_finger
+HEIGHT 8 mm
+ORIGIN_X 320 mm
+ORIGIN_Y -8 mm
+ORIGIN_Z 178 mm
+ROTATION_X 90 deg
 END
 END
 
 BODY gear_1
 MATERIAL steel_joint
 FEATURE drive_gear
-TYPE CYLINDER
-RADIUS 16 mm
+TYPE EXTRUDE
+PROFILE drive_gear_teeth
 HEIGHT 8 mm
 ORIGIN_X 310 mm
-ORIGIN_Y -4 mm
+ORIGIN_Y 4 mm
 ORIGIN_Z 198 mm
 ROTATION_X 90 deg
 END
@@ -243,11 +396,11 @@ END
 BODY gear_2
 MATERIAL steel_joint
 FEATURE follower_gear
-TYPE CYLINDER
-RADIUS 14 mm
+TYPE EXTRUDE
+PROFILE follower_gear_teeth
 HEIGHT 8 mm
 ORIGIN_X 336 mm
-ORIGIN_Y -4 mm
+ORIGIN_Y 4 mm
 ORIGIN_Z 198 mm
 ROTATION_X 90 deg
 END
@@ -265,23 +418,23 @@ END
 BODY grip_link_1
 MATERIAL dark_grip
 FEATURE upper_linkage
-TYPE BOX
-WIDTH 45 mm
-DEPTH 6 mm
-HEIGHT 7 mm
+TYPE EXTRUDE
+PROFILE upper_linkage_bar
+HEIGHT 6 mm
 ORIGIN_X 330 mm
-ORIGIN_Y 13 mm
+ORIGIN_Y 19 mm
 ORIGIN_Z 200 mm
+ROTATION_X 90 deg
 ROTATION_Y -20 deg
 END
 FEATURE lower_linkage
-TYPE BOX
-WIDTH 45 mm
-DEPTH 6 mm
-HEIGHT 7 mm
+TYPE EXTRUDE
+PROFILE lower_linkage_bar
+HEIGHT 6 mm
 ORIGIN_X 330 mm
-ORIGIN_Y -19 mm
+ORIGIN_Y -13 mm
 ORIGIN_Z 168 mm
+ROTATION_X 90 deg
 ROTATION_Y 20 deg
 END
 END

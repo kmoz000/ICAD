@@ -143,6 +143,18 @@ auto send(std::ostream& output, const json::Value& message) -> void {
     return tool_result(parsed_value(ai::topology_json(*compilation.ir_project)));
 }
 
+[[nodiscard]] auto visual_source(const json::Value* arguments) -> json::Value {
+    const auto* source = source_argument(arguments);
+    if (source == nullptr) {
+        return tool_error("ICAD-MCP-ARGS", "required string argument 'source' is missing");
+    }
+    const auto compilation = compiler::compile(*source);
+    if (!compilation.ok()) {
+        return tool_result(parsed_value(ai::diagnostics_json(*source)), true);
+    }
+    return tool_result(parsed_value(ai::visual_snapshot_json(*compilation.ir_project)));
+}
+
 [[nodiscard]] auto distance_source(const json::Value* arguments) -> json::Value {
     const auto* source = source_argument(arguments);
     const auto* first = string_at(arguments, "firstBody");
@@ -324,8 +336,10 @@ auto send(std::ostream& output, const json::Value& message) -> void {
         "or axis-aligned semantic EDGE selectors with TOLERANCE. SCENE blocks contain duration, "
         "FPS, background, BODY/CAMERA transform tracks, or JOINT tracks whose keyframes use "
         "VALUE within the joint limits. "
-        "Close every block with END. Call icad.compile, then icad.validate, then icad.topology "
-        "to discover stable exact face and edge IDs, and only then icad.build.";
+        "Close every block with END. Call icad.compile, then icad.visualize to inspect front, "
+        "right, top, and isometric depth rasters with a body legend. Reject unintended overlap "
+        "or a poor silhouette before calling icad.validate and icad.topology to discover stable "
+        "exact face and edge IDs, and only then icad.build.";
     return tool_result(
         object({{"language", "ICAD"},
                 {"version", std::string{server_version}},
@@ -705,6 +719,7 @@ auto send(std::ostream& output, const json::Value& message) -> void {
 {"name":"icad.validate","title":"Validate engineering rules","description":"Compile ICAD source and evaluate geometric constraints and manufacturing rules.","inputSchema":{"type":"object","properties":{"source":{"type":"string"}},"required":["source"],"additionalProperties":false},"annotations":{"readOnlyHint":true}},
 {"name":"icad.measure","title":"Measure ICAD design","description":"Return surface area, volume, and world bounds for compiled ICAD source.","inputSchema":{"type":"object","properties":{"source":{"type":"string"}},"required":["source"],"additionalProperties":false},"annotations":{"readOnlyHint":true}},
 {"name":"icad.inspect","title":"Inspect ICAD design","description":"Return canonical design counts, revision fingerprint, body ownership, metrics, and validation state.","inputSchema":{"type":"object","properties":{"source":{"type":"string"}},"required":["source"],"additionalProperties":false},"annotations":{"readOnlyHint":true}},
+{"name":"icad.visualize","title":"Visualize ICAD design for an agent","description":"Return deterministic front, right, top, and isometric depth rasters with a body legend, bounds, triangle counts, and joint state so an agent can evaluate silhouette and placement after every edit.","inputSchema":{"type":"object","properties":{"source":{"type":"string"}},"required":["source"],"additionalProperties":false},"annotations":{"readOnlyHint":true}},
 {"name":"icad.topology","title":"Inspect exact ICAD topology","description":"Return stable solid, shell, face, edge, and vertex IDs with analytic curve and surface kinds for agent references.","inputSchema":{"type":"object","properties":{"source":{"type":"string"}},"required":["source"],"additionalProperties":false},"annotations":{"readOnlyHint":true}},
 {"name":"icad.distance","title":"Query body distance","description":"Return exact-polyhedral minimum distance and closest points between two named bodies.","inputSchema":{"type":"object","properties":{"source":{"type":"string"},"firstBody":{"type":"string"},"secondBody":{"type":"string"}},"required":["source","firstBody","secondBody"],"additionalProperties":false},"annotations":{"readOnlyHint":true}},
 {"name":"icad.interference","title":"Query assembly interference","description":"Classify penetrating, contained, and surface-only body contacts.","inputSchema":{"type":"object","properties":{"source":{"type":"string"}},"required":["source"],"additionalProperties":false},"annotations":{"readOnlyHint":true}},
@@ -742,6 +757,8 @@ auto send(std::ostream& output, const json::Value& message) -> void {
         return inspect_source(arguments, true);
     if (name == "icad.inspect")
         return inspect_source(arguments, false);
+    if (name == "icad.visualize")
+        return visual_source(arguments);
     if (name == "icad.topology")
         return topology_source(arguments);
     if (name == "icad.distance")

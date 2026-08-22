@@ -26,6 +26,7 @@ icad diagnostics-json model.icad
 icad validate model.icad
 icad manufacturing model.icad
 icad inspect-json model.icad
+icad visual-json model.icad
 icad topology-json model.icad
 icad build model.icad --output-dir build/icad/model
 ```
@@ -39,6 +40,9 @@ topology JSON.
 
 - Use named `POINT3`, `VECTOR`, `ANGLE`, `POSE`, and `JOINT` declarations for
   mechanisms instead of inferring structure from mesh vertices.
+- After every geometry or pose edit, call `icad.visualize` through MCP (or
+  `icad visual-json`) and inspect all four depth rasters. Reject a poor
+  silhouette, misplaced component, or unexpected occlusion before building.
 - Use `REVOLUTE` and `PRISMATIC` joint limits and explicit constraints for
   movable assemblies.
 - Use predefined material presets and embedded procedural textures.

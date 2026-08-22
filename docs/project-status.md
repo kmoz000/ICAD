@@ -90,7 +90,16 @@ merges results in source order. Its benchmarks prove two-body full reuse followe
 8-of-10 mesh reuse on the robotic arm. The live viewer coalesces edits on a
 background worker, passes the compiled model directly to its canvas (no
 temporary iframe), and exports the complete package to a selected folder
-without blocking preview compilation.
+without blocking preview compilation. The viewer starts stationary and adds a
+lit dim studio grid, orthographic view cube, component/scene menus, per-scene
+play actions, and synchronized direct geometry picking.
+
+Agent visual feedback now has its own deterministic compiler product. The
+`visual-json` command and `icad.visualize` MCP tool rasterize the current
+delivery model into depth-resolved 64x32 front, right, top, and isometric grids
+with a stable body legend, bounds, triangle counts, and current joint state.
+The maintained robot benchmark requires these views and recognizable detailed
+gripper/gear components, so model acceptance is no longer based only on counts.
 
 The query package adds a dimensioned project-wide linear/angular tolerance
 policy to canonical IR, revisions, agent inspection, and contact/query
@@ -140,11 +149,14 @@ artifact set in one invocation. The composite readiness report combines
 compiler diagnostics, constraints, manufacturing, topology, measurements, and
 interference; atomic multi-parameter edits collapse related dimensional changes
 into one revision. Its benchmark proves the robotic prompt path at 10 bodies,
-10 joints, 7 driven degrees of freedom, and a structurally readable 20-solid
+10 joints, 7 driven degrees of freedom, and a structurally readable 24-solid
 STEP assembly with one expected model iteration. The response now embeds prompt
 interpretation, assumptions, editable scalar/angle handles, and a compact design
 map containing bounds, spatial references, joint connectivity, contacts, and
 animation, so an agent does not need another call merely to understand layout.
+The source now uses toothed gear profiles, tapered arm and wrist shells, hooked
+opposed gripper fingers, linkage profiles, and four flange fasteners instead of
+accepting a primitive-box proxy as the visual benchmark.
 
 The engineering package adds process-aware material compatibility and checks
 for wall proxy, hole diameter, tooling radius, bend radius, overhang, stock,

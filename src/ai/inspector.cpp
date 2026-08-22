@@ -11,9 +11,14 @@
 #include "../cad/model.hpp"
 
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <iomanip>
 #include <iterator>
+#include <limits>
 #include <sstream>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace icad::ai {
 namespace {
@@ -156,7 +161,255 @@ namespace {
     return "inconsistent";
 }
 
+struct ProjectedPoint {
+    double u{};
+    double v{};
+    double depth{};
+};
+
+struct SnapshotView {
+    std::string_view name;
+    std::string_view horizontal_axis;
+    std::string_view vertical_axis;
+    std::array<double, 3> horizontal;
+    std::array<double, 3> vertical;
+    std::array<double, 3> depth;
+};
+
+constexpr std::array snapshot_views{
+    SnapshotView{"front", "+X", "+Z", {1.0, 0.0, 0.0}, {0.0, 0.0, 1.0},
+                 {0.0, 1.0, 0.0}},
+    SnapshotView{"right", "+Y", "+Z", {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0},
+                 {1.0, 0.0, 0.0}},
+    SnapshotView{"top", "+X", "+Y", {1.0, 0.0, 0.0}, {0.0, 1.0, 0.0},
+                 {0.0, 0.0, 1.0}},
+    SnapshotView{"isometric", "+X -Y", "+Z -X -Y", {0.7071067811865476, -0.7071067811865476, 0.0},
+                 {-0.408248290463863, -0.408248290463863, 0.816496580927726},
+                 {0.577350269189626, 0.577350269189626, 0.577350269189626}},
+};
+
+[[nodiscard]] auto project_point(const cad::Point3& point, const SnapshotView& view)
+    -> ProjectedPoint {
+    const auto dot = [&](const std::array<double, 3>& axis) {
+        return point.x * axis[0] + point.y * axis[1] + point.z * axis[2];
+    };
+    return {dot(view.horizontal), dot(view.vertical), dot(view.depth)};
+}
+
+[[nodiscard]] auto body_names(const cad::Model& model) -> std::vector<std::string> {
+    std::vector<std::string> bodies;
+    std::unordered_set<std::string_view> seen;
+    seen.reserve(model.parts.size());
+    for (const auto& part : model.parts) {
+        if (seen.insert(part.body).second)
+            bodies.push_back(part.body);
+    }
+    return bodies;
+}
+
+[[nodiscard]] auto inside_triangle(double x, double y, const ProjectedPoint& first,
+                                   const ProjectedPoint& second, const ProjectedPoint& third,
+                                   std::array<double, 3>& weights) -> bool {
+    const double denominator = (second.v - third.v) * (first.u - third.u) +
+                               (third.u - second.u) * (first.v - third.v);
+    if (std::abs(denominator) <= 1.0e-12)
+        return false;
+    weights[0] = ((second.v - third.v) * (x - third.u) +
+                  (third.u - second.u) * (y - third.v)) /
+                 denominator;
+    weights[1] = ((third.v - first.v) * (x - third.u) +
+                  (first.u - third.u) * (y - third.v)) /
+                 denominator;
+    weights[2] = 1.0 - weights[0] - weights[1];
+    constexpr double tolerance = -1.0e-9;
+    return weights[0] >= tolerance && weights[1] >= tolerance &&
+           weights[2] >= tolerance;
+}
+
+auto write_snapshot_view(std::ostringstream& output, const cad::Model& model,
+                         const std::vector<std::string>& bodies, const SnapshotView& view)
+    -> void {
+    constexpr std::size_t width = 64;
+    constexpr std::size_t height = 32;
+    constexpr std::string_view symbols =
+        "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    double minimum_u = std::numeric_limits<double>::max();
+    double minimum_v = std::numeric_limits<double>::max();
+    double maximum_u = std::numeric_limits<double>::lowest();
+    double maximum_v = std::numeric_limits<double>::lowest();
+    for (const auto& part : model.parts) {
+        for (const auto& vertex : part.vertices) {
+            const auto point = project_point(vertex, view);
+            minimum_u = std::min(minimum_u, point.u);
+            minimum_v = std::min(minimum_v, point.v);
+            maximum_u = std::max(maximum_u, point.u);
+            maximum_v = std::max(maximum_v, point.v);
+        }
+    }
+    if (minimum_u > maximum_u) {
+        minimum_u = minimum_v = 0.0;
+        maximum_u = maximum_v = 1.0;
+    }
+    const double span_u = std::max(maximum_u - minimum_u, 1.0e-9);
+    const double span_v = std::max(maximum_v - minimum_v, 1.0e-9);
+    minimum_u -= span_u * 0.03;
+    maximum_u += span_u * 0.03;
+    minimum_v -= span_v * 0.03;
+    maximum_v += span_v * 0.03;
+    const double cell_u = (maximum_u - minimum_u) / static_cast<double>(width);
+    const double cell_v = (maximum_v - minimum_v) / static_cast<double>(height);
+    std::vector<char> pixels(width * height, '.');
+    std::vector<double> depths(width * height, std::numeric_limits<double>::lowest());
+    std::unordered_map<std::string_view, std::size_t> body_indices;
+    body_indices.reserve(bodies.size());
+    for (std::size_t index = 0; index < bodies.size(); ++index)
+        body_indices.emplace(bodies[index], index);
+
+    for (const auto& part : model.parts) {
+        const auto body = body_indices.find(part.body);
+        if (body == body_indices.end())
+            continue;
+        const auto body_index = body->second;
+        if (body_index >= symbols.size())
+            continue;
+        for (const auto& triangle : part.triangles) {
+            const auto first = project_point(part.vertices[triangle[0]], view);
+            const auto second = project_point(part.vertices[triangle[1]], view);
+            const auto third = project_point(part.vertices[triangle[2]], view);
+            const double triangle_min_u = std::min({first.u, second.u, third.u});
+            const double triangle_max_u = std::max({first.u, second.u, third.u});
+            const double triangle_min_v = std::min({first.v, second.v, third.v});
+            const double triangle_max_v = std::max({first.v, second.v, third.v});
+            const auto min_column = static_cast<std::size_t>(std::clamp(
+                std::floor((triangle_min_u - minimum_u) / cell_u), 0.0,
+                static_cast<double>(width - 1)));
+            const auto max_column = static_cast<std::size_t>(std::clamp(
+                std::floor((triangle_max_u - minimum_u) / cell_u), 0.0,
+                static_cast<double>(width - 1)));
+            const auto min_row_from_bottom = static_cast<std::size_t>(std::clamp(
+                std::floor((triangle_min_v - minimum_v) / cell_v), 0.0,
+                static_cast<double>(height - 1)));
+            const auto max_row_from_bottom = static_cast<std::size_t>(std::clamp(
+                std::floor((triangle_max_v - minimum_v) / cell_v), 0.0,
+                static_cast<double>(height - 1)));
+            for (std::size_t row_from_bottom = min_row_from_bottom;
+                 row_from_bottom <= max_row_from_bottom; ++row_from_bottom) {
+                for (std::size_t column = min_column; column <= max_column; ++column) {
+                    const double u = minimum_u + (static_cast<double>(column) + 0.5) * cell_u;
+                    const double v = minimum_v +
+                                     (static_cast<double>(row_from_bottom) + 0.5) * cell_v;
+                    std::array<double, 3> weights{};
+                    if (!inside_triangle(u, v, first, second, third, weights))
+                        continue;
+                    const double depth = weights[0] * first.depth + weights[1] * second.depth +
+                                         weights[2] * third.depth;
+                    const std::size_t row = height - row_from_bottom - 1;
+                    const std::size_t pixel = row * width + column;
+                    if (depth >= depths[pixel]) {
+                        depths[pixel] = depth;
+                        pixels[pixel] = symbols[body_index];
+                    }
+                }
+            }
+        }
+    }
+
+    output << "{\"name\":" << quoted(view.name) << ",\"horizontalAxis\":"
+           << quoted(view.horizontal_axis) << ",\"verticalAxis\":"
+           << quoted(view.vertical_axis) << ",\"projectedBounds\":[" << minimum_u << ','
+           << minimum_v << ',' << maximum_u << ',' << maximum_v
+           << "],\"grid\":{\"width\":" << width << ",\"height\":" << height
+           << ",\"rows\":[";
+    for (std::size_t row = 0; row < height; ++row) {
+        if (row != 0)
+            output << ',';
+        output << quoted(std::string_view{pixels.data() + row * width, width});
+    }
+    output << "]}}";
+}
+
 } // namespace
+
+auto visual_snapshot_json(const compiler::ir::Project& project) -> std::string {
+    const auto model = cad::build_model(project);
+    const auto bodies = body_names(model);
+    struct BodySummary {
+        std::size_t parts{};
+        std::size_t triangles{};
+        std::array<double, 3> minimum{std::numeric_limits<double>::max(),
+                                      std::numeric_limits<double>::max(),
+                                      std::numeric_limits<double>::max()};
+        std::array<double, 3> maximum{std::numeric_limits<double>::lowest(),
+                                      std::numeric_limits<double>::lowest(),
+                                      std::numeric_limits<double>::lowest()};
+    };
+    std::vector<BodySummary> summaries(bodies.size());
+    std::unordered_map<std::string_view, std::size_t> body_indices;
+    body_indices.reserve(bodies.size());
+    for (std::size_t index = 0; index < bodies.size(); ++index)
+        body_indices.emplace(bodies[index], index);
+    for (const auto& part : model.parts) {
+        const auto found = body_indices.find(part.body);
+        if (found == body_indices.end())
+            continue;
+        auto& summary = summaries[found->second];
+        ++summary.parts;
+        summary.triangles += part.triangles.size();
+        for (const auto& vertex : part.vertices) {
+            summary.minimum[0] = std::min(summary.minimum[0], vertex.x);
+            summary.minimum[1] = std::min(summary.minimum[1], vertex.y);
+            summary.minimum[2] = std::min(summary.minimum[2], vertex.z);
+            summary.maximum[0] = std::max(summary.maximum[0], vertex.x);
+            summary.maximum[1] = std::max(summary.maximum[1], vertex.y);
+            summary.maximum[2] = std::max(summary.maximum[2], vertex.z);
+        }
+    }
+    constexpr std::string_view symbols =
+        "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    std::ostringstream output;
+    output << std::setprecision(17)
+           << "{\"schema\":\"icad.visual.snapshot.v1\",\"project\":"
+           << quoted(project.name) << ",\"revision\":"
+           << quoted(document::revision_id(document::fingerprint(project)))
+           << ",\"representation\":\"deterministic-depth-raster\",\"legend\":[";
+    for (std::size_t index = 0; index < bodies.size(); ++index) {
+        if (index != 0)
+            output << ',';
+        const auto& summary = summaries[index];
+        output << "{\"symbol\":";
+        if (index < symbols.size())
+            output << quoted(std::string_view{&symbols[index], 1});
+        else
+            output << "null";
+        output << ",\"body\":" << quoted(bodies[index]) << ",\"parts\":" << summary.parts
+               << ",\"triangles\":" << summary.triangles << ",\"boundsMinMm\":["
+               << summary.minimum[0] << ',' << summary.minimum[1] << ',' << summary.minimum[2]
+               << "],\"boundsMaxMm\":[" << summary.maximum[0] << ',' << summary.maximum[1]
+               << ',' << summary.maximum[2] << "]}";
+    }
+    output << "],\"truncatedBodies\":"
+           << (bodies.size() > symbols.size() ? bodies.size() - symbols.size() : 0)
+           << ",\"views\":[";
+    for (std::size_t index = 0; index < snapshot_views.size(); ++index) {
+        if (index != 0)
+            output << ',';
+        write_snapshot_view(output, model, bodies, snapshot_views[index]);
+    }
+    output << "],\"joints\":[";
+    for (std::size_t index = 0; index < project.joints.size(); ++index) {
+        if (index != 0)
+            output << ',';
+        const auto& joint = project.joints[index];
+        output << "{\"name\":" << quoted(joint.name) << ",\"parent\":"
+               << quoted(joint.parent_body) << ",\"child\":" << quoted(joint.child_body)
+               << ",\"type\":" << quoted(joint_kind_name(joint.kind)) << ",\"point\":"
+               << quoted(joint.point) << ",\"axis\":" << quoted(joint.axis)
+               << ",\"value\":" << joint.value << ",\"limits\":[" << joint.lower_limit
+               << ',' << joint.upper_limit << "]}";
+    }
+    output << "]}";
+    return output.str();
+}
 
 auto project_json(const compiler::ir::Project& project) -> std::string {
     const auto metrics = cad::analyze(project);

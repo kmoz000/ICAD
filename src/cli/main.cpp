@@ -36,6 +36,7 @@ auto print_usage(std::ostream& output) -> void {
               "       icad ast <source.icad>\n"
               "       icad inspect <source.icad>\n"
               "       icad inspect-json <source.icad>\n"
+              "       icad visual-json <source.icad>\n"
               "       icad topology-json <source.icad>\n"
               "       icad diagnostics-json <source.icad>\n"
               "       icad measure <source.icad>\n"
@@ -387,6 +388,10 @@ auto main(int argc, char** argv) -> int {
     }
     if (command == "inspect-json") {
         std::cout << icad::ai::project_json(*result.ir_project) << '\n';
+        return 0;
+    }
+    if (command == "visual-json") {
+        std::cout << icad::ai::visual_snapshot_json(*result.ir_project) << '\n';
         return 0;
     }
     if (command == "topology-json") {

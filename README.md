@@ -67,8 +67,10 @@ target one model iteration; unfamiliar prompts receive a valid generic
 parametric starter for agent refinement.
 
 Open [`build/examples/advanced.html`](build/examples/advanced.html) directly in
-a browser. It needs no server, package install, or framework. Drag to orbit,
-scroll to zoom, and use Play/Pause for the compiled animation.
+a browser. It needs no server, package install, or framework. The dim studio
+world starts stationary: drag to orbit, scroll to zoom, use the orthographic
+view cube, click geometry or the Components menu to select parts, and start a
+specific compiled animation from the Scenes menu.
 
 The advanced build produces:
 
@@ -99,6 +101,7 @@ build/bin/icad tokens examples/minimal.icad
 build/bin/icad ast examples/minimal.icad
 build/bin/icad inspect examples/advanced.icad
 build/bin/icad inspect-json examples/advanced.icad
+build/bin/icad visual-json examples/robotic_arm.icad
 build/bin/icad topology-json examples/advanced.icad
 build/bin/icad diagnostics-json examples/advanced.icad
 build/bin/icad measure examples/advanced.icad
@@ -152,6 +155,9 @@ The deterministic tool catalog contains source-text tools:
 - `icad.validate`: constraints and manufacturing validation;
 - `icad.measure`: area, volume, and bounds;
 - `icad.inspect`: canonical IR counts, revision, ownership, and metrics;
+- `icad.visualize`: deterministic 64x32 front, right, top, and isometric
+  depth rasters with a component legend, per-body bounds/triangle counts, and
+  current joint state, giving an agent a compact visual check after every edit;
 - `icad.topology`: stable solid/shell/face/edge/vertex IDs and analytic geometry;
 - `icad.distance`: closest points and exact-polyhedral body distance;
 - `icad.interference`: penetrating, contained, and surface-contact classification;
@@ -685,11 +691,13 @@ live import in the target CAD version before a release is called certified.
    prompt-to-artifact path. It embeds maintained compiler-valid robot and bridge
    designs instead of asking a model to rediscover assembly syntax.
 2. For a custom topology, call `icad.agent.bootstrap`, edit the returned named
-   parameters/vectors/angles, then call `icad.agent.review` once. Repair only
-   its focused next actions.
+   parameters/vectors/angles, call `icad.visualize`, and reject a poor
+   silhouette, placement error, or unintended overlap before calling
+   `icad.agent.review`. Repair only its focused next actions.
 3. Apply dimensional revisions together with `icad.project.set_parameters` so
    one model decision produces one compiler-validated revision.
-4. Reference only stable semantic topology IDs returned by ICAD; never patch
+4. Compare the front/top/right/isometric raster legend across revisions, then
+   reference only stable semantic topology IDs returned by ICAD; never patch
    binary CAD or infer a joint axis from mesh triangles.
 5. Read back STEP/STL and run the benchmark/viewer gates before delivery.
 
@@ -742,15 +750,18 @@ The robotic-arm benchmark compares against
 `examples/Robotic_Arm_3D_Model`: 10 reference STL component files, 23,314
 reference facets, 20 reference STEP solids, and 21 reference assembly
 occurrences. The native `robotic_arm.icad` acceptance design builds 10
-components, 20 solids, and 1,636 deterministic facets; the primary arm link
-uses exact circular profile arcs. This remains a structural
-correctness and complexity baseline with 98 exact vertices, 147 exact edges,
-and 89 exact faces, not a claim of identical surface shape.
+components, 24 solids, and 2,164 deterministic facets. It uses exact circular
+link arcs, tapered arm/wrist shells, toothed gear profiles, opposed hooked
+gripper fingers, linkage profiles, and flange fasteners. The benchmark now
+also validates four deterministic agent-readable depth views. Its topology
+baseline is 242 exact vertices, 363 exact edges, and 169 exact faces. This is a
+recognizable articulated acceptance model, not a claim that it duplicates the
+supplied proprietary surface model.
 
 The agentic prompt benchmark runs a single `agent-create` command from a short
 robotic-arm request, requires one expected model iteration, verifies 10 bodies,
 10 joints, 7 driven degrees of freedom, valid topology, and structurally reads
-back the resulting 20-solid STEP assembly. That same test directly validates the
+back the resulting 24-solid STEP assembly and the visual snapshot. That same test directly validates the
 supplied reference folder's 10 STL components and 20-solid STEP baseline before
 comparing the generated structural result.
 

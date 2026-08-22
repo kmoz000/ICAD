@@ -32,7 +32,11 @@ schemas unchanged to any model API that supports tool calling.
 2. For a new design class, call `icad.agent.bootstrap`. It returns valid source,
    explicit acceptance criteria, a named-parameter strategy, and the shortest
    next-tool sequence.
-3. Make topology-level changes in source and call `icad.agent.review`. This one
+3. Make topology-level changes in source and call `icad.visualize`. Its four
+   deterministic, depth-resolved orthographic/isometric grids let the model
+   check component silhouette, placement, occlusion, and current joint state
+   without interpreting a binary mesh. Revise until the view matches the
+   design intent, then call `icad.agent.review`. This one
    response combines compilation, constraints, manufacturing, topology,
    metrics, and interference, so the model only sees actionable failures. Read
    its `designMap` in order: overall bounds, body centers/sizes, named points and
@@ -86,6 +90,12 @@ declarations for link chains. ICAD evaluates mixed point/vector dependencies,
 rejects cycles, and exposes both the resolved value and expression provenance
 to inspection. Constraint targets may reuse compatible named parameters or
 `ANGLE` values, avoiding duplicated numeric values.
+
+`icad.visualize` returns a `icad.visual.snapshot.v1` document with a stable
+symbol-to-body legend, body bounds and triangle counts, current joint values,
+and 64x32 front/right/top/isometric depth rasters. Call it after every geometry
+or joint edit. A view is an agent reasoning aid rather than a substitute for
+topology, manufacturing, or interference validation.
 
 `icad.inspect` also returns bounds, center, and size for every body plus a named
 cross-body contact graph. Use those summaries before requesting full topology:

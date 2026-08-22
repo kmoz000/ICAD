@@ -9,7 +9,6 @@
 #include <iomanip>
 #include <iterator>
 #include <map>
-#include <regex>
 #include <set>
 #include <sstream>
 #include <string>
@@ -37,6 +36,27 @@ class StepWriter {
     std::ostream& output_;
     std::size_t next_{1};
 };
+
+[[nodiscard]] auto count_step_entities(std::string_view content,
+                                       std::string_view entity_name) -> std::size_t {
+    std::size_t count = 0;
+    for (std::size_t cursor = content.find('='); cursor != std::string_view::npos;
+         cursor = content.find('=', cursor + 1)) {
+        std::size_t name = cursor + 1;
+        while (name < content.size() &&
+               std::isspace(static_cast<unsigned char>(content[name])) != 0)
+            ++name;
+        if (!content.substr(name).starts_with(entity_name))
+            continue;
+        std::size_t opening = name + entity_name.size();
+        while (opening < content.size() &&
+               std::isspace(static_cast<unsigned char>(content[opening])) != 0)
+            ++opening;
+        if (opening < content.size() && content[opening] == '(')
+            ++count;
+    }
+    return count;
+}
 
 [[nodiscard]] auto references(const std::vector<std::size_t>& identifiers) -> std::string {
     std::ostringstream output;
@@ -302,14 +322,9 @@ auto inspect_step(const std::filesystem::path& input) -> StepInspection {
                               std::istreambuf_iterator<char>{}};
     const bool header = content.find("ISO-10303-21;") != std::string::npos;
     const bool footer = content.find("END-ISO-10303-21;") != std::string::npos;
-    const std::regex solid_pattern{R"(=\s*(FACETED_BREP|MANIFOLD_SOLID_BREP)\s*\()"};
-    const std::regex component_pattern{R"(=\s*NEXT_ASSEMBLY_USAGE_OCCURRENCE\s*\()"};
-    const auto solids = static_cast<std::size_t>(
-        std::distance(std::sregex_iterator{content.begin(), content.end(), solid_pattern},
-                      std::sregex_iterator{}));
-    const auto components = static_cast<std::size_t>(
-        std::distance(std::sregex_iterator{content.begin(), content.end(), component_pattern},
-                      std::sregex_iterator{}));
+    const auto solids = count_step_entities(content, "FACETED_BREP") +
+                        count_step_entities(content, "MANIFOLD_SOLID_BREP");
+    const auto components = count_step_entities(content, "NEXT_ASSEMBLY_USAGE_OCCURRENCE");
     if (!header || !footer || solids == 0) {
         return {false, "STEP envelope contains no recognized solids"};
     }

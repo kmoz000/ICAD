@@ -89,6 +89,7 @@ auto main() -> int {
     messages += tool_call(4, "icad.compile", {{"source", "PROJECT broken\n$"}});
     messages += tool_call(5, "icad.inspect", {{"source", std::string{valid_source}}});
     messages += tool_call(16, "icad.topology", {{"source", std::string{valid_source}}});
+    messages += tool_call(25, "icad.visualize", {{"source", std::string{valid_source}}});
     messages += tool_call(17, "icad.language", {});
     messages += tool_call(18, "icad.distance",
                           {{"source", std::string{query_source}},
@@ -166,7 +167,7 @@ auto main() -> int {
             return fail("MCP emitted invalid JSON");
         parsed_responses.push_back(std::move(*parsed.value));
     }
-    if (parsed_responses.size() != 25) {
+    if (parsed_responses.size() != 26) {
         return fail("MCP emitted an unexpected response count");
     }
     const auto serialized = output.str();
@@ -177,12 +178,14 @@ auto main() -> int {
         !serialized.contains("\"name\":\"icad.project.set_parameters\"") ||
         !serialized.contains("\"name\":\"icad.agent.create\"") ||
         !serialized.contains("\"name\":\"icad.topology\"") ||
+        !serialized.contains("\"name\":\"icad.visualize\"") ||
         !serialized.contains("\"name\":\"icad.distance\"") ||
         !serialized.contains("\"schema\":\"icad.distance.v1\"") ||
         !serialized.contains("\"distanceMm\":10") ||
         !serialized.contains("\"schema\":\"icad.interference.v1\"") ||
         !serialized.contains("\"schema\":\"icad.section.v1\"") ||
         !serialized.contains("\"schema\":\"icad.topology.v1\"") ||
+        !serialized.contains("\"schema\":\"icad.visual.snapshot.v1\"") ||
         !serialized.contains("\"schema\":\"icad.agent.bootstrap.v1\"") ||
         !serialized.contains("\"schema\":\"icad.agent.review.v1\"") ||
         !serialized.contains("\"schema\":\"icad.agent.create.v1\"") ||

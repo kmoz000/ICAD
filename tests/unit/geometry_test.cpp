@@ -70,6 +70,19 @@ auto main() -> int {
         !step_content.contains("CIRCLE")) {
         return fail("STEP exporter omitted analytic B-Rep entities");
     }
+    const auto external_step_path = output_root / "external-spaced.step";
+    {
+        std::ofstream external{external_step_path, std::ios::binary | std::ios::trunc};
+        external << "ISO-10303-21;\nDATA;\n"
+                    "#1 = MANIFOLD_SOLID_BREP ( 'external', #2 ) ;\n"
+                    "#3 = NEXT_ASSEMBLY_USAGE_OCCURRENCE ( 'id', 'name', '', #4, #5, $ ) ;\n"
+                    "ENDSEC;\nEND-ISO-10303-21;\n";
+    }
+    const auto external_inspection = icad::exchange::inspect_step(external_step_path);
+    if (!external_inspection.success || external_inspection.solids != 1 ||
+        external_inspection.assembly_components != 1) {
+        return fail("STEP read-back did not recognize whitespace-separated external entities");
+    }
 
     const auto obj = icad::exchange::export_project(*compilation.ir_project, obj_path);
     if (!obj.success || obj.objects != 2 || obj.vertices == 0 || obj.triangles == 0 ||

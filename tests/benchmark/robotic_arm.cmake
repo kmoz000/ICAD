@@ -43,12 +43,29 @@ if(NOT inspect_result EQUAL 0)
     message(FATAL_ERROR "robotic_arm.icad did not compile: ${inspect_error}")
 endif()
 foreach(expected IN ITEMS "PARAMETERS 6" "ANGLES 5" "POINTS3 13" "VECTORS 6" "POSES 1"
-                          "JOINTS 10" "MATERIALS 3" "PROFILES 1" "BODIES 10"
-                          "PROFILE_SEGMENTS 6" "CURVED_PROFILE_SEGMENTS 4"
-                          "FEATURES 20" "CONSTRAINTS 4" "SCENES 1" "ANIMATION_TRACKS 3"
+                          "JOINTS 10" "MATERIALS 3" "PROFILES 9" "BODIES 10"
+                          "PROFILE_SEGMENTS 100" "CURVED_PROFILE_SEGMENTS 4"
+                          "FEATURES 24" "CONSTRAINTS 4" "SCENES 1" "ANIMATION_TRACKS 3"
                           "KEYFRAMES 8")
     if(NOT inspect_output MATCHES "${expected}")
         message(FATAL_ERROR "robotic arm is missing metric ${expected}: ${inspect_output}")
+    endif()
+endforeach()
+
+execute_process(
+    COMMAND "${ICAD_EXECUTABLE}" visual-json "${ICAD_SOURCE}"
+    RESULT_VARIABLE visual_result
+    OUTPUT_VARIABLE visual_output
+    ERROR_VARIABLE visual_error
+)
+foreach(expected IN ITEMS "\"schema\":\"icad.visual.snapshot.v1\""
+                          "\"name\":\"front\"" "\"name\":\"right\""
+                          "\"name\":\"top\"" "\"name\":\"isometric\""
+                          "\"body\":\"gripper_1\",\"parts\":2,\"triangles\":72"
+                          "\"body\":\"gear_1\",\"parts\":2,\"triangles\":220"
+                          "\"body\":\"gear_2\",\"parts\":2,\"triangles\":220")
+    if(NOT visual_result EQUAL 0 OR NOT visual_output MATCHES "${expected}")
+        message(FATAL_ERROR "robotic arm visual acceptance is missing ${expected}: ${visual_error}${visual_output}")
     endif()
 endforeach()
 
@@ -94,7 +111,7 @@ execute_process(
     ERROR_VARIABLE topology_error
 )
 if(NOT topology_result EQUAL 0 OR NOT topology_output MATCHES
-   "\\\"counts\\\":\\{\\\"solids\\\":20,\\\"vertices\\\":98,\\\"edges\\\":147,\\\"wires\\\":89,\\\"faces\\\":89\\}" OR
+   "\\\"counts\\\":\\{\\\"solids\\\":24,\\\"vertices\\\":242,\\\"edges\\\":363,\\\"wires\\\":169,\\\"faces\\\":169\\}" OR
    NOT topology_output MATCHES "arm_01/lower_link/face.side.1")
     message(FATAL_ERROR "robotic-arm exact topology mismatch: ${topology_error}${topology_output}")
 endif()
@@ -105,7 +122,7 @@ execute_process(
     OUTPUT_VARIABLE assembly_output
     ERROR_VARIABLE assembly_error
 )
-if(NOT assembly_result EQUAL 0 OR NOT assembly_output MATCHES "STEP_SOLIDS 20" OR
+if(NOT assembly_result EQUAL 0 OR NOT assembly_output MATCHES "STEP_SOLIDS 24" OR
    NOT assembly_output MATCHES "STEP_ASSEMBLY_COMPONENTS 10")
     message(FATAL_ERROR "generated robotic assembly mismatch: ${assembly_error}${assembly_output}")
 endif()
@@ -115,10 +132,10 @@ execute_process(
     OUTPUT_VARIABLE stl_output
     ERROR_VARIABLE stl_error
 )
-if(NOT stl_result EQUAL 0 OR NOT stl_output MATCHES "STL_SOLIDS 20" OR
-   NOT stl_output MATCHES "STL_FACETS 1636")
+if(NOT stl_result EQUAL 0 OR NOT stl_output MATCHES "STL_SOLIDS 24" OR
+   NOT stl_output MATCHES "STL_FACETS 2164")
     message(FATAL_ERROR "generated robotic STL mismatch: ${stl_error}${stl_output}")
 endif()
 
 message(STATUS
-    "robotic arm benchmark passed: reference=10 STL files/23314 facets/20 STEP solids; ICAD=10 components/20 solids/89 exact faces/1636 facets with analytic link arcs and a validated 10-joint/7-DOF mechanism graph")
+    "robotic arm benchmark passed: reference=10 STL files/23314 facets/20 STEP solids; ICAD=10 components/24 solids/169 exact faces/2164 facets with toothed gears, mechanical gripper silhouettes, four agent-readable views, and a validated 10-joint/7-DOF mechanism graph")

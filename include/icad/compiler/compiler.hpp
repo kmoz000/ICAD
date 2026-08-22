@@ -7,6 +7,7 @@
 #include "icad/compiler/importer.hpp"
 #include "icad/compiler/lexer/token.hpp"
 
+#include <filesystem>
 #include <optional>
 #include <string_view>
 #include <vector>
@@ -34,4 +35,3 @@ struct CompileOptions {
 [[nodiscard]] auto compile(std::string_view source, CompileOptions options = {}) -> CompileResult;
 
 } // namespace icad::compiler
-#include <filesystem>

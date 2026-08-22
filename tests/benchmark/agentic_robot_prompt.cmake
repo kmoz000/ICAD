@@ -37,7 +37,7 @@ foreach(expected IN ITEMS "\"ready\":true" "\"bodies\":10" "\"joints\":10"
                           "\"selectedTemplate\":\"robotic_arm\""
                           "\"name\":\"preview_forearm_axis\""
                           "\"child\":\"arm_02\""
-                          "components=10" "solids=20")
+                          "components=10" "solids=24")
     if(NOT create_result EQUAL 0 OR NOT create_output MATCHES "${expected}")
         message(FATAL_ERROR "one-command robotic creation is missing ${expected}: ${create_error}${create_output}")
     endif()
@@ -49,8 +49,20 @@ execute_process(
     OUTPUT_VARIABLE step_output
     ERROR_VARIABLE step_error
 )
-if(NOT step_result EQUAL 0 OR NOT step_output MATCHES "STEP_SOLIDS 20" OR
+if(NOT step_result EQUAL 0 OR NOT step_output MATCHES "STEP_SOLIDS 24" OR
    NOT step_output MATCHES "STEP_ASSEMBLY_COMPONENTS 10")
     message(FATAL_ERROR "robotic prompt STEP assembly failed: ${step_error}${step_output}")
 endif()
-message(STATUS "one-command robotic prompt passed against reference: 10 source components, 10 ICAD bodies, 10 joints, 7 DOF, 20 solids")
+execute_process(
+    COMMAND "${ICAD_EXECUTABLE}" visual-json "${source}"
+    RESULT_VARIABLE visual_result
+    OUTPUT_VARIABLE visual_output
+    ERROR_VARIABLE visual_error
+)
+if(NOT visual_result EQUAL 0 OR
+   NOT visual_output MATCHES "\"schema\":\"icad.visual.snapshot.v1\"" OR
+   NOT visual_output MATCHES "\"body\":\"gripper_1\",\"parts\":2,\"triangles\":72" OR
+   NOT visual_output MATCHES "\"body\":\"gear_1\",\"parts\":2,\"triangles\":220")
+    message(FATAL_ERROR "agent-created robot lacks the accepted visual snapshot: ${visual_error}${visual_output}")
+endif()
+message(STATUS "one-command robotic prompt passed against reference: 10 source components, 10 ICAD bodies, 10 joints, 7 DOF, 24 solids, and four agent-readable views")

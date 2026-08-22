@@ -140,6 +140,10 @@ auto expand(State& state, std::string_view source, const std::filesystem::path& 
 
 auto expand_imports(std::string_view source, const ImportOptions& options) -> ImportResult {
     State state;
+    if (source.size() > options.maximum_bytes) {
+        error(state, "ICAD-I0006", "maximum imported source size exceeded", 1);
+        return state.result;
+    }
     if (options.source_path.empty()) {
         state.result.source.assign(source);
         if (has_directive(source)) {

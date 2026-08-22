@@ -36,6 +36,27 @@ auto main() -> int {
         !inspection.contains("\"intersections\":{\"partPairCandidates\":")) {
         return fail("agent inspection JSON is incomplete");
     }
+    const auto visual = icad::ai::visual_snapshot_json(*compilation.ir_project);
+    if (!visual.contains("\"schema\":\"icad.visual.snapshot.v1\"") ||
+        !visual.contains("\"name\":\"front\"") ||
+        !visual.contains("\"name\":\"right\"") ||
+        !visual.contains("\"name\":\"top\"") ||
+        !visual.contains("\"name\":\"isometric\"") ||
+        !visual.contains("\"body\":\"part\"") || !visual.contains("\"rows\":[")) {
+        return fail("agent visual snapshot JSON is incomplete");
+    }
+    std::string large_source{"PROJECT LargeAgentView\nUNITS mm\n"};
+    for (int index = 0; index < 63; ++index) {
+        large_source += "BODY body_" + std::to_string(index) + "\nFEATURE box\nTYPE BOX\n"
+                        "WIDTH 1 mm\nDEPTH 1 mm\nHEIGHT 1 mm\nORIGIN_X " +
+                        std::to_string(index * 2) + " mm\nEND\nEND\n";
+    }
+    const auto large_compilation = icad::compiler::compile(large_source);
+    if (!large_compilation.ok() ||
+        !icad::ai::visual_snapshot_json(*large_compilation.ir_project)
+             .contains("\"truncatedBodies\":1")) {
+        return fail("agent visual snapshot did not report its raster legend limit");
+    }
     const auto diagnostics = icad::ai::diagnostics_json("PROJECT bad\n$");
     if (!diagnostics.contains("\"ok\":false") || !diagnostics.contains("ICAD-L0001")) {
         return fail("agent diagnostics JSON is incomplete");

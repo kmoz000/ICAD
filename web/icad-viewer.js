@@ -73,9 +73,9 @@
     cube.className = "icad-view-cube";
     cube.setAttribute("aria-label", "Orthographic view cube");
     const views = [
-      ["Top", "T", [0, 0, 0]], ["Front", "F", [90, 0, 0]],
-      ["Right", "R", [90, 0, 90]], ["Perspective", "3D", [58, 0, -28]],
-      ["Left", "L", [90, 0, -90]], ["Back", "B", [90, 0, 180]],
+      ["Top", "T", [0, 0, 0]], ["Left", "L", [90, 0, -90]],
+      ["Front", "F", [90, 0, 0]], ["Right", "R", [90, 0, 90]],
+      ["Back", "B", [90, 0, 180]], ["Perspective", "3D", [58, 0, -28]],
       ["Bottom", "D", [180, 0, 0]]
     ];
     for (const [name, label, rotation] of views) {
@@ -202,15 +202,6 @@
     sectionInput.setAttribute("aria-label", "Section plane position");
     sectionInput.oninput = () => { section = Number(sectionInput.value); draw(performance.now()); };
     controls.appendChild(sectionInput);
-    if (model.scenes.length > 1) {
-      const picker = document.createElement("select");
-      picker.setAttribute("aria-label", "Animation scene");
-      model.scenes.forEach((sceneValue, index) => {
-        const option = document.createElement("option"); option.value = String(index); option.textContent = sceneValue.name; picker.appendChild(option);
-      });
-      picker.onchange = () => { sceneIndex = Number(picker.value); started = performance.now(); };
-      controls.appendChild(picker);
-    }
     root.parentElement.insertBefore(controls, root);
 
     const componentDrop = addDropMenu(root.parentElement, "Components", "icad-component-menu");
@@ -218,15 +209,18 @@
     status.className = "icad-measurement";
     componentDrop.content.appendChild(status);
     const componentButtons = new Map();
+    const toggleSelection = body => {
+      const found = selected.indexOf(body);
+      if (found >= 0) selected.splice(found, 1);
+      else { selected.push(body); if (selected.length > 2) selected.shift(); }
+      for (const [name, button] of componentButtons)
+        button.setAttribute("aria-pressed", String(selected.includes(name)));
+      draw(performance.now());
+    };
     for (const body of [...new Set(model.parts.map(part => part.body))]) {
       const item = document.createElement("button");
       item.textContent = body;
-      item.onclick = () => {
-        const found = selected.indexOf(body);
-        if (found >= 0) selected.splice(found, 1); else { selected.push(body); if (selected.length > 2) selected.shift(); }
-        item.setAttribute("aria-pressed", String(selected.includes(body)));
-        draw(performance.now());
-      };
+      item.onclick = () => toggleSelection(body);
       item.setAttribute("aria-pressed", "false");
       componentButtons.set(body, item);
       componentDrop.content.appendChild(item);
@@ -246,9 +240,20 @@
 
     root.tabIndex = 0;
     root.setAttribute("aria-label", "Interactive ICAD WebGL design viewport");
-    root.addEventListener("pointerdown", event => { drag = [event.clientX, event.clientY]; root.setPointerCapture(event.pointerId); });
+    let pointerStart;
+    let pickTriangles = [];
+    root.addEventListener("pointerdown", event => { drag = [event.clientX, event.clientY]; pointerStart = drag.slice(); root.setPointerCapture(event.pointerId); });
     root.addEventListener("pointermove", event => { if (!drag) return; viewRotation[2] += (event.clientX - drag[0]) * 0.35; viewRotation[0] += (event.clientY - drag[1]) * 0.35; drag = [event.clientX, event.clientY]; draw(performance.now()); });
-    root.addEventListener("pointerup", () => { drag = undefined; });
+    root.addEventListener("pointerup", event => {
+      const clicked = pointerStart && Math.hypot(event.clientX - pointerStart[0], event.clientY - pointerStart[1]) < 4;
+      drag = undefined;
+      if (!clicked) return;
+      const bounds = root.getBoundingClientRect();
+      const x = event.clientX - bounds.left; const y = event.clientY - bounds.top;
+      const hit = pickTriangles.filter(candidate => pointInTriangle(x, y, candidate.points))
+        .sort((first, second) => first.depth - second.depth)[0];
+      if (hit) toggleSelection(hit.body);
+    });
     root.addEventListener("wheel", event => { event.preventDefault(); zoom = Math.max(0.2, Math.min(6, zoom * Math.exp(-event.deltaY * 0.001))); draw(performance.now()); }, { passive: false });
 
     const { center, extent } = modelBounds(model);
@@ -272,6 +277,7 @@
         if (track.targetKind === "VISIBILITY") visibility.set(track.target, value.visible);
       }
       const vertices = [];
+      const nextPickTriangles = [];
       const centers = new Map();
       for (const part of model.parts) {
         if (visibility.get(part.body) === false) continue;
@@ -283,29 +289,66 @@
         for (const face of part.triangles) {
           const sourcePoints = face.map(index => part.vertices[index]);
           if (sourcePoints.reduce((sum, point) => sum + point[2], 0) / 3 > center[2] + section * extent) continue;
-          for (const sourcePoint of sourcePoints) {
+          const transformed = sourcePoints.map(sourcePoint => {
             let point = animatedOccurrence(sourcePoint.slice(), part.body, jointsByChild, jointValues);
             point = point.map((value, axis) => value + direction[axis] * explode * extent * 0.4);
             point = rotate(point.map((value, axis) => value - center[axis]), transform.rotation);
             point = point.map((value, axis) => value + transform.position[axis]);
-            point = rotate(point, cameraRotation);
+            return rotate(point, cameraRotation);
+          });
+          const firstEdge = transformed[1].map((value, axis) => value - transformed[0][axis]);
+          const secondEdge = transformed[2].map((value, axis) => value - transformed[0][axis]);
+          const normal = [
+            firstEdge[1] * secondEdge[2] - firstEdge[2] * secondEdge[1],
+            firstEdge[2] * secondEdge[0] - firstEdge[0] * secondEdge[2],
+            firstEdge[0] * secondEdge[1] - firstEdge[1] * secondEdge[0]
+          ];
+          const normalLength = Math.hypot(...normal) || 1;
+          const light = [0.36, 0.52, 0.77];
+          const diffuse = Math.max(0, normal.reduce((sum, value, axis) =>
+            sum + value / normalLength * light[axis], 0));
+          const shade = 0.34 + diffuse * 0.66;
+          const litColor = color.map((value, axis) => axis < 3 ? Math.min(1, value * shade) : value);
+          const screenPoints = [];
+          for (const point of transformed) {
             const viewportScale = 1.52 * Math.min(width, height);
-            vertices.push(point[0] / extent * zoom * viewportScale / width,
-              point[1] / extent * zoom * viewportScale / height,
-              Math.max(-0.99, Math.min(0.99, point[2] / extent)), ...color);
+            const clipX = point[0] / extent * zoom * viewportScale / width;
+            const clipY = point[1] / extent * zoom * viewportScale / height;
+            const clipZ = Math.max(-0.99, Math.min(0.99, point[2] / extent));
+            vertices.push(clipX, clipY, clipZ, ...litColor);
+            screenPoints.push([(clipX + 1) * width / 2, (1 - clipY) * height / 2, clipZ]);
           }
+          nextPickTriangles.push({ body: part.body, points: screenPoints,
+            depth: screenPoints.reduce((sum, point) => sum + point[2], 0) / 3 });
         }
       }
+      pickTriangles = nextPickTriangles;
       if (selected.length === 2 && centers.has(selected[0]) && centers.has(selected[1])) {
         const first = centers.get(selected[0]); const second = centers.get(selected[1]);
         const distance = Math.hypot(...first.map((value, axis) => value - second[axis]));
         status.textContent = `${selected[0]} ↔ ${selected[1]} centroid distance: ${distance.toFixed(3)} mm`;
       } else status.textContent = selected.length ? `Selected: ${selected.join(", ")}` : "Select up to two components to measure";
-      const background = scene?.background === "NIGHT" ? [0.027, 0.063, 0.114, 1] : [0.91, 0.93, 0.95, 1];
+      const background = scene?.background === "NIGHT" ? [0.018, 0.027, 0.043, 1] : [0.075, 0.09, 0.115, 1];
       gl.clearColor(...background); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT); gl.enable(gl.DEPTH_TEST); gl.enable(gl.CULL_FACE);
-      gl.useProgram(program); gl.bindBuffer(gl.ARRAY_BUFFER, buffer); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.DYNAMIC_DRAW);
+      gl.useProgram(program); gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
       gl.enableVertexAttribArray(positionLocation); gl.vertexAttribPointer(positionLocation, 3, gl.FLOAT, false, 28, 0);
       gl.enableVertexAttribArray(colorLocation); gl.vertexAttribPointer(colorLocation, 4, gl.FLOAT, false, 28, 12);
+      const ground = [];
+      const viewportScale = 1.52 * Math.min(width, height);
+      for (let line = -10; line <= 10; line += 1) {
+        const offset = extent * 0.075 * line;
+        for (const point of [[-extent * 0.75, offset, -extent * 0.52],
+          [extent * 0.75, offset, -extent * 0.52], [offset, -extent * 0.75, -extent * 0.52],
+          [offset, extent * 0.75, -extent * 0.52]]) {
+          const projected = rotate(point, cameraRotation);
+          ground.push(projected[0] / extent * zoom * viewportScale / width,
+            projected[1] / extent * zoom * viewportScale / height,
+            Math.max(-0.99, Math.min(0.99, projected[2] / extent)), 0.25, 0.29, 0.34, 1);
+        }
+      }
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(ground), gl.DYNAMIC_DRAW);
+      gl.drawArrays(gl.LINES, 0, ground.length / 7);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.DYNAMIC_DRAW);
       gl.drawArrays(gl.TRIANGLES, 0, vertices.length / 7);
       if (playing) requestAnimationFrame(draw);
     }
@@ -319,8 +362,9 @@
     const materials = new Map(model.materials.map((material) => [material.name, material]));
     const jointsByChild = new Map(model.joints.map((joint) => [joint.child, joint]));
     const patterns = new Map();
+    const selected = [];
     let sceneIndex = 0;
-    let playing = true;
+    let playing = false;
     let started = performance.now();
     let viewRotation = [58, 0, -28];
     let zoom = 1;
@@ -338,40 +382,66 @@
     const controls = document.createElement("div");
     controls.className = "icad-viewer-controls";
     const play = document.createElement("button");
-    play.textContent = "Pause";
+    play.textContent = "Play";
     play.onclick = () => {
       playing = !playing;
       play.textContent = playing ? "Pause" : "Play";
       started = performance.now();
-      if (playing) requestAnimationFrame(draw);
+      if (playing) { emittedEvents.clear(); requestAnimationFrame(draw); }
     };
     controls.appendChild(play);
-    if (model.scenes.length > 1) {
-      const picker = document.createElement("select");
-      model.scenes.forEach((scene, index) => {
-        const option = document.createElement("option");
-        option.value = String(index);
-        option.textContent = scene.name;
-        picker.appendChild(option);
-      });
-      picker.onchange = () => {
-        sceneIndex = Number(picker.value);
-        started = performance.now();
-        emittedEvents.clear();
-      };
-      controls.appendChild(picker);
-    }
     root.parentElement.insertBefore(controls, root);
 
+    const componentDrop = addDropMenu(root.parentElement, "Components", "icad-component-menu");
+    const componentStatus = document.createElement("output");
+    componentStatus.className = "icad-measurement";
+    componentDrop.content.appendChild(componentStatus);
+    const componentButtons = new Map();
+    const toggleSelection = body => {
+      const found = selected.indexOf(body);
+      if (found >= 0) selected.splice(found, 1);
+      else { selected.push(body); if (selected.length > 2) selected.shift(); }
+      for (const [name, button] of componentButtons)
+        button.setAttribute("aria-pressed", String(selected.includes(name)));
+      draw(performance.now());
+    };
+    for (const body of [...new Set(model.parts.map(part => part.body))]) {
+      const item = document.createElement("button");
+      item.textContent = body; item.setAttribute("aria-pressed", "false");
+      item.onclick = () => toggleSelection(body);
+      componentButtons.set(body, item); componentDrop.content.appendChild(item);
+    }
+    const sceneDrop = addDropMenu(root.parentElement, "Scenes", "icad-scene-menu");
+    if (model.scenes.length === 0) {
+      const empty = document.createElement("span"); empty.textContent = "Static model";
+      sceneDrop.content.appendChild(empty);
+    }
+    model.scenes.forEach((sceneValue, index) => {
+      const item = document.createElement("button"); item.textContent = `▶ ${sceneValue.name}`;
+      item.onclick = () => { sceneIndex = index; playing = true; started = performance.now(); emittedEvents.clear(); play.textContent = "Pause"; requestAnimationFrame(draw); sceneDrop.menu.open = false; };
+      sceneDrop.content.appendChild(item);
+    });
+    addViewCube(root.parentElement, rotation => { viewRotation = rotation; draw(performance.now()); });
+
     let drag;
-    root.addEventListener("pointerdown", (event) => { drag = [event.clientX, event.clientY]; root.setPointerCapture(event.pointerId); });
+    let pointerStart;
+    let pickTriangles = [];
+    root.addEventListener("pointerdown", (event) => { drag = [event.clientX, event.clientY]; pointerStart = drag.slice(); root.setPointerCapture(event.pointerId); });
     root.addEventListener("pointermove", (event) => {
       if (!drag) return;
       viewRotation[2] += (event.clientX - drag[0]) * 0.35;
       viewRotation[0] += (event.clientY - drag[1]) * 0.35;
       drag = [event.clientX, event.clientY];
     });
-    root.addEventListener("pointerup", () => { drag = undefined; });
+    root.addEventListener("pointerup", event => {
+      const clicked = pointerStart && Math.hypot(event.clientX - pointerStart[0], event.clientY - pointerStart[1]) < 4;
+      drag = undefined;
+      if (!clicked) return;
+      const bounds = root.getBoundingClientRect();
+      const x = event.clientX - bounds.left; const y = event.clientY - bounds.top;
+      const hit = [...pickTriangles].reverse().find(candidate => pointInTriangle(x, y, candidate.points));
+      if (hit) toggleSelection(hit.body);
+    });
     root.addEventListener("wheel", (event) => {
       event.preventDefault();
       zoom = Math.max(0.2, Math.min(6, zoom * Math.exp(-event.deltaY * 0.001)));
@@ -399,9 +469,18 @@
         playing = false;
         play.textContent = "Play";
       }
-      const background = scene && scene.background === "NIGHT" ? "#07101d" : "#e9edf2";
+      const background = scene && scene.background === "NIGHT" ? "#050914" : "#131720";
       context.fillStyle = background;
       context.fillRect(0, 0, width, height);
+      context.strokeStyle = "rgba(148,163,184,.18)";
+      context.lineWidth = 1;
+      for (let line = -10; line <= 10; line += 1) {
+        const offset = line * Math.min(width, height) / 24;
+        context.beginPath(); context.moveTo(width * 0.15, height * 0.62 + offset * 0.38);
+        context.lineTo(width * 0.85, height * 0.62 + offset * 0.38); context.stroke();
+        context.beginPath(); context.moveTo(width / 2 + offset, height * 0.28);
+        context.lineTo(width / 2 + offset, height * 0.9); context.stroke();
+      }
 
       const transforms = new Map();
       const jointValues = new Map();
@@ -473,10 +552,18 @@
         });
         for (const face of part.triangles) {
           const points = face.map((index) => projected[index]);
-          triangles.push({ points, depth: points.reduce((sum, point) => sum + point[2], 0) / 3, material: part.material });
+          const firstEdge = points[1].map((value, axis) => value - points[0][axis]);
+          const secondEdge = points[2].map((value, axis) => value - points[0][axis]);
+          const normalZ = firstEdge[0] * secondEdge[1] - firstEdge[1] * secondEdge[0];
+          triangles.push({ points, body: part.body,
+            depth: points.reduce((sum, point) => sum + point[2], 0) / 3,
+            material: part.material, shade: 0.5 + Math.min(0.45, Math.abs(normalZ) / 6000) });
         }
       }
       triangles.sort((a, b) => a.depth - b.depth);
+      pickTriangles = triangles;
+      componentStatus.textContent = selected.length ? `Selected: ${selected.join(", ")}` :
+        "Click geometry or choose up to two components";
       for (const triangle of triangles) {
         context.beginPath();
         context.moveTo(triangle.points[0][0], triangle.points[0][1]);
@@ -488,12 +575,15 @@
         context.fillStyle = patterns.get(triangle.material) || `rgb(${color.join(",")})`;
         context.globalAlpha = material ? material.baseColor[3] : 1;
         context.fill();
+        context.globalAlpha = 1 - triangle.shade;
+        context.fillStyle = "#000";
+        context.fill();
         context.globalAlpha = 1;
-        context.strokeStyle = "rgba(10,20,30,.16)";
-        context.lineWidth = 0.5;
+        context.strokeStyle = selected.includes(triangle.body) ? "#fbbf24" : "rgba(226,232,240,.18)";
+        context.lineWidth = selected.includes(triangle.body) ? 1.5 : 0.5;
         context.stroke();
       }
-      context.fillStyle = background === "#07101d" ? "#dbeafe" : "#263241";
+      context.fillStyle = "#dbeafe";
       context.font = "13px system-ui";
       context.fillText(`${model.project} · ${scene ? scene.name : "static"} · ${time.toFixed(2)}s`, 14, height - 16);
       if (playing) requestAnimationFrame(draw);

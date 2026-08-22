@@ -86,6 +86,9 @@ auto main() -> int {
     std::ifstream scene{base.string() + ".scene.json", std::ios::binary};
     const std::string content{std::istreambuf_iterator<char>{scene},
                               std::istreambuf_iterator<char>{}};
+    std::ifstream library{base.parent_path() / "icad-viewer.js", std::ios::binary};
+    const std::string library_content{std::istreambuf_iterator<char>{library},
+                                      std::istreambuf_iterator<char>{}};
     if (!contains(content, "\"preset\":\"CARBON_FIBER\"") ||
         !contains(content, "data:image/bmp;base64,") ||
         !contains(content, "\"textureScaleMm\":12") ||
@@ -95,6 +98,10 @@ auto main() -> int {
         !contains(content, "\"visible\":false") ||
         !contains(content, "\"name\":\"midpoint\"") ||
         !contains(content, "\"name\":\"turntable\"") ||
+        !contains(library_content, "let playing = false") ||
+        !contains(library_content, "icad-view-cube") ||
+        !contains(library_content, "icad-component-menu") ||
+        !contains(library_content, "pointInTriangle") ||
         !std::filesystem::exists(base.string() + ".html") ||
         !std::filesystem::exists(base.string() + ".viewer.js") ||
         !std::filesystem::exists(base.parent_path() / "icad-viewer.js")) {
