@@ -12,6 +12,9 @@ The `Release ICAD` workflow builds and tests the CLI plus optional
 `webview/webview` desktop host on Linux x86-64, Windows x86-64, Intel macOS, and
 Apple Silicon macOS. It packages the bundled VS Code extension, verifies the tag
 against its manifest, and attaches every ZIP/VSIX to the GitHub Release.
+Each native ZIP has a companion `.sha256` file. The VS Code extension requires
+that checksum before installing the compiler and viewer into its machine-local
+extension storage.
 
 Set repository secret `VSCE_PAT` to also publish the VSIX to Visual Studio
 Marketplace. Without that secret, GitHub Release publication remains complete

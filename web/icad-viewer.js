@@ -41,6 +41,68 @@
     return [x, y, z];
   }
 
+  function modelBounds(model) {
+    const minimum = [Infinity, Infinity, Infinity];
+    const maximum = [-Infinity, -Infinity, -Infinity];
+    for (const part of model.parts) {
+      for (const point of part.vertices) {
+        for (let axis = 0; axis < 3; axis += 1) {
+          minimum[axis] = Math.min(minimum[axis], point[axis]);
+          maximum[axis] = Math.max(maximum[axis], point[axis]);
+        }
+      }
+    }
+    const center = minimum.map((value, axis) => (value + maximum[axis]) / 2);
+    const extent = Math.max(1, ...maximum.map((value, axis) => value - minimum[axis]));
+    return { center, extent };
+  }
+
+  function pointInTriangle(x, y, triangle) {
+    const [a, b, c] = triangle;
+    const area = (p, q, r) => (p[0] - r[0]) * (q[1] - r[1]) -
+      (q[0] - r[0]) * (p[1] - r[1]);
+    const first = area([x, y], a, b);
+    const second = area([x, y], b, c);
+    const third = area([x, y], c, a);
+    return (first >= 0 && second >= 0 && third >= 0) ||
+      (first <= 0 && second <= 0 && third <= 0);
+  }
+
+  function addViewCube(parent, setView) {
+    const cube = document.createElement("nav");
+    cube.className = "icad-view-cube";
+    cube.setAttribute("aria-label", "Orthographic view cube");
+    const views = [
+      ["Top", "T", [0, 0, 0]], ["Front", "F", [90, 0, 0]],
+      ["Right", "R", [90, 0, 90]], ["Perspective", "3D", [58, 0, -28]],
+      ["Left", "L", [90, 0, -90]], ["Back", "B", [90, 0, 180]],
+      ["Bottom", "D", [180, 0, 0]]
+    ];
+    for (const [name, label, rotation] of views) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = label;
+      button.title = `${name} view`;
+      button.setAttribute("aria-label", `${name} orthographic view`);
+      button.onclick = () => setView(rotation.slice());
+      cube.appendChild(button);
+    }
+    parent.appendChild(cube);
+  }
+
+  function addDropMenu(parent, label, className) {
+    const menu = document.createElement("details");
+    menu.className = `icad-drop-menu ${className}`;
+    const summary = document.createElement("summary");
+    summary.textContent = label;
+    menu.appendChild(summary);
+    const content = document.createElement("div");
+    content.className = "icad-drop-content";
+    menu.appendChild(content);
+    parent.appendChild(menu);
+    return { menu, content };
+  }
+
   function rotateAroundAxis(point, pivot, axis, degrees) {
     const angle = radians(degrees);
     const cosine = Math.cos(angle);
@@ -178,11 +240,7 @@
     root.addEventListener("pointerup", () => { drag = undefined; });
     root.addEventListener("wheel", event => { event.preventDefault(); zoom = Math.max(0.2, Math.min(6, zoom * Math.exp(-event.deltaY * 0.001))); draw(performance.now()); }, { passive: false });
 
-    const all = model.parts.flatMap(part => part.vertices);
-    const minimum = [0, 1, 2].map(axis => Math.min(...all.map(point => point[axis])));
-    const maximum = [0, 1, 2].map(axis => Math.max(...all.map(point => point[axis])));
-    const center = minimum.map((value, axis) => (value + maximum[axis]) / 2);
-    const extent = Math.max(...maximum.map((value, axis) => value - minimum[axis]), 1);
+    const { center, extent } = modelBounds(model);
 
     function draw(now) {
       const ratio = global.devicePixelRatio || 1;
@@ -308,6 +366,8 @@
       zoom = Math.max(0.2, Math.min(6, zoom * Math.exp(-event.deltaY * 0.001)));
     }, { passive: false });
 
+    const { center, extent } = modelBounds(model);
+
     function draw(now) {
       const ratio = global.devicePixelRatio || 1;
       const width = root.clientWidth || 960;
@@ -387,11 +447,6 @@
         return animated;
       }
 
-      const all = model.parts.flatMap((part) => part.vertices);
-      const minimum = [Math.min(...all.map((p) => p[0])), Math.min(...all.map((p) => p[1])), Math.min(...all.map((p) => p[2]))];
-      const maximum = [Math.max(...all.map((p) => p[0])), Math.max(...all.map((p) => p[1])), Math.max(...all.map((p) => p[2]))];
-      const center = minimum.map((value, index) => (value + maximum[index]) / 2);
-      const extent = Math.max(...maximum.map((value, index) => value - minimum[index]));
       const scale = 0.76 * Math.min(width, height) / Math.max(extent, 1) * zoom;
       const triangles = [];
 

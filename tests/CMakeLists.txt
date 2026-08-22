@@ -20,6 +20,7 @@ icad_add_unit_test(modeling_tools unit/modeling_tools_test.cpp)
 icad_add_unit_test(surfaces unit/surfaces_test.cpp)
 icad_add_unit_test(sketch_solver unit/sketch_solver_test.cpp)
 icad_add_unit_test(incremental unit/incremental_test.cpp)
+icad_add_unit_test(importer unit/importer_test.cpp)
 icad_add_unit_test(queries unit/queries_test.cpp)
 icad_add_unit_test(instances unit/instances_test.cpp)
 icad_add_unit_test(assembly_semantics unit/assembly_semantics_test.cpp)
@@ -28,6 +29,7 @@ set_tests_properties(benchmark.incremental PROPERTIES LABELS "benchmark" TIMEOUT
 icad_add_unit_test(intersection unit/intersection_test.cpp)
 icad_add_unit_test(topology unit/topology_test.cpp)
 icad_add_unit_test(scene unit/scene_test.cpp)
+icad_add_unit_test(live_viewer unit/live_viewer_test.cpp)
 icad_add_unit_test(profile unit/profile_test.cpp)
 icad_add_unit_test(constraints unit/constraints_test.cpp)
 icad_add_unit_test(mechanism unit/mechanism_test.cpp)
@@ -106,14 +108,14 @@ add_test(
         -P ${CMAKE_CURRENT_SOURCE_DIR}/benchmark/advanced_bridge.cmake
 )
 set_tests_properties(benchmark.advanced_bridge PROPERTIES LABELS "benchmark" TIMEOUT 60)
-if(ICAD_CHROMIUM_EXECUTABLE)
+if(ICAD_BROWSER_TEST_EXECUTABLE)
     add_test(
         NAME browser.viewer_smoke
         COMMAND ${CMAKE_COMMAND}
             -DICAD_EXECUTABLE=$<TARGET_FILE:icad>
             -DICAD_SOURCE=${PROJECT_SOURCE_DIR}/examples/advanced.icad
             -DOUTPUT_ROOT=${CMAKE_CURRENT_BINARY_DIR}/browser-viewer
-            -DCHROMIUM_EXECUTABLE=${ICAD_CHROMIUM_EXECUTABLE}
+            -DCHROMIUM_EXECUTABLE=${ICAD_BROWSER_TEST_EXECUTABLE}
             -P ${CMAKE_CURRENT_SOURCE_DIR}/browser/viewer_smoke.cmake
     )
     set_tests_properties(browser.viewer_smoke PROPERTIES LABELS "browser;viewer" TIMEOUT 60)
@@ -128,6 +130,14 @@ add_test(
         -P ${CMAKE_CURRENT_SOURCE_DIR}/benchmark/robotic_arm.cmake
 )
 set_tests_properties(benchmark.robotic_arm PROPERTIES LABELS "benchmark" TIMEOUT 60)
+add_executable(icad_live_viewer_refresh_test benchmark/live_viewer_refresh.cpp)
+target_link_libraries(icad_live_viewer_refresh_test PRIVATE ICAD::compiler icad_project_options)
+add_test(
+    NAME benchmark.live_viewer_refresh
+    COMMAND icad_live_viewer_refresh_test ${PROJECT_SOURCE_DIR}/examples/robotic_arm.icad
+)
+set_tests_properties(benchmark.live_viewer_refresh
+                     PROPERTIES LABELS "benchmark;viewer;incremental" TIMEOUT 60)
 add_test(
     NAME benchmark.boolean_showcase
     COMMAND ${CMAKE_COMMAND}

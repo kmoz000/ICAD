@@ -1,0 +1,20 @@
+{
+  "name": "icad",
+  "interface": {
+    "displayName": "ICAD"
+  },
+  "plugins": [
+    {
+      "name": "icad-agentic-cad",
+      "source": {
+        "source": "local",
+        "path": "./plugins/icad-agentic-cad"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

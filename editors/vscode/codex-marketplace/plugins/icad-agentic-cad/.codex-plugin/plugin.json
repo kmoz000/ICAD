@@ -1,0 +1,22 @@
+{
+  "name": "icad-agentic-cad",
+  "version": "0.21.0",
+  "description": "Native agentic CAD design, live editing, mechanisms, validation, animation, and manufacturing export with ICAD.",
+  "author": {
+    "name": "ICAD Project"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "ICAD Agentic CAD",
+    "shortDescription": "Design and validate programmable native 3D models.",
+    "longDescription": "Guides Codex through authoring, checking, measuring, validating, compiling, and inspecting ICAD geometry, mechanisms, assemblies, materials, scenes, drawings, and manufacturing artifacts.",
+    "developerName": "ICAD Project",
+    "category": "Developer Tools",
+    "capabilities": ["Design", "Validation", "3D Export", "Mechanisms", "Animation"],
+    "defaultPrompt": [
+      "Create and validate an ICAD model from my requirements.",
+      "Inspect this ICAD design and fix compiler diagnostics.",
+      "Build an animated ICAD assembly and verify every export."
+    ]
+  }
+}

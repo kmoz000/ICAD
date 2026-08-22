@@ -4,13 +4,14 @@
   "description": "Language tooling, compiler commands, and viewer launch support for ICAD agentic 3D designs.",
   "version": "0.21.0",
   "publisher": "icad",
+  "icon": "assets/icad-128.png",
   "license": "MIT",
   "engines": {
     "vscode": "^1.95.0"
   },
   "categories": ["Programming Languages", "Other"],
   "keywords": ["cad", "3d", "agentic", "compiler", "step", "manufacturing"],
-  "activationEvents": ["onLanguage:icad"],
+  "activationEvents": ["onLanguage:icad", "onStartupFinished"],
   "main": "./dist/extension.js",
   "repository": {
     "type": "git",
@@ -18,6 +19,8 @@
   },
   "files": [
     "dist/extension.js",
+    "assets/**",
+    "codex-marketplace/**",
     "LICENSE",
     "language-configuration.json",
     "syntaxes/**",
@@ -43,7 +46,11 @@
       {"command": "icad.check", "title": "ICAD: Check Active Design"},
       {"command": "icad.agentCreate", "title": "ICAD: Create Design from Prompt"},
       {"command": "icad.build", "title": "ICAD: Build Active Design"},
-      {"command": "icad.openViewer", "title": "ICAD: Build and Open Viewer"}
+      {"command": "icad.openViewer", "title": "ICAD: Open Live 3D Workbench"},
+      {"command": "icad.openSettings", "title": "ICAD: Open Settings"},
+      {"command": "icad.installToolchain", "title": "ICAD: Install or Update Compiler and Viewer"},
+      {"command": "icad.configureMcp", "title": "ICAD: Configure MCP for Workspace"},
+      {"command": "icad.installCodexPlugin", "title": "ICAD: Install Agentic CAD Plugin for Codex"}
     ],
     "menus": {
       "editor/title": [
@@ -51,25 +58,85 @@
         {"command": "icad.openViewer", "when": "resourceLangId == icad", "group": "navigation@11"}
       ]
     },
-    "configuration": {
-      "title": "ICAD",
-      "properties": {
+    "configuration": [
+      {
+        "title": "ICAD Agentic CAD",
+        "order": 10,
+        "properties": {
         "icad.executablePath": {
           "type": "string",
           "default": "",
-          "description": "Path to icad. Empty uses build/bin/icad in the workspace, then PATH."
+          "scope": "machine-overridable",
+          "description": "Optional path to the ICAD compiler. Empty uses the workspace build, then the extension-managed toolchain."
         },
         "icad.viewerPath": {
           "type": "string",
           "default": "",
-          "description": "Path to icad-viewer. Empty uses build/bin/icad-viewer in the workspace, then PATH."
+          "scope": "machine-overridable",
+          "description": "Optional path to icad-viewer. Empty uses the workspace build, then the extension-managed toolchain."
+        },
+        "icad.toolchain.autoDownload": {
+          "type": "boolean",
+          "default": true,
+          "scope": "machine",
+          "tags": ["usesOnlineServices"],
+          "description": "Automatically download and checksum-verify the matching ICAD compiler and webview viewer release."
+        },
+        "icad.toolchain.releaseBaseUrl": {
+          "type": "string",
+          "default": "https://github.com/kmoz000/ICAD/releases/download",
+          "scope": "machine",
+          "tags": ["usesOnlineServices"],
+          "description": "Base URL used to download versioned ICAD release archives and SHA-256 files."
+        },
+        "icad.lsp.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable compiler diagnostics, completion, definition navigation, formatting, and quick fixes through the ICAD language server."
+        },
+        "icad.formatOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Format ICAD source through the language server before saving."
+        },
+        "icad.checkOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run an explicit compiler check whenever an ICAD file is saved."
+        },
+        "icad.agentic.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable prompt-to-design agentic creation helpers."
+        },
+        "icad.mcp.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Maintain an ICAD stdio server entry in the workspace .vscode/mcp.json file. Review and trust local MCP servers before starting them."
+        },
+        "icad.codexPlugin.installOnEnable": {
+          "type": "boolean",
+          "default": false,
+          "scope": "machine",
+          "tags": ["usesOnlineServices"],
+          "description": "Install the bundled ICAD Agentic CAD marketplace plugin through Codex CLI when this extension activates."
+        }
+      }
+      }
+    ],
+    "configurationDefaults": {
+      "[icad]": {
+        "editor.quickSuggestions": {
+          "comments": "off",
+          "strings": "off",
+          "other": "on"
         }
       }
     }
   },
   "scripts": {
     "build": "esbuild extension.js --bundle --platform=node --format=cjs --external:vscode --outfile=dist/extension.js",
-    "test": "npm run build && node --check dist/extension.js",
+    "test": "npm run build && node --check dist/extension.js && node toolchain.test.js",
     "package": "npm run build && vsce package --out ../../build/icad-agentic-cad.vsix"
   },
   "dependencies": {

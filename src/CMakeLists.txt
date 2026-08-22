@@ -6,6 +6,7 @@ add_library(icad_compiler
     compiler/compiler.cpp
     compiler/dependency_graph.cpp
     compiler/incremental.cpp
+    compiler/importer.cpp
     compiler/lexer/lexer.cpp
     compiler/parser/parser.cpp
     compiler/resolver/resolver.cpp
@@ -29,6 +30,7 @@ add_library(icad_compiler
     manufacturing/validator.cpp
     drawings/exporter.cpp
     scene/exporter.cpp
+    viewer/live_session.cpp
     exchange/exporter.cpp
     exchange/obj_exporter.cpp
     exchange/gltf_exporter.cpp
@@ -66,7 +68,8 @@ if(ICAD_BUILD_DESKTOP_VIEWER)
     set_target_properties(webview_core_static PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
 
     add_executable(icad-viewer desktop_viewer/main.cpp)
-    target_link_libraries(icad-viewer PRIVATE webview::core_static)
+    target_include_directories(icad-viewer PRIVATE "${PROJECT_BINARY_DIR}/generated")
+    target_link_libraries(icad-viewer PRIVATE ICAD::compiler webview::core_static)
     set_target_properties(icad-viewer PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
     install(TARGETS icad-viewer RUNTIME DESTINATION bin)
 endif()

@@ -21,7 +21,13 @@ auto append(std::vector<Diagnostic>& destination, std::vector<Diagnostic> source
 auto compile(std::string_view source, CompileOptions options) -> CompileResult {
     CompileResult result;
 
-    auto lexed = lex(source);
+    auto imported = expand_imports(source, options.imports);
+    result.imported_files = std::move(imported.dependencies);
+    append(result.diagnostics, std::move(imported.diagnostics));
+    if (!result.diagnostics.empty())
+        return result;
+
+    auto lexed = lex(imported.source);
     result.tokens = std::move(lexed.tokens);
     append(result.diagnostics, std::move(lexed.diagnostics));
     if (!result.diagnostics.empty()) {

@@ -331,7 +331,8 @@ auto inspect_step(const std::filesystem::path& input) -> StepInspection {
                 return {false, "STEP contains a duplicate or unterminated entity"};
             }
             entity_lines.push_back(line);
-            shells += line.find("=CLOSED_SHELL(") != std::string::npos ? 1 : 0;
+            if (line.find("=CLOSED_SHELL(") != std::string::npos)
+                ++shells;
         }
     }
     if (solids != shells) {

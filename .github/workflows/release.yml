@@ -41,24 +41,29 @@ jobs:
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
       - name: Install
-        run: cmake --install build --config Release --prefix stage
+        run: cmake --install build --config Release --prefix build/stage
       - name: Verify installed programs
         if: runner.os != 'Windows'
-        run: stage/bin/icad --version && stage/bin/icad-viewer --help
+        run: build/stage/bin/icad --version && build/stage/bin/icad-viewer --help
       - name: Verify installed programs (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          & stage/bin/icad.exe --version
-          & stage/bin/icad-viewer.exe --help
+          & build/stage/bin/icad.exe --version
+          & build/stage/bin/icad-viewer.exe --help
       - name: Package native release
-        run: cmake -E tar cf "${{ matrix.asset }}.zip" --format=zip -- stage
+        run: cmake -E chdir build cmake -E tar cf "../${{ matrix.asset }}.zip" --format=zip -- stage
       - name: Verify native release archive
         run: cmake -E tar tf "${{ matrix.asset }}.zip"
+      - name: Generate release checksum
+        shell: bash
+        run: cmake -E sha256sum "${{ matrix.asset }}.zip" > "${{ matrix.asset }}.zip.sha256"
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.asset }}
-          path: ${{ matrix.asset }}.zip
+          path: |
+            ${{ matrix.asset }}.zip
+            ${{ matrix.asset }}.zip.sha256
           if-no-files-found: error
 
   vscode:

@@ -6,6 +6,7 @@ libraries, and JavaScript frameworks are outside the core architecture.
 
 ```text
 .icad source
+  -> root-confined IMPORT/INJECT module expansion and cycle detection
   -> source locations and stable diagnostics
   -> native lexer
   -> native parser and AST
@@ -24,6 +25,9 @@ libraries, and JavaScript frameworks are outside the core architecture.
   -> scene animation compiler
   -> plain JavaScript WebGL2 viewer bundle with Canvas fallback
   -> optional pinned webview/webview native host
+       -> coalesced background preview queue
+       -> incremental body topology and delivery-mesh cache
+       -> independent complete-package export
   -> provider-neutral MCP tools and editor LSP
 ```
 
@@ -89,11 +93,24 @@ classification. Fixed anchors are excluded from solver variables. Consistent
 closed point loops become canonical line-segment profiles before geometry
 construction; inconsistent systems stop semantic compilation.
 
+The source-composition layer expands only declarative `.icad` fragments,
+resolves paths relative to the importing module, confines canonical paths to a
+declared project root, rejects cycles and non-ICAD files, and applies depth and
+aggregate-size limits before lexing. No import path executes code.
+
 The feature dependency layer builds a directed acyclic graph from canonical IR
 and preserves source-stable evaluation order. Stateful incremental sessions
 compile frontend semantics without eagerly creating topology, fingerprint each
 body's resolved profile, spatial, material, pose, and ordered-feature slice,
-then merge cached or newly validated body topology in source order.
+then builds dirty bodies on a bounded pool and merges cached or newly validated
+body topology and delivery meshes in source order. A revision mutex prevents
+partially published cache state across concurrent callers. Live viewer requests
+run on a coalescing worker so the UI thread remains responsive; unchanged source
+returns compact cached metadata unless an imported file timestamp changed.
+The compiled render model is passed directly through the webview bridge and
+mounted in the workbench canvas, avoiding temporary-file iframe navigation.
+Full artifact export uses a separate clean compilation and atomic project build,
+so it cannot corrupt the interactive cache or block editor refresh.
 
 The canonical tolerance policy is dimensioned IR and participates in document
 fingerprints. Contact analysis, exact-polyhedral closest-distance queries, and

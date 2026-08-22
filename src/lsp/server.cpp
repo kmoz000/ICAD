@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <filesystem>
 #include <istream>
 #include <ostream>
 #include <sstream>
@@ -15,6 +16,41 @@
 
 namespace icad::lsp {
 namespace {
+
+[[nodiscard]] auto source_path_from_uri(std::string_view uri) -> std::filesystem::path {
+    constexpr std::string_view prefix = "file://";
+    if (!uri.starts_with(prefix))
+        return {};
+    uri.remove_prefix(prefix.size());
+    std::string decoded;
+    decoded.reserve(uri.size());
+    const auto hex = [](char value) -> int {
+        if (value >= '0' && value <= '9')
+            return value - '0';
+        if (value >= 'a' && value <= 'f')
+            return value - 'a' + 10;
+        if (value >= 'A' && value <= 'F')
+            return value - 'A' + 10;
+        return -1;
+    };
+    for (std::size_t index = 0; index < uri.size(); ++index) {
+        if (uri[index] == '%' && index + 2 < uri.size()) {
+            const auto high = hex(uri[index + 1]);
+            const auto low = hex(uri[index + 2]);
+            if (high >= 0 && low >= 0) {
+                decoded.push_back(static_cast<char>((high << 4) | low));
+                index += 2;
+                continue;
+            }
+        }
+        decoded.push_back(uri[index]);
+    }
+#ifdef _WIN32
+    if (decoded.size() >= 3 && decoded.front() == '/' && decoded[2] == ':')
+        decoded.erase(decoded.begin());
+#endif
+    return decoded;
+}
 
 [[nodiscard]] auto escaped(std::string_view value) -> std::string {
     std::string result;
@@ -182,16 +218,72 @@ struct DefinitionLocation {
     return result;
 }
 
+[[nodiscard]] auto code_actions(std::string_view request, std::string_view uri,
+                                std::string_view source) -> std::string {
+    const auto code = string_field(request, "code");
+    const auto range = request.find("\"range\"");
+    const auto line = number_field(request, "line", range);
+    const auto character = number_field(request, "character", range);
+    std::string title;
+    std::size_t start_line = line;
+    std::size_t start_character = character;
+    std::size_t end_line = line;
+    std::size_t end_character = character;
+    std::string replacement;
+    if (code == "ICAD-L0001") {
+        title = "Remove invalid character";
+        end_character = character + 1;
+    } else if (code == "ICAD-P0011") {
+        title = "Insert PROJECT declaration";
+        start_line = start_character = end_line = end_character = 0;
+        replacement = "PROJECT design\\n";
+    } else if (code == "ICAD-P0012") {
+        title = "Insert default UNITS declaration";
+        start_line = start_character = end_line = end_character = 0;
+        replacement = "UNITS mm\\n";
+    } else if (code == "ICAD-P0005" || code == "ICAD-P0007" ||
+               code == "ICAD-P0013" || code == "ICAD-P0014" ||
+               code == "ICAD-P0015" || code == "ICAD-P0018" ||
+               code == "ICAD-P0026") {
+        title = "Insert missing END";
+        start_line = end_line = static_cast<std::size_t>(std::ranges::count(source, '\n'));
+        if (source.empty() || source.back() == '\n') {
+            start_character = end_character = 0;
+            replacement = "END\\n";
+        } else {
+            const auto last_newline = source.find_last_of('\n');
+            start_character = end_character =
+                last_newline == std::string_view::npos ? source.size() :
+                                                         source.size() - last_newline - 1;
+            replacement = "\\nEND\\n";
+        }
+    } else {
+        return "[]";
+    }
+    return "[{\"title\":\"" + escaped(title) +
+           "\",\"kind\":\"quickfix\",\"isPreferred\":true,\"edit\":{\"changes\":{\"" +
+           escaped(uri) + "\":[{\"range\":{\"start\":{\"line\":" +
+           std::to_string(start_line) + ",\"character\":" +
+           std::to_string(start_character) + "},\"end\":{\"line\":" +
+           std::to_string(end_line) + ",\"character\":" +
+           std::to_string(end_character) + "}},\"newText\":\"" + replacement +
+           "\"}]}}}]";
+}
+
 [[nodiscard]] auto completion_items() -> std::string {
     constexpr std::string_view items[]{
-        "PROJECT", "UNITS", "TOLERANCE", "PARAMETER", "ANGLE", "POINT3", "VECTOR",
+        "PROJECT", "IMPORT", "INJECT", "UNITS", "TOLERANCE", "PARAMETER", "ANGLE", "POINT3", "VECTOR",
         "POSE", "INSTANCE", "JOINT", "MATERIAL", "PRESET", "BASE_COLOR", "METALLIC",
         "ROUGHNESS", "TEXTURE_SCALE", "UV_MODE", "PROFILE", "SKETCH", "BODY", "FEATURE",
         "TYPE", "OPERATION", "CONSTRAINT", "MATE", "SCENE", "DURATION", "FPS",
-        "BACKGROUND", "LOOP", "LIGHT", "EVENT", "TRACK", "EASING", "KEYFRAME", "END",
+        "BACKGROUND", "LOOP", "LIGHT", "COLOR", "INTENSITY", "EVENT", "TRACK", "EASING",
+        "KEYFRAME", "VISIBLE", "END",
         "BOX", "CYLINDER", "CONE", "SPHERE", "EXTRUDE", "REVOLVE", "SWEEP", "LOFT",
         "FREEFORM", "UNION", "CUT", "INTERSECT", "STRUCTURAL_STEEL", "ALUMINUM",
-        "CONCRETE", "ASPHALT", "GLASS", "WOOD"};
+        "CONCRETE", "ASPHALT", "GLASS", "WOOD", "BRICK", "GRANITE", "MARBLE", "COPPER",
+        "BRASS", "TITANIUM", "CHROME", "RUSTED_STEEL", "RUBBER", "PLASTIC",
+        "CARBON_FIBER", "CERAMIC", "PLASTER", "FABRIC", "LEATHER", "EARTH", "GRASS",
+        "WATER", "ICE", "EMISSIVE_WHITE"};
     std::string result{"["};
     for (std::size_t index = 0; index < std::size(items); ++index) {
         if (index != 0)
@@ -235,7 +327,12 @@ auto send(std::ostream& output, std::string_view message) -> void {
 
 auto publish_diagnostics(std::ostream& output, std::string_view uri,
                          std::string_view source) -> void {
-    const auto compilation = compiler::compile(source);
+    const auto source_path = source_path_from_uri(uri);
+    const auto compilation = compiler::compile(
+        source, compiler::CompileOptions{
+                    .build_topology = true,
+                    .imports = {.source_path = source_path,
+                                .project_root = source_path.parent_path()}});
     std::string message = "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/publishDiagnostics\",\"params\":{\"uri\":\"";
     message += escaped(uri);
     message += "\",\"diagnostics\":[";
@@ -271,7 +368,8 @@ auto run(std::istream& input, std::ostream& output) -> int {
             send(output, "{\"jsonrpc\":\"2.0\",\"id\":" + id +
                              ",\"result\":{\"capabilities\":{\"textDocumentSync\":1,"
                              "\"completionProvider\":{\"triggerCharacters\":[\" \"]},"
-                             "\"definitionProvider\":true,\"documentFormattingProvider\":true}}}");
+                             "\"definitionProvider\":true,\"documentFormattingProvider\":true,"
+                             "\"codeActionProvider\":true}}}");
         } else if (method == "textDocument/didOpen" || method == "textDocument/didChange") {
             const auto uri = string_field(message, "uri");
             const auto source = string_field(message, "text");
@@ -318,6 +416,13 @@ auto run(std::istream& input, std::ostream& output) -> int {
                              "\"end\":{\"line\":1000000,\"character\":0}},\"newText\":\"" +
                              escaped(replacement) + "\"}]}");
             }
+        } else if (method == "textDocument/codeAction") {
+            const auto uri = string_field(message, "uri");
+            const auto document = documents.find(uri);
+            const auto source = document == documents.end() ? std::string_view{} :
+                                                               std::string_view{document->second};
+            send(output, "{\"jsonrpc\":\"2.0\",\"id\":" + id +
+                             ",\"result\":" + code_actions(message, uri, source) + "}");
         } else if (method == "shutdown") {
             shutdown = true;
             send(output, "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"result\":null}");

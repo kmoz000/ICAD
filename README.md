@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/branding/icad-logo.png" alt="ICAD Agentic CAD" width="300">
+</p>
+
 # ICAD
 
 ICAD is an independent C++23 compiler and geometry engine for agentic 3D
@@ -127,7 +131,7 @@ handshake used by older hosts. Configure any MCP-capable LLM host with:
 {
   "mcpServers": {
     "icad": {
-      "command": "/absolute/path/to/ICAD/build/bin/icad",
+      "command": "/absolute/path/to/bin/icad",
       "args": ["mcp", "--workspace", "/absolute/path/to/design-workspace"]
     }
   }
@@ -204,6 +208,24 @@ The implemented geometry types are:
 - `CYLINDER`: `RADIUS`, `HEIGHT`
 - `CONE`: `RADIUS1`, `RADIUS2`, `HEIGHT`
 - `SPHERE`: `RADIUS`
+
+Large agent-authored designs can be split into deterministic source modules:
+
+```icad
+PROJECT factory_cell
+UNITS mm
+IMPORT "parts/base.icad"
+INJECT "generated/gripper.icad"
+```
+
+`IMPORT` and the explicit `INJECT` alias insert declarative `.icad` fragments
+at that source position. Modules normally omit `PROJECT` and `UNITS`. Resolution
+is relative to the importing file, remains inside the entry file's project
+directory, accepts only `.icad`, rejects cycles, and enforces depth and total
+source-size limits. Imported text is parsed by the same compiler—it never
+executes native code, shell commands, or plugins. CLI checks/builds, the LSP,
+and live viewer all use this resolver; the viewer also invalidates its cache
+when a dependency changes on disk.
 
 Every type accepts `ORIGIN_X`, `ORIGIN_Y`, `ORIGIN_Z`, `ROTATION_X`,
 `ROTATION_Y`, and `ROTATION_Z`. Length units are
@@ -399,7 +421,10 @@ its direct `dependsOn` edges, and deterministic evaluation order. Embedders can
 use `icad::compiler::IncrementalCompiler` for a stateful compile session: it
 fingerprints each body from its lowered geometry dependencies, reuses unchanged
 validated topology, recomputes dirty bodies, and reports reused, recomputed,
-and removed body names. Project-name changes and `clear()` invalidate the cache.
+and removed body names. Dirty bodies run through a bounded worker pool and are
+merged in deterministic source order. A mutex protects each complete cache
+revision, so editor, LSP, and agent callers may safely share a compiler.
+Project-name changes and `clear()` invalidate the cache.
 
 ## Tolerances, distance, and sections
 
@@ -617,8 +642,24 @@ To use the native desktop shell:
 
 ```sh
 make viewer
-build/bin/icad-viewer build/examples/advanced.html
+build/bin/icad-viewer examples/advanced.icad
 ```
+
+The `webview/webview` desktop shell opens `.icad` source directly as a split
+live workbench. The left pane edits the authoritative language source and
+shows clickable compiler diagnostics; the right pane retains the last valid
+interactive 3D result. A background worker coalesces rapid edits, starts after
+a 120 ms debounce, reuses unchanged previews, and rebuilds only dirty body
+topology and delivery meshes. The toolbar reports compile time and body reuse.
+Save with the button or <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>S</kbd>.
+
+The export bar accepts any writable folder and atomically emits the complete
+16-file STEP/assembly STEP/STL/OBJ/glTF/GLB/3MF/viewer/drawing/manufacturing
+package from the current editor text; use <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>E</kbd>
+for the keyboard path. Export runs independently so live editing remains
+responsive. On macOS the native host uses a transparent full-content title bar
+with ICAD's custom toolbar while retaining standard window controls. Passing an
+already compiled `.html` file remains supported for read-only viewing.
 
 ## CAD output note
 
@@ -653,9 +694,13 @@ live import in the target CAD version before a release is called certified.
 5. Read back STEP/STL and run the benchmark/viewer gates before delivery.
 
 This keeps every design change diffable and reproducible. `icad lsp` provides
-stdio synchronization, diagnostics, completion, definition navigation, and
-formatting. The packaged extension lives in `editors/vscode`; tagged GitHub
-releases attach its VSIX beside native CLI/viewer packages. The
+stdio synchronization, diagnostics, completion, definition navigation,
+formatting, and safe syntax quick fixes. The packaged extension lives in
+`editors/vscode`; it automatically downloads the matching checksum-verified
+compiler/viewer release when no workspace build or configured executable is
+available. Its Settings page controls LSP, format/check on save, MCP workspace
+configuration, agentic helpers, and installation of the bundled Codex plugin.
+Tagged GitHub releases attach its VSIX beside native CLI/viewer packages. The
 `icad-agentic-cad` Codex plugin installs both
 the guided skill and native MCP server. The roadmap in [`PLAN.md`](PLAN.md)
 grows the owned engine toward advanced modeling tools, sketch solving, native
@@ -678,11 +723,14 @@ make test-sandbox      # clean-working-directory execution
 make benchmark         # model corpus plus stateful incremental-reuse case
 make quality           # warnings-as-errors and ASan/UBSan
 make sanitizers
+make thread-sanitizer  # race-check shared incremental compilation, then restore build
 ```
 
-The configured suite currently contains 44 tests, including 27 C++ unit/fuzz
-executables, integration and sandbox cases, 11 benchmark cases, and a real
-headless-Chromium viewer runtime smoke test when Chromium is available.
+The configured suite contains 46 deterministic tests: 29 C++ unit/fuzz
+executables, integration and sandbox cases, and 12 benchmark cases including a
+large robotic-arm live-refresh benchmark. A 47th
+headless-Chromium viewer runtime smoke test is registered only when a configure-time
+launch probe confirms that the installed browser can actually run headless.
 
 The bridge acceptance model contains 6 parameters, 3 materials, 5 bodies, 35
 features, 206 feature properties, 1 scene, 2 tracks, and 5 keyframes. Its
@@ -722,8 +770,10 @@ The constrained-sketch benchmark solves a parameter-driven rectangle to zero
 remaining DOF, converts the result into an extrusion profile, and validates the
 solid through STEP/STL structural read-back.
 
-The incremental benchmark proves full reuse for unchanged input and selective
-one-body recomputation after a parameter edit in a two-body project.
+The incremental benchmarks prove full reuse for unchanged input, selective
+one-body recomputation in a two-body project, and 8-of-10 delivery-mesh reuse
+after a robotic-arm parameter edit. The latter also byte-compares the live
+incremental viewer model with a clean full rebuild.
 
 The geometric-query benchmark locks a 0.001 mm policy, an exact 10 mm
 polyhedral closest distance, and a tolerance-aware named-body section result.

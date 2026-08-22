@@ -54,14 +54,28 @@ auto main() -> int {
               "\"position\":{\"line\":2,\"character\":7}}}") +
         frame("{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"textDocument/formatting\","
               "\"params\":{\"textDocument\":{\"uri\":\"file:///bad.icad\"}}}") +
-        frame("{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"shutdown\",\"params\":null}") +
+        frame("{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"textDocument/codeAction\","
+              "\"params\":{\"textDocument\":{\"uri\":\"file:///bad.icad\"},"
+              "\"range\":{\"start\":{\"line\":0,\"character\":0},"
+              "\"end\":{\"line\":0,\"character\":1}},\"context\":{\"diagnostics\":["
+              "{\"code\":\"ICAD-P0012\"}]}}}") +
+        frame("{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"textDocument/codeAction\","
+              "\"params\":{\"textDocument\":{\"uri\":\"file:///bad.icad\"},"
+              "\"range\":{\"start\":{\"line\":3,\"character\":3},"
+              "\"end\":{\"line\":3,\"character\":3}},\"context\":{\"diagnostics\":["
+              "{\"code\":\"ICAD-P0005\"}]}}}") +
+        frame("{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"shutdown\",\"params\":null}") +
         frame("{\"jsonrpc\":\"2.0\",\"method\":\"exit\"}")};
     std::ostringstream output;
     if (icad::lsp::run(input, output) != 0 || !output.str().contains("textDocumentSync") ||
         !output.str().contains("textDocument/publishDiagnostics") ||
         !output.str().contains("completionProvider") ||
         !output.str().contains("documentFormattingProvider") ||
+        !output.str().contains("codeActionProvider") ||
         !output.str().contains("\"label\":\"PROJECT\"") ||
+        !output.str().contains("Insert default UNITS declaration") ||
+        !output.str().contains("Insert missing END") ||
+        !output.str().contains("\"line\":3,\"character\":3") ||
         !output.str().contains("\"newText\":\"PROJECT bad\\nUNITS mm\\nBODY part\\nEND\\n\"") ||
         !output.str().contains("\"line\":2,\"character\":5")) {
         return fail("LSP initialize/diagnostics/shutdown flow failed");

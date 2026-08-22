@@ -1,6 +1,6 @@
 #include "icad/scene/exporter.hpp"
 
-#include "../cad/model.hpp"
+#include "icad/cad/model.hpp"
 #include "icad/viewer_source.hpp"
 
 #include <algorithm>
@@ -446,6 +446,11 @@ auto write_model(std::ostream& output, const compiler::ir::Project& project,
 auto export_web_bundle(const compiler::ir::Project& project,
                        const std::filesystem::path& output_base) -> ExportResult {
     const auto model = cad::build_model(project);
+    return export_web_bundle(project, model, output_base);
+}
+
+auto export_web_bundle(const compiler::ir::Project& project, const cad::Model& model,
+                       const std::filesystem::path& output_base) -> ExportResult {
     if (!cad::is_valid(model)) {
         return {false, "ICAD geometry validation failed before web-scene export"};
     }
@@ -514,6 +519,15 @@ auto export_web_bundle(const compiler::ir::Project& project,
             project.scenes.size(),
             tracks,
             keyframes};
+}
+
+auto web_model_json(const compiler::ir::Project& project, const cad::Model& model,
+                    std::string_view basename) -> std::string {
+    if (!cad::is_valid(model))
+        return {};
+    std::ostringstream output;
+    write_model(output, project, &model, basename);
+    return output.str();
 }
 
 } // namespace icad::scene

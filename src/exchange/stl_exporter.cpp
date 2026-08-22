@@ -78,10 +78,14 @@ auto inspect_stl(const std::filesystem::path& input) -> StlInspection {
         }
         const auto last = line.find_last_not_of(" \t\r");
         const std::string_view trimmed{line.data() + first, last - first + 1};
-        solid_starts += trimmed.starts_with("solid ") ? 1 : 0;
-        solid_ends += trimmed.starts_with("endsolid") ? 1 : 0;
-        facets += trimmed.starts_with("facet normal ") ? 1 : 0;
-        facet_ends += trimmed == "endfacet" ? 1 : 0;
+        if (trimmed.starts_with("solid "))
+            ++solid_starts;
+        if (trimmed.starts_with("endsolid"))
+            ++solid_ends;
+        if (trimmed.starts_with("facet normal "))
+            ++facets;
+        if (trimmed == "endfacet")
+            ++facet_ends;
     }
     const bool valid = solid_starts > 0 && facets > 0 && solid_starts == solid_ends &&
                        facets == facet_ends;

@@ -336,8 +336,17 @@ auto main(int argc, char** argv) -> int {
         return review.contains("\"ready\":true") ? 0 : 1;
     }
 
+    const icad::compiler::CompileOptions file_options{
+        .build_topology = true,
+        .imports = {.source_path = source_path, .project_root = source_path.parent_path()}};
+
     if (command == "tokens") {
-        const auto result = icad::compiler::lex(*source);
+        const auto imported = icad::compiler::expand_imports(*source, file_options.imports);
+        if (!imported.ok()) {
+            print_diagnostics(source_path, imported.diagnostics);
+            return 1;
+        }
+        const auto result = icad::compiler::lex(imported.source);
         if (!result.ok()) {
             print_diagnostics(source_path, result.diagnostics);
             return 1;
@@ -354,11 +363,12 @@ auto main(int argc, char** argv) -> int {
     }
 
     if (command == "diagnostics-json") {
+        const auto diagnostics = icad::compiler::compile(*source, file_options);
         std::cout << icad::ai::diagnostics_json(*source) << '\n';
-        return icad::compiler::compile(*source).ok() ? 0 : 1;
+        return diagnostics.ok() ? 0 : 1;
     }
 
-    const auto result = icad::compiler::compile(*source);
+    const auto result = icad::compiler::compile(*source, file_options);
     if (!result.ok()) {
         print_diagnostics(source_path, result.diagnostics);
         return 1;

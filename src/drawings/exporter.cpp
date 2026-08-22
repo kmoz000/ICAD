@@ -41,7 +41,7 @@ auto write_svg(const compiler::ir::Project& project, const std::filesystem::path
                               std::max(triangle[edge], triangle[(edge + 1) % 3]));
             }
         }
-        for (const auto [first, second] : edges) {
+        for (const auto& [first, second] : edges) {
             const auto& a = part.vertices[first];
             const auto& b = part.vertices[second];
             stream << "<line x1=\"" << 80 + (a.x - analysis.bounds.minimum[0]) * scale
@@ -128,7 +128,7 @@ auto write_dxf(const compiler::ir::Project& project, const std::filesystem::path
                               std::max(triangle[edge], triangle[(edge + 1) % 3]));
             }
         }
-        for (const auto [first, second] : edges) {
+        for (const auto& [first, second] : edges) {
             const auto& a = part.vertices[first];
             const auto& b = part.vertices[second];
             line(stream, "VISIBLE_TOP", a.x, a.y, b.x, b.y);

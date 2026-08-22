@@ -6,10 +6,10 @@ industrial agentic CAD platform.
 
 ## Current repository inventory
 
-- 15 implementation modules under `src/`;
-- 38 C++ implementation files, all compiled by CMake;
-- 34 public headers, all consumed by implementation or tests;
-- 27 unit/fuzz executables plus integration, sandbox, browser, and 11 benchmark cases;
+- 18 implementation modules under `src/`;
+- 40 C++ implementation files, all compiled by CMake;
+- 37 public headers, all consumed by implementation or tests;
+- 29 unit/fuzz executables plus integration, sandbox, optional browser, and 12 benchmark cases;
 - 10 maintained `.icad` examples;
 - one build tree: `build/`;
 - one geometry engine and no OpenCASCADE dependency.
@@ -74,13 +74,23 @@ profiles for downstream solid features. Its maintained benchmark solves a
 parameter-driven rectangle to zero DOF, extrudes it, and reads the solid back
 from STEP and STL.
 
+The source-module package adds project-root-confined `IMPORT`/`INJECT`
+composition with canonical path checks, `.icad` filtering, cycle rejection,
+depth and aggregate-size limits, dependency reporting, CLI/LSP/live-viewer
+integration, and live dependency invalidation.
+
 The dependency package adds a stable semantic DAG spanning parameters, angles,
 spatial expressions, sketches, profiles, ordered features, bodies, poses,
 materials, constraints, and scenes. Agent inspection exposes direct edges and
 deterministic evaluation order. The stateful incremental compiler fingerprints
-resolved dependencies per body, reuses unchanged validated topology, recomputes
-dirty bodies, removes stale cache entries, and merges results in source order.
-Its benchmark proves two-body full reuse followed by one-body recomputation.
+resolved dependencies per body, reuses unchanged validated topology and delivery
+meshes, recomputes dirty bodies on a bounded worker pool, protects coherent
+cache revisions across concurrent callers, removes stale cache entries, and
+merges results in source order. Its benchmarks prove two-body full reuse followed by one-body recomputation and
+8-of-10 mesh reuse on the robotic arm. The live viewer coalesces edits on a
+background worker, passes the compiled model directly to its canvas (no
+temporary iframe), and exports the complete package to a selected folder
+without blocking preview compilation.
 
 The query package adds a dimensioned project-wide linear/angular tolerance
 policy to canonical IR, revisions, agent inspection, and contact/query

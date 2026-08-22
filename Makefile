@@ -6,7 +6,7 @@ BUILD_FLAGS ?=
 
 .DEFAULT_GOAL := build
 
-.PHONY: help configure build viewer test test-unit test-integration test-sandbox sandbox benchmark advanced agent-demo quality sanitizers clean distclean
+.PHONY: help configure build viewer test test-unit test-integration test-sandbox sandbox benchmark advanced agent-demo quality sanitizers thread-sanitizer clean distclean
 
 help:
 	@$(CMAKE) -E echo "ICAD developer targets:"
@@ -21,6 +21,7 @@ help:
 	@$(CMAKE) -E echo "  make agent-demo        Create the detailed robot arm from one short prompt"
 	@$(CMAKE) -E echo "  make quality           Werror tests plus sanitizer tests"
 	@$(CMAKE) -E echo "  make sanitizers        Rebuild and test with ASan/UBSan"
+	@$(CMAKE) -E echo "  make thread-sanitizer  Race-check the shared incremental compiler"
 	@$(CMAKE) -E echo "  make clean             Remove compiled outputs"
 	@$(CMAKE) -E echo "  make distclean         Remove the complete build tree"
 
@@ -62,6 +63,12 @@ quality:
 sanitizers:
 	$(MAKE) BUILD_DIR=$(BUILD_DIR) CMAKE_FLAGS="-DICAD_WARNINGS_AS_ERRORS=OFF -DICAD_ENABLE_SANITIZERS=ON" test
 	$(MAKE) BUILD_DIR=$(BUILD_DIR) CMAKE_FLAGS="-DICAD_WARNINGS_AS_ERRORS=OFF -DICAD_ENABLE_SANITIZERS=OFF" build
+
+thread-sanitizer:
+	$(MAKE) BUILD_DIR=$(BUILD_DIR) CMAKE_FLAGS="-DICAD_BUILD_DESKTOP_VIEWER=OFF -DICAD_WARNINGS_AS_ERRORS=ON -DICAD_ENABLE_SANITIZERS=OFF -DICAD_ENABLE_THREAD_SANITIZER=ON" build
+	$(CMAKE) --build $(BUILD_DIR) --target icad_incremental_test --parallel $(BUILD_FLAGS)
+	$(CMAKE) -E env CTEST_OUTPUT_ON_FAILURE=1 $(CMAKE_CTEST_COMMAND) --test-dir $(BUILD_DIR) -R '^unit.incremental$$'
+	$(MAKE) BUILD_DIR=$(BUILD_DIR) CMAKE_FLAGS="-DICAD_BUILD_DESKTOP_VIEWER=ON -DICAD_WARNINGS_AS_ERRORS=OFF -DICAD_ENABLE_SANITIZERS=OFF -DICAD_ENABLE_THREAD_SANITIZER=OFF" build
 
 clean:
 	@if [ -f "$(BUILD_DIR)/CMakeCache.txt" ]; then \

@@ -2,6 +2,9 @@
 #include "icad/compiler/incremental.hpp"
 
 #include <iostream>
+#include <array>
+#include <algorithm>
+#include <thread>
 #include <string>
 
 namespace {
@@ -35,13 +38,15 @@ int main() {
     const auto first = compiler.compile(initial_source);
     if (!first.compilation.ok() || first.incremental.recomputed_bodies.size() != 2 ||
         !first.incremental.reused_bodies.empty() ||
+        !first.model || first.model->parts.size() != 2 ||
         first.dependencies.evaluation_order.size() != first.dependencies.nodes.size()) {
         std::cerr << "initial incremental compile or dependency DAG failed\n";
         return 1;
     }
     const auto unchanged = compiler.compile(initial_source);
     if (!unchanged.compilation.ok() || unchanged.incremental.reused_bodies.size() != 2 ||
-        !unchanged.incremental.recomputed_bodies.empty()) {
+        !unchanged.incremental.recomputed_bodies.empty() || !unchanged.model ||
+        unchanged.model->parts.size() != 2) {
         std::cerr << "unchanged body topology was not reused\n";
         return 1;
     }
@@ -53,7 +58,8 @@ int main() {
     if (!updated.compilation.ok() || updated.incremental.recomputed_bodies !=
                                              std::vector<std::string>{"driven"} ||
         updated.incremental.reused_bodies != std::vector<std::string>{"stable"} ||
-        !updated.compilation.topology_model ||
+        !updated.compilation.topology_model || !updated.model ||
+        updated.model->parts.size() != 2 ||
         updated.compilation.topology_model->solids.size() != 2) {
         std::cerr << "dirty-body dependency closure was not recomputed selectively\n";
         return 1;
@@ -69,5 +75,24 @@ int main() {
     const auto cleared = compiler.compile(changed);
     if (cleared.incremental.recomputed_bodies.size() != 2)
         return 1;
+
+    // One compiler may be shared by editor/LSP/agent callers. Each call sees a
+    // complete cache revision even while dirty-body geometry itself is built in
+    // parallel.
+    std::array<bool, 4> concurrent_ok{};
+    std::array<std::jthread, 4> callers;
+    for (std::size_t index = 0; index < callers.size(); ++index) {
+        callers[index] = std::jthread([&compiler, &concurrent_ok, index, &changed] {
+            const auto result = compiler.compile(changed);
+            concurrent_ok[index] = result.compilation.ok() && result.model.has_value() &&
+                                   result.model->parts.size() == 2;
+        });
+    }
+    for (auto& caller : callers)
+        caller.join();
+    if (!std::ranges::all_of(concurrent_ok, [](bool value) { return value; })) {
+        std::cerr << "shared incremental compiler was not thread safe\n";
+        return 1;
+    }
     return 0;
 }
