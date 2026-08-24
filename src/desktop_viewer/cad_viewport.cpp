@@ -1,0 +1,458 @@
+#include "cad_viewport.hpp"
+
+#include <QMouseEvent>
+#include <QPainter>
+#include <QPainterPath>
+#include <QWheelEvent>
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstddef>
+
+namespace icad::desktop {
+namespace {
+
+constexpr auto vertex_shader = R"glsl(
+#version 330 core
+layout(location = 0) in vec3 position;
+layout(location = 1) in vec3 normal;
+layout(location = 2) in vec4 color;
+uniform mat4 mvp;
+uniform mat4 model_view;
+out vec3 eye_normal;
+out vec4 base_color;
+void main() {
+    gl_Position = mvp * vec4(position, 1.0);
+    eye_normal = normalize(mat3(model_view) * normal);
+    base_color = color;
+}
+)glsl";
+
+constexpr auto fragment_shader = R"glsl(
+#version 330 core
+in vec3 eye_normal;
+in vec4 base_color;
+uniform float selected;
+out vec4 fragment;
+void main() {
+    vec3 n = normalize(gl_FrontFacing ? eye_normal : -eye_normal);
+    vec3 key = normalize(vec3(0.35, 0.55, 0.75));
+    vec3 fill = normalize(vec3(-0.7, 0.1, 0.4));
+    float diffuse = 0.22 + 0.62 * max(dot(n, key), 0.0) + 0.16 * max(dot(n, fill), 0.0);
+    vec3 color = base_color.rgb * diffuse;
+    color = mix(color, vec3(0.12, 0.72, 1.0), selected * 0.48);
+    fragment = vec4(color, max(base_color.a, 0.18));
+}
+)glsl";
+
+constexpr auto line_vertex_shader = R"glsl(
+#version 330 core
+layout(location = 0) in vec3 position;
+uniform mat4 mvp;
+void main() { gl_Position = mvp * vec4(position, 1.0); }
+)glsl";
+
+constexpr auto line_fragment_shader = R"glsl(
+#version 330 core
+uniform vec4 line_color;
+out vec4 fragment;
+void main() { fragment = line_color; }
+)glsl";
+
+[[nodiscard]] auto point_in_triangle(const QPointF& point, const QPointF& first,
+                                     const QPointF& second, const QPointF& third) -> bool {
+    const auto sign = [](const QPointF& a, const QPointF& b, const QPointF& c) {
+        return (a.x() - c.x()) * (b.y() - c.y()) - (b.x() - c.x()) * (a.y() - c.y());
+    };
+    const double first_sign = sign(point, first, second);
+    const double second_sign = sign(point, second, third);
+    const double third_sign = sign(point, third, first);
+    const bool negative = first_sign < 0.0 || second_sign < 0.0 || third_sign < 0.0;
+    const bool positive = first_sign > 0.0 || second_sign > 0.0 || third_sign > 0.0;
+    return !(negative && positive);
+}
+
+} // namespace
+
+CadViewport::CadViewport(QWidget* parent) : QOpenGLWidget{parent} {
+    setFocusPolicy(Qt::StrongFocus);
+    setMouseTracking(true);
+    setMinimumSize(480, 360);
+}
+
+CadViewport::~CadViewport() {
+    if (!initialized_)
+        return;
+    makeCurrent();
+    vertex_array_.destroy();
+    vertex_buffer_.destroy();
+    index_buffer_.destroy();
+    doneCurrent();
+}
+
+auto CadViewport::set_scene(RenderScene scene) -> void {
+    scene_ = std::move(scene);
+    selected_part_.reset();
+    scene_dirty_ = true;
+    fit_all();
+    update();
+}
+
+auto CadViewport::clear_scene() -> void {
+    scene_ = {};
+    selected_part_.reset();
+    scene_dirty_ = true;
+    update();
+}
+
+auto CadViewport::fit_all() -> void {
+    if (scene_.empty())
+        return;
+    target_ = scene_.center();
+    distance_ = scene_.radius() * 2.7F;
+    update();
+}
+
+auto CadViewport::set_standard_view(StandardView standard) -> void {
+    switch (standard) {
+    case StandardView::isometric:
+        yaw_degrees_ = 38.0F;
+        pitch_degrees_ = 24.0F;
+        break;
+    case StandardView::front:
+        yaw_degrees_ = 0.0F;
+        pitch_degrees_ = 0.0F;
+        break;
+    case StandardView::back:
+        yaw_degrees_ = 180.0F;
+        pitch_degrees_ = 0.0F;
+        break;
+    case StandardView::left:
+        yaw_degrees_ = -90.0F;
+        pitch_degrees_ = 0.0F;
+        break;
+    case StandardView::right:
+        yaw_degrees_ = 90.0F;
+        pitch_degrees_ = 0.0F;
+        break;
+    case StandardView::top:
+        yaw_degrees_ = 0.0F;
+        pitch_degrees_ = 89.9F;
+        break;
+    case StandardView::bottom:
+        yaw_degrees_ = 0.0F;
+        pitch_degrees_ = -89.9F;
+        break;
+    }
+    update();
+}
+
+auto CadViewport::set_orthographic(bool enabled) -> void {
+    orthographic_ = enabled;
+    update();
+}
+
+auto CadViewport::set_wireframe(bool enabled) -> void {
+    wireframe_ = enabled;
+    update();
+}
+
+auto CadViewport::set_debug_overlay(bool enabled) -> void {
+    debug_overlay_ = enabled;
+    update();
+}
+
+auto CadViewport::orientation_cube_rect() const -> QRect {
+    return QRect{width() - 116, 22, 88, 88};
+}
+
+auto CadViewport::draw_hud(QPainter& painter) const -> void {
+    painter.setRenderHint(QPainter::Antialiasing);
+    const QRect cube = orientation_cube_rect();
+    const QPoint center = cube.center();
+    QPainterPath tile;
+    tile.addRoundedRect(QRectF{cube}, 14.0, 14.0);
+    painter.fillPath(tile, QColor{18, 26, 39, 224});
+    painter.setPen(QPen{QColor{"#52637c"}, 1.0});
+    painter.drawPath(tile);
+
+    const QPolygon top{{center.x(), cube.top() + 14}, {cube.right() - 14, cube.top() + 31},
+                       {center.x(), cube.top() + 48}, {cube.left() + 14, cube.top() + 31}};
+    const QPolygon front{{cube.left() + 14, cube.top() + 31}, {center.x(), cube.top() + 48},
+                         {center.x(), cube.bottom() - 13}, {cube.left() + 14, cube.bottom() - 30}};
+    const QPolygon right{{center.x(), cube.top() + 48}, {cube.right() - 14, cube.top() + 31},
+                         {cube.right() - 14, cube.bottom() - 30}, {center.x(), cube.bottom() - 13}};
+    painter.setPen(QPen{QColor{"#75849b"}, 1.0});
+    painter.setBrush(QColor{"#354154"});
+    painter.drawPolygon(top);
+    painter.setBrush(QColor{"#293548"});
+    painter.drawPolygon(front);
+    painter.setBrush(QColor{"#202b3d"});
+    painter.drawPolygon(right);
+    painter.setPen(QColor{"#dbeafe"});
+    painter.drawText(top.boundingRect(), Qt::AlignCenter, QStringLiteral("Top"));
+    painter.drawText(front.boundingRect(), Qt::AlignCenter, QStringLiteral("F"));
+    painter.drawText(right.boundingRect(), Qt::AlignCenter, QStringLiteral("R"));
+
+    if (!debug_overlay_)
+        return;
+    const auto triangle_count = scene_.indices.size() / 3U;
+    const QString text = QStringLiteral("DEBUG\n%1 parts  %2 vertices  %3 triangles\nyaw %4°  pitch %5°  distance %6\n%7  %8")
+                             .arg(static_cast<qulonglong>(scene_.parts.size()))
+                             .arg(static_cast<qulonglong>(scene_.vertices.size()))
+                             .arg(static_cast<qulonglong>(triangle_count))
+                             .arg(yaw_degrees_, 0, 'f', 1)
+                             .arg(pitch_degrees_, 0, 'f', 1)
+                             .arg(distance_, 0, 'f', 2)
+                             .arg(orthographic_ ? QStringLiteral("orthographic") : QStringLiteral("perspective"))
+                             .arg(wireframe_ ? QStringLiteral("wireframe") : QStringLiteral("shaded two-sided"));
+    const QRect panel{20, height() - 96, 390, 74};
+    QPainterPath debug_tile;
+    debug_tile.addRoundedRect(QRectF{panel}, 10.0, 10.0);
+    painter.fillPath(debug_tile, QColor{5, 12, 22, 218});
+    painter.setPen(QColor{"#67e8f9"});
+    painter.drawText(panel.adjusted(12, 8, -8, -6), Qt::AlignLeft | Qt::AlignVCenter, text);
+}
+
+auto CadViewport::select_part(std::optional<std::size_t> index) -> void {
+    if (index && *index >= scene_.parts.size())
+        index.reset();
+    if (selected_part_ == index)
+        return;
+    selected_part_ = index;
+    update();
+    if (selection_changed)
+        selection_changed(selected_part_);
+}
+
+auto CadViewport::save_screenshot(const QString& path) -> bool {
+    return grabFramebuffer().save(path, "PNG", 95);
+}
+
+auto CadViewport::initializeGL() -> void {
+    initializeOpenGLFunctions();
+    glEnable(GL_DEPTH_TEST);
+    // ICAD can preview work-in-progress and imported meshes before winding has
+    // been normalized. Two-sided rendering prevents orbiting the camera from
+    // visually opening holes in otherwise usable geometry.
+    glDisable(GL_CULL_FACE);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    mesh_program_.addShaderFromSourceCode(QOpenGLShader::Vertex, vertex_shader);
+    mesh_program_.addShaderFromSourceCode(QOpenGLShader::Fragment, fragment_shader);
+    mesh_program_.link();
+    line_program_.addShaderFromSourceCode(QOpenGLShader::Vertex, line_vertex_shader);
+    line_program_.addShaderFromSourceCode(QOpenGLShader::Fragment, line_fragment_shader);
+    line_program_.link();
+    vertex_array_.create();
+    vertex_buffer_.create();
+    index_buffer_.create();
+    initialized_ = true;
+    scene_dirty_ = true;
+}
+
+auto CadViewport::resizeGL(int width, int height) -> void {
+    glViewport(0, 0, width, height);
+}
+
+auto CadViewport::update_matrices() -> void {
+    const float aspect = static_cast<float>(std::max(1, width())) /
+                         static_cast<float>(std::max(1, height()));
+    projection_.setToIdentity();
+    const float radius = scene_.empty() ? 10.0F : scene_.radius();
+    if (orthographic_) {
+        const float extent = std::max(radius * 1.15F, distance_ * 0.42F);
+        projection_.ortho(-extent * aspect, extent * aspect, -extent, extent, 0.01F,
+                          std::max(1000.0F, radius * 20.0F));
+    } else {
+        projection_.perspective(36.0F, aspect, std::max(0.01F, radius * 0.001F),
+                                std::max(1000.0F, radius * 30.0F));
+    }
+    const float yaw = qDegreesToRadians(yaw_degrees_);
+    const float pitch = qDegreesToRadians(pitch_degrees_);
+    const QVector3D direction{std::cos(pitch) * std::sin(yaw), std::sin(pitch),
+                              std::cos(pitch) * std::cos(yaw)};
+    const QVector3D eye = target_ + direction * distance_;
+    view_.setToIdentity();
+    view_.lookAt(eye, target_, QVector3D{0.0F, 1.0F, 0.0F});
+}
+
+auto CadViewport::upload_scene() -> void {
+    scene_dirty_ = false;
+    vertex_array_.bind();
+    vertex_buffer_.bind();
+    vertex_buffer_.setUsagePattern(QOpenGLBuffer::StaticDraw);
+    vertex_buffer_.allocate(scene_.vertices.data(),
+                            static_cast<int>(scene_.vertices.size() * sizeof(RenderVertex)));
+    index_buffer_.bind();
+    index_buffer_.setUsagePattern(QOpenGLBuffer::StaticDraw);
+    index_buffer_.allocate(scene_.indices.data(),
+                           static_cast<int>(scene_.indices.size() * sizeof(std::uint32_t)));
+    mesh_program_.bind();
+    mesh_program_.enableAttributeArray(0);
+    mesh_program_.setAttributeBuffer(0, GL_FLOAT, offsetof(RenderVertex, position), 3,
+                                     sizeof(RenderVertex));
+    mesh_program_.enableAttributeArray(1);
+    mesh_program_.setAttributeBuffer(1, GL_FLOAT, offsetof(RenderVertex, normal), 3,
+                                     sizeof(RenderVertex));
+    mesh_program_.enableAttributeArray(2);
+    mesh_program_.setAttributeBuffer(2, GL_FLOAT, offsetof(RenderVertex, color), 4,
+                                     sizeof(RenderVertex));
+    mesh_program_.release();
+    index_buffer_.release();
+    vertex_buffer_.release();
+    vertex_array_.release();
+}
+
+auto CadViewport::draw_grid(const QMatrix4x4& view_projection) -> void {
+    const float radius = scene_.empty() ? 50.0F : std::max(50.0F, scene_.radius() * 2.0F);
+    const float step = std::pow(10.0F, std::floor(std::log10(std::max(1.0F, radius / 10.0F))));
+    std::vector<QVector3D> lines;
+    for (float coordinate = -radius; coordinate <= radius + step * 0.5F; coordinate += step) {
+        lines.insert(lines.end(), {{-radius, coordinate, 0.0F}, {radius, coordinate, 0.0F},
+                                   {coordinate, -radius, 0.0F}, {coordinate, radius, 0.0F}});
+    }
+    QOpenGLBuffer buffer{QOpenGLBuffer::VertexBuffer};
+    buffer.create();
+    buffer.bind();
+    buffer.allocate(lines.data(), static_cast<int>(lines.size() * sizeof(QVector3D)));
+    line_program_.bind();
+    line_program_.setUniformValue("mvp", view_projection);
+    line_program_.setUniformValue("line_color", QVector4D{0.19F, 0.23F, 0.28F, 0.72F});
+    line_program_.enableAttributeArray(0);
+    line_program_.setAttributeBuffer(0, GL_FLOAT, 0, 3, sizeof(QVector3D));
+    glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(lines.size()));
+    line_program_.disableAttributeArray(0);
+    line_program_.release();
+    buffer.release();
+    buffer.destroy();
+}
+
+auto CadViewport::paintGL() -> void {
+    glClearColor(0.035F, 0.047F, 0.063F, 1.0F);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    update_matrices();
+    draw_grid(projection_ * view_);
+    if (scene_.empty()) {
+        QPainter painter{this};
+        painter.setPen(QColor{148, 163, 184});
+        painter.drawText(rect(), Qt::AlignCenter, QStringLiteral("Compile an ICAD model to preview it"));
+        return;
+    }
+    if (scene_dirty_)
+        upload_scene();
+    vertex_array_.bind();
+    index_buffer_.bind();
+    mesh_program_.bind();
+    mesh_program_.setUniformValue("mvp", projection_ * view_);
+    mesh_program_.setUniformValue("model_view", view_);
+    glPolygonMode(GL_FRONT_AND_BACK, wireframe_ ? GL_LINE : GL_FILL);
+    for (std::size_t index = 0; index < scene_.parts.size(); ++index) {
+        const auto& part = scene_.parts[index];
+        mesh_program_.setUniformValue("selected", selected_part_ == index ? 1.0F : 0.0F);
+        const auto offset = reinterpret_cast<const void*>(
+            static_cast<std::uintptr_t>(part.first_index) * sizeof(std::uint32_t));
+        glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(part.index_count), GL_UNSIGNED_INT, offset);
+    }
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+    mesh_program_.release();
+    index_buffer_.release();
+    vertex_array_.release();
+
+    QPainter painter{this};
+    draw_hud(painter);
+}
+
+auto CadViewport::mousePressEvent(QMouseEvent* event) -> void {
+    if (event->button() == Qt::LeftButton && orientation_cube_rect().contains(event->position().toPoint())) {
+        const QRect cube = orientation_cube_rect();
+        if (event->position().y() < cube.top() + cube.height() / 2) {
+            set_standard_view(StandardView::top);
+        } else if (event->position().x() < cube.center().x()) {
+            set_standard_view(StandardView::front);
+        } else {
+            set_standard_view(StandardView::right);
+        }
+        event->accept();
+        return;
+    }
+    press_position_ = event->position().toPoint();
+    last_position_ = press_position_;
+    dragging_ = event->button() == Qt::LeftButton || event->button() == Qt::MiddleButton;
+    panning_ = event->button() == Qt::MiddleButton ||
+               (event->button() == Qt::LeftButton && event->modifiers().testFlag(Qt::ShiftModifier));
+    event->accept();
+}
+
+auto CadViewport::mouseMoveEvent(QMouseEvent* event) -> void {
+    if (!dragging_)
+        return;
+    const QPoint current = event->position().toPoint();
+    const QPoint delta = current - last_position_;
+    last_position_ = current;
+    if (panning_) {
+        const float scale = std::max(0.001F, distance_ * 0.0015F);
+        QMatrix4x4 inverse = view_.inverted();
+        const QVector3D right = inverse.mapVector(QVector3D{1.0F, 0.0F, 0.0F});
+        const QVector3D up = inverse.mapVector(QVector3D{0.0F, 1.0F, 0.0F});
+        target_ += (-right * static_cast<float>(delta.x()) + up * static_cast<float>(delta.y())) * scale;
+    } else {
+        yaw_degrees_ += static_cast<float>(delta.x()) * 0.35F;
+        pitch_degrees_ = std::clamp(pitch_degrees_ - static_cast<float>(delta.y()) * 0.35F,
+                                    -89.0F, 89.0F);
+    }
+    update();
+}
+
+auto CadViewport::mouseReleaseEvent(QMouseEvent* event) -> void {
+    const QPoint released = event->position().toPoint();
+    if (event->button() == Qt::LeftButton && (released - press_position_).manhattanLength() < 4)
+        select_part(pick_part(released));
+    dragging_ = false;
+    panning_ = false;
+    event->accept();
+}
+
+auto CadViewport::wheelEvent(QWheelEvent* event) -> void {
+    const float turns = static_cast<float>(event->angleDelta().y()) / 120.0F;
+    distance_ = std::clamp(distance_ * std::pow(0.84F, turns), 0.01F, 1.0e8F);
+    update();
+    event->accept();
+}
+
+auto CadViewport::pick_part(const QPoint& point) const -> std::optional<std::size_t> {
+    if (scene_.empty())
+        return std::nullopt;
+    const QMatrix4x4 matrix = projection_ * view_;
+    const auto project = [&](const QVector3D& source) {
+        const QVector4D clip = matrix * QVector4D{source, 1.0F};
+        if (qFuzzyIsNull(clip.w()))
+            return QVector3D{};
+        const QVector3D ndc = clip.toVector3DAffine();
+        return QVector3D{(ndc.x() + 1.0F) * 0.5F * static_cast<float>(width()),
+                         (1.0F - ndc.y()) * 0.5F * static_cast<float>(height()), ndc.z()};
+    };
+    const QPointF target{point};
+    float closest = std::numeric_limits<float>::max();
+    std::optional<std::size_t> hit;
+    for (std::size_t part_index = 0; part_index < scene_.parts.size(); ++part_index) {
+        const auto& part = scene_.parts[part_index];
+        const std::size_t end = static_cast<std::size_t>(part.first_index + part.index_count);
+        for (std::size_t triangle = part.first_index; triangle + 2 < end; triangle += 3) {
+            const QVector3D first = project(scene_.vertices[scene_.indices[triangle]].position);
+            const QVector3D second = project(scene_.vertices[scene_.indices[triangle + 1]].position);
+            const QVector3D third = project(scene_.vertices[scene_.indices[triangle + 2]].position);
+            if (!point_in_triangle(target, first.toPointF(), second.toPointF(), third.toPointF()))
+                continue;
+            const float depth = (first.z() + second.z() + third.z()) / 3.0F;
+            if (depth < closest) {
+                closest = depth;
+                hit = part_index;
+            }
+        }
+    }
+    return hit;
+}
+
+} // namespace icad::desktop

@@ -19,9 +19,11 @@ icad_add_unit_test(semantic unit/semantic_test.cpp)
 icad_add_unit_test(geometry unit/geometry_test.cpp)
 icad_add_unit_test(boolean unit/boolean_test.cpp)
 icad_add_unit_test(modeling_tools unit/modeling_tools_test.cpp)
+icad_add_unit_test(topology_query unit/topology_query_test.cpp)
 icad_add_unit_test(surfaces unit/surfaces_test.cpp)
 icad_add_unit_test(sketch_solver unit/sketch_solver_test.cpp)
 icad_add_unit_test(feature_history unit/feature_history_test.cpp)
+icad_add_unit_test(multi_shape_sketch unit/multi_shape_sketch_test.cpp)
 add_executable(icad_engine_api_test unit/engine_api_test.cpp)
 target_link_libraries(icad_engine_api_test PRIVATE ICAD::engine icad_project_options)
 add_test(NAME unit.engine_api COMMAND icad_engine_api_test)
@@ -103,6 +105,17 @@ add_test(
 set_tests_properties(integration.cli_language PROPERTIES LABELS "integration;language")
 
 add_test(
+    NAME integration.cli_check_advanced_sketch_constraints
+    COMMAND ${CMAKE_COMMAND}
+        -DICAD_EXECUTABLE=$<TARGET_FILE:icad>
+        -DICAD_SOURCE=${PROJECT_SOURCE_DIR}/examples/advanced_sketch_constraints.icad
+        -DEXPECT_SUCCESS=ON
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/integration/cli_check.cmake
+)
+set_tests_properties(integration.cli_check_advanced_sketch_constraints
+                     PROPERTIES LABELS "integration;sketch_solver;region")
+
+add_test(
     NAME integration.cli_compare
     COMMAND ${CMAKE_COMMAND}
         -DICAD_EXECUTABLE=$<TARGET_FILE:icad>
@@ -146,17 +159,15 @@ add_test(
         -P ${CMAKE_CURRENT_SOURCE_DIR}/benchmark/advanced_bridge.cmake
 )
 set_tests_properties(benchmark.advanced_bridge PROPERTIES LABELS "benchmark" TIMEOUT 60)
-if(ICAD_BROWSER_TEST_EXECUTABLE)
+if(TARGET icad-viewer)
     add_test(
-        NAME browser.viewer_smoke
-        COMMAND ${CMAKE_COMMAND}
-            -DICAD_EXECUTABLE=$<TARGET_FILE:icad>
-            -DICAD_SOURCE=${PROJECT_SOURCE_DIR}/examples/advanced.icad
-            -DOUTPUT_ROOT=${CMAKE_CURRENT_BINARY_DIR}/browser-viewer
-            -DCHROMIUM_EXECUTABLE=${ICAD_BROWSER_TEST_EXECUTABLE}
-            -P ${CMAKE_CURRENT_SOURCE_DIR}/browser/viewer_smoke.cmake
+        NAME viewer.qt_native_smoke
+        COMMAND $<TARGET_FILE:icad-viewer> --self-test ${PROJECT_SOURCE_DIR}/examples/advanced.icad
     )
-    set_tests_properties(browser.viewer_smoke PROPERTIES LABELS "browser;viewer" TIMEOUT 60)
+    set_tests_properties(viewer.qt_native_smoke PROPERTIES
+        LABELS "viewer;qt;native"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        TIMEOUT 60)
 endif()
 add_test(
     NAME benchmark.robotic_arm
@@ -222,6 +233,66 @@ add_test(
 )
 set_tests_properties(benchmark.sketch_history
                      PROPERTIES LABELS "benchmark;feature_history" TIMEOUT 60)
+add_test(
+    NAME benchmark.multi_shape_plate
+    COMMAND ${CMAKE_COMMAND}
+        -DICAD_EXECUTABLE=$<TARGET_FILE:icad>
+        -DICAD_SOURCE=${PROJECT_SOURCE_DIR}/examples/multi_shape_plate.icad
+        -DOUTPUT_ROOT=${CMAKE_CURRENT_BINARY_DIR}/benchmark-multi-shape-plate
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/benchmark/multi_shape_plate.cmake
+)
+set_tests_properties(benchmark.multi_shape_plate
+                     PROPERTIES LABELS "benchmark;feature_history;multi_shape_sketch" TIMEOUT 60)
+add_test(
+    NAME benchmark.region_plate
+    COMMAND ${CMAKE_COMMAND}
+        -DICAD_EXECUTABLE=$<TARGET_FILE:icad>
+        -DICAD_SOURCE=${PROJECT_SOURCE_DIR}/examples/region_plate.icad
+        -DOUTPUT_ROOT=${CMAKE_CURRENT_BINARY_DIR}/benchmark-region-plate
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/benchmark/region_plate.cmake
+)
+set_tests_properties(benchmark.region_plate
+                     PROPERTIES LABELS "benchmark;feature_history;multi_shape_sketch;region" TIMEOUT 60)
+add_test(
+    NAME benchmark.persistent_face_plate
+    COMMAND ${CMAKE_COMMAND}
+        -DICAD_EXECUTABLE=$<TARGET_FILE:icad>
+        -DICAD_SOURCE=${PROJECT_SOURCE_DIR}/examples/persistent_face_plate.icad
+        -DOUTPUT_ROOT=${CMAKE_CURRENT_BINARY_DIR}/benchmark-persistent-face-plate
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/benchmark/persistent_face_plate.cmake
+)
+set_tests_properties(benchmark.persistent_face_plate
+                     PROPERTIES LABELS "benchmark;feature_history;persistent_topology" TIMEOUT 60)
+add_test(
+    NAME benchmark.rounded_tangent_plate
+    COMMAND ${CMAKE_COMMAND}
+        -DICAD_EXECUTABLE=$<TARGET_FILE:icad>
+        -DICAD_SOURCE=${PROJECT_SOURCE_DIR}/examples/rounded_tangent_plate.icad
+        -DOUTPUT_ROOT=${CMAKE_CURRENT_BINARY_DIR}/benchmark-rounded-tangent-plate
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/benchmark/rounded_tangent_plate.cmake
+)
+set_tests_properties(benchmark.rounded_tangent_plate
+                     PROPERTIES LABELS "benchmark;sketch_solver;tangency" TIMEOUT 60)
+add_test(
+    NAME benchmark.selective_round_vessel
+    COMMAND ${CMAKE_COMMAND}
+        -DICAD_EXECUTABLE=$<TARGET_FILE:icad>
+        -DICAD_SOURCE=${PROJECT_SOURCE_DIR}/examples/selective_round_vessel.icad
+        -DOUTPUT_ROOT=${CMAKE_CURRENT_BINARY_DIR}/benchmark-selective-round-vessel
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/benchmark/selective_round_vessel.cmake
+)
+set_tests_properties(benchmark.selective_round_vessel
+                     PROPERTIES LABELS "benchmark;modeling_tools;selection;fillet" TIMEOUT 60)
+add_test(
+    NAME benchmark.topology_query_vessel
+    COMMAND ${CMAKE_COMMAND}
+        -DICAD_EXECUTABLE=$<TARGET_FILE:icad>
+        -DICAD_SOURCE=${PROJECT_SOURCE_DIR}/examples/topology_query_vessel.icad
+        -DOUTPUT_ROOT=${CMAKE_CURRENT_BINARY_DIR}/benchmark-topology-query-vessel
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/benchmark/topology_query_vessel.cmake
+)
+set_tests_properties(benchmark.topology_query_vessel
+                     PROPERTIES LABELS "benchmark;topology_query;selection;fillet" TIMEOUT 60)
 add_test(
     NAME benchmark.geometric_queries
     COMMAND ${CMAKE_COMMAND}

@@ -1,0 +1,45 @@
+# Named topology-query acceptance model. The query is the design authority;
+# the modifier never addresses a tessellated edge index.
+REQUIRES ICAD 1.0
+REQUIRES CAPABILITY MULTI_SHAPE_SKETCH_V1
+REQUIRES CAPABILITY SKETCH_REGION_ARRANGEMENT_V1
+REQUIRES CAPABILITY TOPOLOGY_QUERY_V1
+PROJECT topology_query_vessel
+UNITS mm
+
+PARAMETER outer_radius 40 mm
+PARAMETER inner_radius 32 mm
+PARAMETER height 50 mm
+PARAMETER rim_radius 3 mm
+
+BODY vessel
+SKETCH annulus ON PLANE XY
+SHAPE outside CLOSED ROLE STOCK
+POINT center 0 mm 0 mm FIXED
+CIRCLE rim CENTER center RADIUS outer_radius
+END
+SHAPE inside CLOSED ROLE HOLE
+POINT center 0 mm 0 mm FIXED
+CIRCLE rim CENTER center RADIUS inner_radius
+END
+REGION wall
+OUTER outside
+HOLES inside
+END
+SOLVE FULL
+END
+PAD wall_solid FROM annulus.wall DEPTH height NEW
+SELECTION upper_inner_rim
+FROM wall_solid
+EDGES WHERE
+LOOP
+CIRCULAR
+CONCAVE
+ADJACENT_TO FACE top
+END
+FEATURE soften_rim
+TYPE FILLET
+SELECT EDGESET upper_inner_rim
+RADIUS rim_radius
+END
+END

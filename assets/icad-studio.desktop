@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=ICAD Studio
+Comment=Native agentic CAD language IDE and live viewer
+Exec=icad-viewer %f
+Icon=icad
+Terminal=false
+Categories=Development;Graphics;Engineering;
+MimeType=application/x-icad;
+StartupNotify=true

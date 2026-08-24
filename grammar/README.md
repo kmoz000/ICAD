@@ -42,6 +42,73 @@ slice multiplication requires one dimensionless operand; division accepts a
 dimensionless divisor or equal dimensions. Derived area/volume dimensions are
 reserved for the next expression capability.
 
+`MULTI_SHAPE_SKETCH_V1` adds multiple named `SHAPE` blocks to one sketch.
+Shapes declare `OPEN|CLOSED` and a `STOCK`, `ADDITIVE`, `HOLE`, or
+`CONSTRUCTION` role. The implemented entity set is `POINT`, `LINE`, `ARC`, and
+named `CIRCLE`; each closed shape becomes a stable `body::sketch.shape`
+profile. `PAD` and `POCKET` must select `sketch.shape` explicitly. Hole regions
+must be contained by exactly one stock or additive region, shape boundaries
+may not intersect or touch, and every non-construction shape must feed a later
+operation. `SOLVE FULL` rejects remaining degrees of freedom; qualified
+cross-shape constraints use `shape.point` or `shape.entity`.
+
+`SKETCH_REGION_ARRANGEMENT_V1` adds explicit `REGION` blocks. A region names
+one closed stock/additive `OUTER` shape and optional contained `HOLES`; a single
+`PAD` or `POCKET` may consume `sketch.region`. The native engine subtracts all
+region holes in one boolean transaction while the dependency graph and
+`visual.json` retain the outer, holes, and net area.
+
+`ADVANCED_SKETCH_CONSTRAINTS_V1` adds `H_DISTANCE`, `V_DISTANCE`, `PARALLEL`,
+`PERPENDICULAR`, `EQUAL_LENGTH`, `CONCENTRIC`, `EQUAL_RADIUS`, `MIDPOINT`, and
+`SYMMETRIC point point ABOUT line`. Full-circle radii remain scalar inputs, so
+`EQUAL_RADIUS` validates them rather than treating radius as a solver variable.
+
+`SKETCH_LINE_ARC_TANGENCY_V1` adds the bounded endpoint form `TANGENT line arc
+AT shared_point` (entity order may be reversed). The point must be an endpoint
+shared by the line and a non-full-circle arc. The solver enforces a
+perpendicular line direction and arc radius at that point. Full-circle,
+arc-arc, spline, and projected-edge tangency remain proposal-only. Role-set
+selectors, spline/ellipse entities, and automatic topology selectors also
+remain proposal-only.
+
+`PERSISTENT_FACE_REFERENCES_V1` is the first bounded persistent-topology slice.
+Inside a body, `FACE alias FROM feature.face.top|bottom` names an earlier
+feature's planar cap. A later sketch can use `ON FACE alias` or the direct
+`ON FACE feature.face.top|bottom` form. AST, canonical IR, dependency output,
+feature history, and `visual.json` retain the canonical
+`body/feature/face.role` identity. Side-face and edge provenance selectors are
+not advertised yet.
+
+`SEMANTIC_EDGE_LOOP_SELECTION_V1` adds source-stable circular rim selection on
+the current annular solid as `SELECT EDGE TOP|BOTTOM INNER|OUTER`. `FILLET` and
+`CHAMFER` consume that selection, and `visual.json` reports the loop
+classification plus `applicableOperations`. Arbitrary mesh-edge IDs, tangent
+chains, face offsets, shelling, split, and project tools remain gated.
+
+`TOPOLOGY_QUERY_V1` promotes that bounded selector into a named, typed query:
+
+```icad
+SELECTION upper_inner_rim
+FROM wall_solid
+EDGES WHERE
+LOOP
+CIRCULAR
+CONCAVE
+ADJACENT_TO FACE top
+END
+FEATURE soften_rim
+TYPE FILLET
+SELECT EDGESET upper_inner_rim
+RADIUS 3 mm
+END
+```
+
+The current resolver guarantees one circular annular loop from an immediately
+preceding REGION extrusion. `CONCAVE|CONVEX` maps to inner/outer material side
+and `top|bottom` maps to the axial cap. Inspection exposes the stable topology
+ID, match reason, allowed operations, and explicit rejection reasons. General
+query expressions and history remapping remain capability-gated.
+
 The lexer reserves tokens needed by later slices: qualified-name dots,
 selector brackets, JSON-style strings, comments, and decimal exponents. The
 production parser still rejects unadvertised v2 constructs. Signed numeric
@@ -50,11 +117,11 @@ correctly by the production expression parser.
 
 Within a `BODY`, the primary grammar is an ordered CAD-style history. Start
 with `SKETCH name ON PLANE XY|XZ|YZ`, create the first solid with `PAD name FROM
-sketch DEPTH value NEW`, then use `SKETCH name ON FACE earlier-feature
-face-selector` before `PAD ... ADD` or `POCKET`. A face support must be declared
+sketch[.shape|.region] DEPTH value NEW`, then use `SKETCH name ON FACE earlier-feature
+face-selector|persistent-face-reference` before `PAD ... ADD` or `POCKET`. A face support must be declared
 earlier in the same body. Every body-local sketch requires an explicit `ON`
-support and must feed a later operation; unfinished construction sketches are
-rejected until construction-only semantics exist. Local sketch names are
+support and every non-construction shape must feed a later operation. Open
+construction shapes may remain unconsumed as reference geometry. Local sketch names are
 scoped by body and become stable `body::sketch` identifiers in canonical IR.
 These are language semantics implemented by the native geometry engine, not
 exporter hints.
@@ -74,7 +141,7 @@ requires `PROFILE`, `TARGET_PROFILE`, and `HEIGHT`; `FREEFORM` adds `TWIST`
 and a section `COUNT` from 3 through 128. Full `REVOLVE` accepts line, arc, and
 circle profiles.
 
-`SKETCH` blocks contain either one `CIRCLE center-x center-y radius` or named
+Legacy `SKETCH` blocks contain either one `CIRCLE center-x center-y radius` or named
 `POINT name X Y [FIXED]` declarations followed by an ordered boundary of
 `LINE name FROM point TO point` and `ARC name FROM point TO point CENTER point
 CW|CCW` entities. An explicit entity chain must close end-to-start and makes

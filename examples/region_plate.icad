@@ -1,0 +1,44 @@
+# One explicit manufacturable region: material boundary minus classified holes.
+REQUIRES ICAD 1.0
+REQUIRES CAPABILITY PARAMETER_EXPRESSIONS_V1
+REQUIRES CAPABILITY MULTI_SHAPE_SKETCH_V1
+REQUIRES CAPABILITY SKETCH_REGION_ARRANGEMENT_V1
+PROJECT region_plate
+UNITS mm
+
+PARAMETER plate_width 100 mm
+PARAMETER plate_height 60 mm
+PARAMETER plate_thickness 8 mm
+PARAMETER hole_radius 5 mm
+
+MATERIAL plate_material ALUMINUM
+
+BODY mounting_plate
+MATERIAL plate_material
+SKETCH layout ON PLANE XY
+SHAPE outer CLOSED ROLE STOCK
+POINT p0 0 mm 0 mm FIXED
+POINT p1 plate_width 0 mm FIXED
+POINT p2 plate_width plate_height FIXED
+POINT p3 0 mm plate_height FIXED
+LINE bottom FROM p0 TO p1
+LINE right FROM p1 TO p2
+LINE top FROM p2 TO p3
+LINE left FROM p3 TO p0
+END
+SHAPE hole_left CLOSED ROLE HOLE
+POINT center 15 mm 30 mm FIXED
+CIRCLE rim CENTER center RADIUS hole_radius
+END
+SHAPE hole_right CLOSED ROLE HOLE
+POINT center 85 mm 30 mm FIXED
+CIRCLE rim CENTER center RADIUS hole_radius
+END
+REGION perforated_plate
+OUTER outer
+HOLES hole_left hole_right
+END
+SOLVE FULL
+END
+PAD plate_solid FROM layout.perforated_plate DEPTH plate_thickness NEW
+END

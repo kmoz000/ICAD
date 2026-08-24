@@ -24,6 +24,7 @@
     "LICENSE",
     "language-configuration.json",
     "syntaxes/**",
+    "themes/**",
     "README.md"
   ],
   "contributes": {
@@ -40,6 +41,13 @@
         "language": "icad",
         "scopeName": "source.icad",
         "path": "./syntaxes/icad.tmLanguage.json"
+      }
+    ],
+    "themes": [
+      {
+        "label": "ICAD Industrial Dark",
+        "uiTheme": "vs-dark",
+        "path": "./themes/icad-industrial-dark-color-theme.json"
       }
     ],
     "commands": [
@@ -80,7 +88,7 @@
           "default": true,
           "scope": "machine",
           "tags": ["usesOnlineServices"],
-          "description": "Automatically download and checksum-verify the matching ICAD compiler and webview viewer release."
+          "description": "Automatically download and checksum-verify the matching ICAD compiler and native Qt viewer release."
         },
         "icad.toolchain.releaseBaseUrl": {
           "type": "string",
@@ -136,7 +144,7 @@
   },
   "scripts": {
     "build": "esbuild extension.js --bundle --platform=node --format=cjs --external:vscode --outfile=dist/extension.js",
-    "test": "npm run build && node --check dist/extension.js && node toolchain.test.js",
+    "test": "npm run build && node --check dist/extension.js && node toolchain.test.js && node syntax.test.js",
     "package": "npm run build && vsce package --out ../../build/icad-agentic-cad.vsix"
   },
   "dependencies": {

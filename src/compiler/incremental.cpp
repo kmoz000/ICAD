@@ -39,7 +39,8 @@ namespace {
     }
     const auto references_profile = [&](const std::string& name) {
         return std::ranges::any_of(body.features, [&](const auto& feature) {
-            return feature.profile == name || feature.target_profile == name;
+            return feature.profile == name || feature.target_profile == name ||
+                   std::ranges::contains(feature.region_hole_profiles, name);
         });
     };
     for (const auto& profile : project.profiles) {

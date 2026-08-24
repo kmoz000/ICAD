@@ -1,0 +1,6 @@
+<RCC>
+  <qresource prefix="/icad/icons">
+    <file alias="icad-32.png">../../assets/icons/icad-32.png</file>
+    <file alias="icad-256.png">../../assets/icons/icad-256.png</file>
+  </qresource>
+</RCC>

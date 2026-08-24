@@ -10,8 +10,9 @@
 namespace {
 
 constexpr std::string_view valid_source =
-    "PROJECT AgentTest\nUNITS mm\nBODY part\nFEATURE cube\nTYPE BOX\nWIDTH 1 mm\nDEPTH 1 "
-    "mm\nHEIGHT 1 mm\nEND\nEND\n";
+    "PROJECT AgentTest\nUNITS mm\nPARAMETER width 2 mm\n"
+    "PARAMETER half AgentTest.width / 2\nBODY part\nFEATURE cube\nTYPE BOX\n"
+    "WIDTH half\nDEPTH 1 mm\nHEIGHT 1 mm\nEND\nEND\n";
 
 auto frame(std::string_view json) -> std::string {
     return "Content-Length: " + std::to_string(json.size()) + "\r\n\r\n" + std::string{json};
@@ -42,7 +43,9 @@ auto main() -> int {
         !visual.contains("\"name\":\"right\"") ||
         !visual.contains("\"name\":\"top\"") ||
         !visual.contains("\"name\":\"isometric\"") ||
-        !visual.contains("\"body\":\"part\"") || !visual.contains("\"rows\":[")) {
+        !visual.contains("\"body\":\"part\"") || !visual.contains("\"rows\":[") ||
+        !visual.contains("\"expression\":\"AgentTest.width / 2\"") ||
+        !visual.contains("\"dependencies\":[\"AgentTest.width\"]")) {
         return fail("agent visual snapshot JSON is incomplete");
     }
     constexpr std::string_view alternative_source =
@@ -110,6 +113,23 @@ auto main() -> int {
               "\"range\":{\"start\":{\"line\":3,\"character\":3},"
               "\"end\":{\"line\":3,\"character\":3}},\"context\":{\"diagnostics\":["
               "{\"code\":\"ICAD-P0005\"}]}}}") +
+        frame("{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/"
+              "didOpen\",\"params\":{\"textDocument\":{\"uri\":\"file:///"
+              "qualified.icad\",\"text\":\"PROJECT Ref\\nUNITS mm\\nPARAMETER width 2 "
+              "mm\\nPARAMETER half Ref.width / 2\\n\"}}}") +
+        frame("{\"jsonrpc\":\"2.0\",\"id\":8,\"method\":\"textDocument/definition\","
+              "\"params\":{\"textDocument\":{\"uri\":\"file:///qualified.icad\"},"
+              "\"position\":{\"line\":3,\"character\":21}}}") +
+        frame("{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/"
+              "didOpen\",\"params\":{\"textDocument\":{\"uri\":\"file:///shape.icad\","
+              "\"text\":\"PROJECT ShapeRef\\nUNITS mm\\nBODY part\\nSKETCH layout ON PLANE "
+              "XY\\nSHAPE outer CLOSED ROLE STOCK\\nPOINT p0 0 mm 0 mm FIXED\\nPOINT p1 "
+              "10 mm 0 mm FIXED\\nPOINT p2 0 mm 10 mm FIXED\\nLINE e0 FROM p0 TO p1\\n"
+              "LINE e1 FROM p1 TO p2\\nLINE e2 FROM p2 TO p0\\nEND\\nEND\\nPAD solid FROM "
+              "layout.outer DEPTH 2 mm NEW\\nEND\\n\"}}}") +
+        frame("{\"jsonrpc\":\"2.0\",\"id\":9,\"method\":\"textDocument/definition\","
+              "\"params\":{\"textDocument\":{\"uri\":\"file:///shape.icad\"},"
+              "\"position\":{\"line\":13,\"character\":24}}}") +
         frame("{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"shutdown\",\"params\":null}") +
         frame("{\"jsonrpc\":\"2.0\",\"method\":\"exit\"}")};
     std::ostringstream output;
@@ -119,8 +139,17 @@ auto main() -> int {
         !output.str().contains("documentFormattingProvider") ||
         !output.str().contains("codeActionProvider") ||
         !output.str().contains("\"label\":\"PROJECT\"") ||
+        !output.str().contains("\"label\":\"SHAPE\"") ||
+        !output.str().contains("\"label\":\"REGION\"") ||
+        !output.str().contains("\"label\":\"SYMMETRIC\"") ||
         !output.str().contains("Insert default UNITS declaration") ||
         !output.str().contains("Insert missing END") ||
+        !output.str().contains("\"id\":8,\"result\":{\"uri\":\"file:///qualified.icad\","
+                               "\"range\":{\"start\":{\"line\":2,\"character\":10},"
+                               "\"end\":{\"line\":2,\"character\":15}") ||
+        !output.str().contains("\"id\":9,\"result\":{\"uri\":\"file:///shape.icad\","
+                               "\"range\":{\"start\":{\"line\":4,\"character\":6},"
+                               "\"end\":{\"line\":4,\"character\":11}") ||
         !output.str().contains("\"line\":3,\"character\":3") ||
         !output.str().contains("\"newText\":\"PROJECT bad\\nUNITS mm\\nBODY part\\nEND\\n\"") ||
         !output.str().contains("\"line\":2,\"character\":5")) {

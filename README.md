@@ -8,14 +8,14 @@ ICAD is an independent C++23 compiler and geometry engine for agentic 3D
 design. A person or AI agent writes a deterministic `.icad` program; ICAD
 checks it, lowers it to a canonical model, resolves spatial points, vectors,
 body poses and mechanism joints, builds geometry, applies predefined materials,
-compiles animation scenes, and emits CAD, mesh, scene, and browser viewer
-artifacts.
+compiles animation scenes, and emits CAD, mesh, scene, drawing, and
+manufacturing artifacts for its native viewer and downstream tools.
 
 ICAD does not use an external CAD kernel. Its lexer, parser, type
 system, diagnostics, semantic IR, primitive geometry, native boolean CSG,
 transforms, analytic and faceted topology, triangulation, STEP writer, OBJ
-writer, material system, and web
-viewer are owned by this repository. This is a deliberate product rule: the
+writer, material system, and Qt/OpenGL viewer integration are owned by this
+repository. This is a deliberate product rule: the
 engine is designed around auditable AI-agent workflows instead of wrapping a
 desktop CAD API.
 
@@ -31,10 +31,12 @@ Requirements are intentionally small:
 - CMake 3.25+
 - Clang or another C++23 compiler
 - Make (optional convenience wrapper)
+- Qt 6.5+ Core, Gui, Widgets, OpenGL, OpenGLWidgets, and Concurrent modules
+  when building the optional native viewer
 
-The optional desktop host uses pinned `webview/webview` 0.12.0 and the platform
-web engine (WebKit on macOS, WebKitGTK on Linux, WebView2 on Windows). It is not
-a compiler-core dependency.
+The desktop viewer is a native Qt 6/OpenGL application. It links directly to
+the thread-safe ICAD engine API and has no browser, WebView, JavaScript, npm, or
+HTTP runtime. Qt is not a compiler-core dependency.
 
 On macOS, Apple Clang works. clangd is recommended for IntelliSense.
 
@@ -44,6 +46,7 @@ make test
 make benchmark
 make advanced
 make viewer
+make viewer-package
 ```
 
 Create the maintained detailed robotic-arm design and its complete artifact
@@ -66,11 +69,16 @@ reverse-engineering mesh triangles. Recognized robotic-arm and bridge prompts
 target one model iteration; unfamiliar prompts receive a valid generic
 parametric starter for agent refinement.
 
-Open [`build/examples/advanced.html`](build/examples/advanced.html) directly in
-a browser. It needs no server, package install, or framework. The dim studio
-world starts stationary: drag to orbit, scroll to zoom, use the orthographic
-view cube, click geometry or the Components menu to select parts, and start a
-specific compiled animation from the Scenes menu.
+Open the source directly in ICAD Studio:
+
+```sh
+open build/bin/icad-viewer.app --args examples/advanced.icad # macOS
+```
+
+The native viewer live-compiles edits through the in-process engine, keeps the
+last valid mesh while diagnostics are fixed, uploads indexed meshes to OpenGL,
+and supports orbit, pan, zoom, orthographic standard views, component picking,
+wireframe, scenes, screenshots, and manufacturing-package export.
 
 The advanced build produces:
 
@@ -82,10 +90,7 @@ build/examples/advanced.stl         portable triangle mesh
 build/examples/advanced.gltf        embedded-buffer glTF 2.0 scene mesh
 build/examples/advanced.glb         binary glTF 2.0 scene mesh
 build/examples/advanced.3mf         OPC-packaged 3MF manufacturing mesh
-build/examples/advanced.scene.json  materials, embedded textures, animation
-build/examples/advanced.html        zero-setup viewer page
-build/examples/advanced.viewer.js   compiled geometry and scene data
-build/examples/icad-viewer.js       reusable ICAD browser-viewer library
+build/examples/advanced.scene.json  native render mesh, materials, textures, animation
 build/examples/advanced.bom.json    body/component bill of materials
 build/examples/advanced.manufacturing.json manufacturing validation
 build/examples/advanced.drawing.svg projected native-edge drawing sheet
@@ -253,11 +258,90 @@ Normal ICAD parts are authored in the same order as a CAD designer builds
 them: sketch on a datum plane, create the first solid, select a resulting face,
 sketch again, then add or remove material.
 
-The advanced language direction treats a sketch as a constrained 2D workspace
-containing named SVG-path-like shapes, not as one implicit polygon. Shapes feed
-ordered solid features; bodies form manufacturable solids; components add
-interfaces and engineering identity; assemblies add occurrences, mates, and
-motion. The formal dependency model, proposed multi-shape syntax, material vs.
+The production `MULTI_SHAPE_SKETCH_V1` capability treats a sketch as a
+constrained 2D workspace containing named SVG-path-like shapes, not as one
+implicit polygon. A shape declares `OPEN|CLOSED`, an explicit
+`STOCK|ADDITIVE|HOLE|CONSTRUCTION` role, and named `POINT`, `LINE`, `ARC`, or
+`CIRCLE` entities. Each closed path lowers to a stable
+`body::sketch.shape` profile consumed explicitly by `PAD` or `POCKET`.
+`SOLVE FULL` rejects under-constrained workspaces, while `SOLVE ALLOW_UNDER`
+keeps exploratory sketches possible. The compiler rejects broken chains,
+self-intersections, touching/intersecting region boundaries, and holes not
+contained by exactly one stock/additive region.
+
+The `SKETCH_REGION_ARRANGEMENT_V1` capability makes material arrangement
+explicit instead of inferring feature intent from winding:
+
+```icad
+REGION perforated_plate
+OUTER outer
+HOLES bore_left bore_right
+END
+PAD plate FROM layout.perforated_plate DEPTH plate_thickness NEW
+```
+
+`ADVANCED_SKETCH_CONSTRAINTS_V1` adds horizontal/vertical distance,
+parallel/perpendicular, equal length/radius, concentric, midpoint, and symmetry
+equations over qualified point and entity names.
+`SKETCH_LINE_ARC_TANGENCY_V1` adds explicit endpoint tangency as
+`CONSTRAINT name TANGENT line arc AT shared_point`; the entity order may be
+reversed, but the point must be an endpoint common to the line and a
+non-full-circle arc. See
+[`examples/rounded_tangent_plate.icad`](examples/rounded_tangent_plate.icad)
+for the fully constrained capsule profile and
+[`examples/region_plate.icad`](examples/region_plate.icad) for the native
+one-feature, two-hole region acceptance model.
+
+For solid-edge treatment, `SEMANTIC_EDGE_LOOP_SELECTION_V1` provides stable
+circular rim intent on the current annular result:
+
+```icad
+FEATURE soften_inner_rim
+TYPE FILLET
+SELECT EDGE TOP INNER
+RADIUS 3 mm
+END
+```
+
+`TOP|BOTTOM` selects the axial side and `INNER|OUTER` classifies concave versus
+convex loops. The native engine executes both fillet classifications and the
+same selectors for chamfers. `visual.json` reports the selected loop and legal
+operations. See
+[`examples/selective_round_vessel.icad`](examples/selective_round_vessel.icad).
+
+`TOPOLOGY_QUERY_V1` makes the same proven native topology addressable by a
+named, inspectable query:
+
+```icad
+SELECTION upper_inner_rim
+FROM wall_solid
+EDGES WHERE
+LOOP
+CIRCULAR
+CONCAVE
+ADJACENT_TO FACE top
+END
+
+FEATURE soften_rim
+TYPE FILLET
+SELECT EDGESET upper_inner_rim
+RADIUS 3 mm
+END
+```
+
+This avoids hidden triangle/edge indices. The query becomes a typed IR and
+dependency node; `visual.json` returns its stable topology ID, match reason,
+legal operations, and explicit reasons that face/body operations do not apply.
+The current bound is honest: the source is an annular REGION extrusion and the
+modifier immediately follows it. Arbitrary edge chains, remapping through
+later features, shell, offset-face/edge, draft, split, and projection remain
+capability-gated until their native topology operations are validated. See
+[`examples/topology_query_vessel.icad`](examples/topology_query_vessel.icad).
+
+Shapes feed ordered solid features; bodies form manufacturable solids;
+components add interfaces and engineering identity; assemblies add
+occurrences, mates, and motion. The formal dependency model, future selectors,
+material vs.
 appearance separation, and agent/viewer data contract are documented in
 [Grammar v2 design](docs/grammar-v2-design.md). The detailed compiler contract
 and proposed syntax are in the [Grammar v2 RFC](docs/grammar-v2-rfc.md) and
@@ -268,10 +352,11 @@ execution, and thread-safety model. These are design contracts; agents must not
 emit proposed constructs until `icad.language` advertises the matching compiler
 capability.
 
-The first implementation slice only prepares the lexer: it retains comments and
-exact byte spans, recognizes the reserved v2 punctuation/string surface, and
-adds recoverable string/exponent diagnostics while preserving current signed
-numeric literals. This does not enable proposed grammar constructs yet.
+The lexer retains comments and exact byte spans, recognizes reserved v2
+punctuation/string syntax, and reports recoverable string/exponent diagnostics
+while preserving compatible signed numeric literals. Advertised parser and
+semantic slices now include typed scalar expressions and multi-shape sketches;
+unadvertised v2 declarations remain proposals.
 
 Source files can now pin their implemented contract with `REQUIRES ICAD 1.0`
 and `REQUIRES CAPABILITY NAME` before `PROJECT`. Run `build/bin/icad language`
@@ -305,7 +390,8 @@ POINT p3 0 mm 60 mm FIXED
 END
 PAD base_solid FROM base DEPTH 12 mm NEW
 
-SKETCH boss ON FACE base_solid Z_MAX
+FACE top_of_base FROM base_solid.face.top
+SKETCH boss ON FACE top_of_base
 POINT p0 25 mm 15 mm FIXED
 POINT p1 75 mm 15 mm FIXED
 POINT p2 75 mm 45 mm FIXED
@@ -320,9 +406,15 @@ POCKET mounting_bore FROM bore DEPTH 20 mm
 END
 ```
 
-`XY`, `XZ`, and `YZ` are supported datum planes. Face sketches reference an
-earlier feature and one explicit principal face selector: `X_MIN`, `X_MAX`,
-`Y_MIN`, `Y_MAX`, `Z_MIN`, or `Z_MAX`. `PAD ... NEW` must create a body's first
+`XY`, `XZ`, and `YZ` are supported datum planes. With
+`PERSISTENT_FACE_REFERENCES_V1`, `FACE name FROM feature.face.top|bottom`
+creates a named, provenance-preserving cap-face reference; sketches may attach
+through that name or directly through `ON FACE feature.face.top|bottom`.
+`visual-json` reports its canonical `body/feature/face.role` topology ID and the
+dependency graph retains the alias edge. The legacy explicit principal selectors
+`X_MIN`, `X_MAX`, `Y_MIN`, `Y_MAX`, `Z_MIN`, and `Z_MAX` remain compatible.
+References and aliases must select an earlier feature in the same body, and a
+singular reference is never repaired by proximity. `PAD ... NEW` must create a body's first
 solid; later pads use `ADD`, while `POCKET` cuts inward from the selected face.
 Every body-local sketch requires `ON PLANE` or `ON FACE` and must be consumed by
 a later operation. Sketch names are local to their body, so two bodies may both
@@ -332,7 +424,8 @@ mixed circle and point sketches, unused body sketches, invalid depth
 dimensions, and invalid boolean results.
 `visual-json` exposes the same ordered history under `featureHistory`, allowing
 an agent to reason about how a part was made instead of reverse engineering its
-triangles. See [`examples/sketch_history.icad`](examples/sketch_history.icad).
+triangles. See [`examples/sketch_history.icad`](examples/sketch_history.icad)
+and [`examples/persistent_face_plate.icad`](examples/persistent_face_plate.icad).
 
 ### Low-level and advanced features
 
@@ -509,14 +602,19 @@ END
 ```
 
 The dependency-free solver accepts `HORIZONTAL`, `VERTICAL`, `COINCIDENT`,
-`DISTANCE`, and unsigned 0–180° `ANGLE` constraints. Initial point positions
+`DISTANCE`, and unsigned 0–180° `ANGLE` constraints. With the advertised
+advanced capability it also accepts `H_DISTANCE`, `V_DISTANCE`, `PARALLEL`,
+`PERPENDICULAR`, `EQUAL_LENGTH`, `CONCENTRIC`, `EQUAL_RADIUS`, `MIDPOINT`, and
+`SYMMETRIC ... ABOUT ...`. Initial point positions
 are deterministic solution seeds; `FIXED` coordinates never move. Inspection
 reports initial and solved coordinates, maximum residual, iteration count, and
 remaining degrees of freedom. A consistent sketch with at least three points
 also becomes a closed named profile, so `PROFILE mounting_outline` can directly
 drive `EXTRUDE`, `REVOLVE`, `SWEEP`, `LOFT`, or `FREEFORM`. Inconsistent systems
 fail compilation with `ICAD-S0038`. See
-[`examples/constrained_sketch.icad`](examples/constrained_sketch.icad).
+[`examples/constrained_sketch.icad`](examples/constrained_sketch.icad) and the
+complete qualified-entity example
+[`examples/advanced_sketch_constraints.icad`](examples/advanced_sketch_constraints.icad).
 
 ## Dependency graph and incremental compilation
 
@@ -719,7 +817,7 @@ END
 ```
 
 The compiler rejects fixed-joint animation and values outside the declared
-joint limits. The zero-setup viewer interpolates each value, applies its delta
+joint limits. The native scene evaluator interpolates each value, applies its delta
 around the exported solved pivot and axis, and propagates motion through child
 occurrences.
 
@@ -727,45 +825,31 @@ The compiler rejects unknown targets, unknown backgrounds, tracks with fewer
 than two frames, non-increasing times, and frames outside scene duration.
 Canonical values use millimetres, degrees, and seconds.
 
-## Web viewer library
+## Native Qt viewer
 
-[`web/icad-viewer.js`](web/icad-viewer.js) is a plain JavaScript browser library.
-The compiler copies it beside every generated HTML page and emits a local data
-script, so `advanced.html` works when opened through `file://`. It renders the
-native mesh through a WebGL2 depth-buffered backend, with Canvas fallback. It
-supports scene/joint/visibility playback, orbit/zoom, component selection,
-centroid measurement, section clipping, assembly explode, an accessible
-semantic tree, and responsive pointer/touch controls. It has no npm or CDN
-dependency.
-
-The public entry point is:
-
-```js
-ICADViewer.mount(document.querySelector("canvas"), window.ICAD_MODEL);
-```
-
-To use the native desktop shell:
+Build and run ICAD Studio with:
 
 ```sh
 make viewer
-build/bin/icad-viewer examples/advanced.icad
+# Linux/Windows: build/bin/icad-viewer examples/advanced.icad
+# macOS:
+open build/bin/icad-viewer.app --args examples/advanced.icad
 ```
 
-The `webview/webview` desktop shell opens `.icad` source directly as a split
-live workbench. The left pane edits the authoritative language source and
-shows clickable compiler diagnostics; the right pane retains the last valid
-interactive 3D result. A background worker coalesces rapid edits, starts after
-a 120 ms debounce, reuses unchanged previews, and rebuilds only dirty body
-topology and delivery meshes. The toolbar reports compile time and body reuse.
-Save with the button or <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>S</kbd>.
+The split IDE keeps `.icad` as the authoritative document. The editor includes
+language-specific highlighting and clickable diagnostics; the OpenGL viewport
+retains the last valid scene while a coalescing worker incrementally rebuilds
+only dirty bodies. Model, scene, property, timeline, standard-view, projection,
+wireframe, component-selection, and screenshot tools are native Qt widgets.
 
-The export bar accepts any writable folder and atomically emits the complete
-16-file STEP/assembly STEP/STL/OBJ/glTF/GLB/3MF/viewer/drawing/manufacturing
-package from the current editor text; use <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>E</kbd>
-for the keyboard path. Export runs independently so live editing remains
-responsive. On macOS the native host uses a transparent full-content title bar
-with ICAD's custom toolbar while retaining standard window controls. Passing an
-already compiled `.html` file remains supported for read-only viewing.
+Manufacturing export atomically emits the 13-file
+STEP/assembly STEP/STL/OBJ/glTF/GLB/3MF/scene/drawing/manufacturing package from
+the current editor text. Release packages deploy only the Qt modules and
+platform plugins used by ICAD Studio, and the dedicated viewer workflow creates
+maximum-compression `.tar.xz` or `.7z` archives with SHA-256 checksums.
+The macOS `.app` includes the ICAD icon, versioned bundle metadata, `.icad`
+document registration, and an ad-hoc local signature by default; Developer ID
+signing can be selected with `-DICAD_MACOS_CODESIGN_IDENTITY="..."`.
 
 ## CAD output note
 
@@ -845,9 +929,10 @@ make sanitizers
 make thread-sanitizer  # race-check shared incremental compilation, then restore build
 ```
 
-The configured suite contains 50 deterministic tests: 31 C++ unit/fuzz
-executables, integration and sandbox cases, and 13 benchmark cases including a
-large robotic-arm live-refresh benchmark and sketch-history STEP/STL read-back. A 51st
+The configured suite contains 56 deterministic tests: 34 C++ unit/fuzz
+executables, seven integration cases, one sandbox case, and 14 benchmark cases
+including a large robotic-arm live-refresh benchmark, sketch-history STEP/STL
+read-back, and the multi-shape plate. A 57th
 headless-Chromium viewer runtime smoke test is registered only when a configure-time
 launch probe confirms that the installed browser can actually run headless.
 
@@ -906,7 +991,7 @@ polyhedral closest distance, and a tolerance-aware named-body section result.
 
 ```text
 ICAD/
-├── cmake/                 build policy plus viewer/design source embedding
+├── cmake/                 build policy plus embedded agent design templates
 ├── docs/                  architecture notes
 ├── examples/              executable ICAD designs
 ├── grammar/               native language EBNF reference
@@ -918,7 +1003,7 @@ ICAD/
 │   ├── document/          fingerprints, revisions, BOM export
 │   ├── manufacturing/     manufacturability rule reporting
 │   ├── drawings/          orthographic SVG output
-│   ├── desktop_viewer/    optional webview/webview native host
+│   ├── desktop_viewer/    native Qt/OpenGL live IDE and CAD viewport
 │   ├── agent/             prompt intent, embedded templates, composite review
 │   ├── ai/                stable JSON inspection and diagnostics
 │   ├── lsp/               dependency-free stdio diagnostics server
@@ -927,9 +1012,8 @@ ICAD/
 │   ├── project/           staged full artifact-package builder
 │   ├── materials/         predefined PBR material library
 │   ├── exchange/          direct STEP, STL, and OBJ writers
-│   ├── scene/             embedded textures and web bundle writer
+│   ├── scene/             renderer-neutral native scene and texture writer
 │   └── cli/               command-line driver
-├── web/                   reusable zero-dependency viewer library
 ├── editors/vscode/        packaged ICAD language extension
 ├── .github/workflows/     CI and tagged multi-platform releases
 ├── tests/                 unit, integration, sandbox, benchmark

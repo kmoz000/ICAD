@@ -101,7 +101,7 @@ if(NOT build_result EQUAL 0)
     message(FATAL_ERROR "robotic arm build failed: ${build_error}")
 endif()
 foreach(output IN ITEMS robotic_arm.step robotic_arm.assembly.step robotic_arm.obj robotic_arm.stl
-                        robotic_arm.scene.json robotic_arm.html robotic_arm.viewer.js icad-viewer.js
+                        robotic_arm.scene.json
                         robotic_arm.bom.json robotic_arm.manufacturing.json robotic_arm.drawing.svg
                         robotic_arm.topology.json)
     if(NOT EXISTS "${OUTPUT_ROOT}/${output}")

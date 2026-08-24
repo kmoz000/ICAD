@@ -120,7 +120,10 @@ auto print_ast(const icad::compiler::ast::Program& program) -> void {
                 std::cout << " on face " << sketch.support_feature << ' '
                           << sketch.support_face;
             }
-            if (sketch.circle)
+            if (!sketch.shapes.empty())
+                std::cout << " : " << sketch.shapes.size() << " shapes, "
+                          << sketch.regions.size() << " regions\n";
+            else if (sketch.circle)
                 std::cout << " : circle\n";
             else
                 std::cout << " : " << sketch.points.size() << " points, "
@@ -130,7 +133,9 @@ auto print_ast(const icad::compiler::ast::Program& program) -> void {
             std::cout << "    " << (feature.source_keyword == "FEATURE" ? "Feature"
                                                                            : feature.source_keyword)
                       << ' ' << feature.name << " : " << feature.type;
-            if (!feature.profile.empty())
+            if (!feature.region.empty())
+                std::cout << " from region " << feature.region;
+            else if (!feature.profile.empty())
                 std::cout << " from " << feature.profile;
             std::cout << '\n';
             for (const auto& property : feature.properties) {

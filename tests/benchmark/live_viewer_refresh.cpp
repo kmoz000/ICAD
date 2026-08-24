@@ -49,7 +49,7 @@ auto main(int argc, char** argv) -> int {
         return fail("clean comparison compilation failed");
     const auto full_model = icad::cad::build_model(*full_compilation.ir_project);
     const auto full_json =
-        icad::scene::web_model_json(*full_compilation.ir_project, full_model);
+        icad::scene::render_model_json(*full_compilation.ir_project, full_model);
     if (refreshed.model_json != full_json)
         return fail("incremental preview diverged from a clean delivery-model rebuild");
 

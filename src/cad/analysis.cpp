@@ -131,10 +131,19 @@ struct ExactMetrics {
         std::ranges::find(project.profiles, feature.profile, &compiler::ir::Profile::name);
     if (profile == project.profiles.end())
         return {};
-    const double area = profile_area(*profile);
+    double area = profile_area(*profile);
+    double perimeter = profile_perimeter(*profile);
+    for (const auto& hole_name : feature.region_hole_profiles) {
+        const auto hole =
+            std::ranges::find(project.profiles, hole_name, &compiler::ir::Profile::name);
+        if (hole == project.profiles.end())
+            continue;
+        area -= profile_area(*hole);
+        perimeter += profile_perimeter(*hole);
+    }
     if (feature.type == "EXTRUDE") {
         const double height = property(feature, "HEIGHT");
-        return {2.0 * area + profile_perimeter(*profile) * height, area * height};
+        return {2.0 * area + perimeter * height, area * height};
     }
     if (feature.type == "REVOLVE") {
         const double centroid_radius = line_profile_centroid_x(*profile);

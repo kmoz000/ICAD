@@ -77,23 +77,135 @@ install(TARGETS icad icad_engine
 install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/icad DESTINATION include)
 
 if(ICAD_BUILD_DESKTOP_VIEWER)
-    include(FetchContent)
-    set(WEBVIEW_BUILD_SHARED_LIBRARY OFF CACHE BOOL "Build webview shared library" FORCE)
-    set(WEBVIEW_BUILD_STATIC_LIBRARY ON CACHE BOOL "Build webview static library" FORCE)
-    set(WEBVIEW_BUILD_TESTS OFF CACHE BOOL "Build webview tests" FORCE)
-    set(WEBVIEW_BUILD_EXAMPLES OFF CACHE BOOL "Build webview examples" FORCE)
-    FetchContent_Declare(
-        webview
-        GIT_REPOSITORY https://github.com/webview/webview.git
-        GIT_TAG 0.12.0
-        GIT_SHALLOW TRUE
+    find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Widgets OpenGL OpenGLWidgets Concurrent)
+    qt_standard_project_setup()
+    qt_add_executable(icad-viewer
+        MANUAL_FINALIZATION
+        desktop_viewer/main.cpp
+        desktop_viewer/main_window.cpp
+        desktop_viewer/main_window.hpp
+        desktop_viewer/cad_viewport.cpp
+        desktop_viewer/cad_viewport.hpp
+        desktop_viewer/scene_model.cpp
+        desktop_viewer/scene_model.hpp
+        desktop_viewer/icad_highlighter.cpp
+        desktop_viewer/icad_highlighter.hpp
+        desktop_viewer/resources.qrc
+        engine/session.cpp
     )
-    FetchContent_MakeAvailable(webview)
-    set_target_properties(webview_core_static PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
-
-    add_executable(icad-viewer desktop_viewer/main.cpp)
-    target_include_directories(icad-viewer PRIVATE "${PROJECT_BINARY_DIR}/generated")
-    target_link_libraries(icad-viewer PRIVATE ICAD::engine ICAD::compiler webview::core_static)
-    set_target_properties(icad-viewer PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
-    install(TARGETS icad-viewer RUNTIME DESTINATION bin)
+    target_compile_definitions(icad-viewer PRIVATE ICAD_VERSION="${PROJECT_VERSION}")
+    target_link_libraries(icad-viewer PRIVATE
+        ICAD::compiler
+        Qt6::Core
+        Qt6::Gui
+        Qt6::Widgets
+        Qt6::OpenGL
+        Qt6::OpenGLWidgets
+        Qt6::Concurrent
+        icad_project_options
+    )
+    set_target_properties(icad-viewer PROPERTIES
+        MACOSX_BUNDLE TRUE
+        WIN32_EXECUTABLE TRUE
+        OUTPUT_NAME "icad-viewer"
+    )
+    if(APPLE)
+        configure_file(
+            ${PROJECT_SOURCE_DIR}/cmake/ICADViewerInfo.plist.in
+            ${PROJECT_BINARY_DIR}/generated/ICADViewerInfo.plist
+            @ONLY)
+        set_source_files_properties(${PROJECT_SOURCE_DIR}/assets/icons/icad.icns
+                                    PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+        target_sources(icad-viewer PRIVATE ${PROJECT_SOURCE_DIR}/assets/icons/icad.icns)
+        set_target_properties(icad-viewer PROPERTIES
+            MACOSX_BUNDLE_INFO_PLIST ${PROJECT_BINARY_DIR}/generated/ICADViewerInfo.plist
+            MACOSX_BUNDLE_BUNDLE_NAME "ICAD Studio"
+            MACOSX_BUNDLE_GUI_IDENTIFIER "com.icad.studio"
+            MACOSX_BUNDLE_ICON_FILE "icad.icns"
+            MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
+            MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
+        )
+        set(ICAD_MACOS_CODESIGN_IDENTITY "-" CACHE STRING
+            "macOS signing identity for ICAD Studio; '-' creates an ad-hoc local signature")
+    elseif(WIN32)
+        enable_language(RC)
+        configure_file(
+            ${PROJECT_SOURCE_DIR}/cmake/icad-viewer.rc.in
+            ${PROJECT_BINARY_DIR}/generated/icad-viewer.rc
+            @ONLY)
+        target_sources(icad-viewer PRIVATE ${PROJECT_BINARY_DIR}/generated/icad-viewer.rc)
+    endif()
+    include(CheckIPOSupported)
+    check_ipo_supported(RESULT ICAD_VIEWER_IPO_SUPPORTED OUTPUT ICAD_VIEWER_IPO_ERROR)
+    if(ICAD_VIEWER_IPO_SUPPORTED)
+        set_property(TARGET icad-viewer PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
+        set_property(TARGET icad-viewer PROPERTY INTERPROCEDURAL_OPTIMIZATION_MINSIZEREL TRUE)
+    endif()
+    qt_finalize_executable(icad-viewer)
+    install(TARGETS icad-viewer
+            BUNDLE DESTINATION . COMPONENT Viewer
+            RUNTIME DESTINATION bin COMPONENT Viewer)
+    install(FILES ${PROJECT_SOURCE_DIR}/README.md ${PROJECT_SOURCE_DIR}/LICENSE
+            DESTINATION share/icad
+            COMPONENT Viewer)
+    install(FILES ${PROJECT_SOURCE_DIR}/assets/icons/icad-256.png
+            DESTINATION share/icons/hicolor/256x256/apps
+            RENAME icad.png
+            COMPONENT Viewer)
+    if(UNIX AND NOT APPLE)
+        install(FILES ${PROJECT_SOURCE_DIR}/assets/icad-studio.desktop
+                DESTINATION share/applications
+                COMPONENT Viewer)
+    endif()
+    if(APPLE)
+        install(IMPORTED_RUNTIME_ARTIFACTS Qt6::QCocoaIntegrationPlugin
+                LIBRARY DESTINATION icad-viewer.app/Contents/PlugIns/platforms
+                COMPONENT Viewer)
+        qt_generate_deploy_script(
+            TARGET icad-viewer
+            OUTPUT_SCRIPT icad_viewer_deploy_script
+            CONTENT [[
+qt_deploy_runtime_dependencies(
+    EXECUTABLE "$<TARGET_FILE_NAME:icad-viewer>.app"
+    ADDITIONAL_LIBRARIES
+        "icad-viewer.app/Contents/PlugIns/platforms/$<TARGET_FILE_NAME:Qt6::QCocoaIntegrationPlugin>"
+    NO_PLUGINS
+    NO_TRANSLATIONS
+)
+]])
+    else()
+        qt_generate_deploy_app_script(
+            TARGET icad-viewer
+            OUTPUT_SCRIPT icad_viewer_deploy_script
+            INCLUDE_PLUGIN_TYPES platforms imageformats
+            NO_TRANSLATIONS
+            NO_UNSUPPORTED_PLATFORM_ERROR
+        )
+    endif()
+    install(SCRIPT ${icad_viewer_deploy_script} COMPONENT Viewer)
+    if(APPLE)
+        install(CODE "
+            set(icad_viewer_app \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/icad-viewer.app\")
+            if(\"${ICAD_MACOS_CODESIGN_IDENTITY}\" STREQUAL \"-\")
+                execute_process(
+                    COMMAND /usr/bin/codesign --force --deep --options runtime
+                            --entitlements \"${PROJECT_SOURCE_DIR}/cmake/icad-viewer-adhoc.entitlements.plist\"
+                            --sign - \"\${icad_viewer_app}\"
+                    RESULT_VARIABLE icad_sign_result
+                    OUTPUT_VARIABLE icad_sign_output
+                    ERROR_VARIABLE icad_sign_error)
+            else()
+                execute_process(
+                    COMMAND /usr/bin/codesign --force --deep --options runtime --timestamp
+                            --sign \"${ICAD_MACOS_CODESIGN_IDENTITY}\" \"\${icad_viewer_app}\"
+                    RESULT_VARIABLE icad_sign_result
+                    OUTPUT_VARIABLE icad_sign_output
+                    ERROR_VARIABLE icad_sign_error)
+            endif()
+            if(NOT icad_sign_result EQUAL 0)
+                message(FATAL_ERROR \"ICAD Studio signing failed: \${icad_sign_error}\${icad_sign_output}\")
+            endif()
+            message(STATUS \"Signed ICAD Studio with identity '${ICAD_MACOS_CODESIGN_IDENTITY}'\")
+        " COMPONENT Viewer)
+    endif()
 endif()

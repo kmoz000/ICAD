@@ -33,8 +33,6 @@ constexpr std::array artifact_specs{
     ArtifactSpec{".glb", "glb", "model/gltf-binary"},
     ArtifactSpec{".3mf", "3mf", "model/3mf"},
     ArtifactSpec{".scene.json", "scene", "application/json"},
-    ArtifactSpec{".viewer.js", "viewer-data", "text/javascript"},
-    ArtifactSpec{".html", "viewer", "text/html"},
     ArtifactSpec{".bom.json", "bom", "application/json"},
     ArtifactSpec{".manufacturing.json", "manufacturing", "application/json"},
     ArtifactSpec{".drawing.svg", "drawing", "image/svg+xml"},
@@ -146,9 +144,9 @@ auto build(const compiler::ir::Project& project, const std::filesystem::path& ou
     const auto three_mf = exchange::export_project(project, stage_base.string() + ".3mf");
     if (!three_mf.success)
         return fail("3MF export failed: " + three_mf.message);
-    const auto web = scene::export_web_bundle(project, stage_base);
-    if (!web.success)
-        return fail("web bundle export failed: " + web.message);
+    const auto scene_result = scene::export_scene(project, stage_base);
+    if (!scene_result.success)
+        return fail("scene export failed: " + scene_result.message);
     const auto bom = document::write_bom(project, stage_base.string() + ".bom.json");
     if (!bom.success)
         return fail("BOM export failed: " + bom.message);
@@ -177,9 +175,9 @@ auto build(const compiler::ir::Project& project, const std::filesystem::path& ou
     result.topology_vertices = topology.vertex_count();
     result.topology_edges = topology.edge_count();
     result.topology_faces = topology.face_count();
-    result.materials = web.materials;
-    result.scenes = web.scenes;
-    result.keyframes = web.keyframes;
+    result.materials = scene_result.materials;
+    result.scenes = scene_result.scenes;
+    result.keyframes = scene_result.keyframes;
 
     for (const auto& spec : artifact_specs) {
         const auto staged_path = stage_base.string() + std::string{spec.suffix};
@@ -202,22 +200,6 @@ auto build(const compiler::ir::Project& project, const std::filesystem::path& ou
             {std::string{spec.kind}, std::string{spec.media_type}, final_path, bytes});
     }
 
-    const auto staged_library = stage / "icad-viewer.js";
-    const auto final_library = output_directory / "icad-viewer.js";
-    if (!std::filesystem::exists(staged_library)) {
-        return fail("staged viewer library is missing");
-    }
-    error.clear();
-    std::filesystem::remove(final_library, error);
-    if (error)
-        return fail("cannot replace viewer library: " + error.message());
-    std::filesystem::rename(staged_library, final_library, error);
-    if (error)
-        return fail("cannot commit viewer library: " + error.message());
-    const auto library_bytes = std::filesystem::file_size(final_library, error);
-    if (error)
-        return fail("cannot inspect viewer library: " + error.message());
-    result.artifacts.push_back({"viewer-library", "text/javascript", final_library, library_bytes});
     result.success = true;
     result.message = "artifact package committed";
     return result;

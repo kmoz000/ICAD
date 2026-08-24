@@ -94,6 +94,8 @@ Implementation status: the version/capability header mechanism is now current
 production syntax at language version `1.0`. The registry advertises only
 implemented v1 contracts. Proposed names in the table below still fail with
 `ICAD-C0003` until their complete vertical compiler and engine gates land.
+The bounded production subset is advertised as `MULTI_SHAPE_SKETCH_V1`; the
+broader `MULTI_SHAPE_SKETCH` capability in this RFC remains proposed.
 
 Initial capability families should be:
 
@@ -147,6 +149,15 @@ shell commands, native libraries, or plugins.
 
 ## 5. Values, units, and expressions
 
+**Current v1 boundary:** the production compiler now advertises
+`PARAMETER_EXPRESSIONS_V1` for `PARAMETER`, `ANGLE`, and feature-property
+expressions, and `QUALIFIED_VALUE_REFERENCES_V1` for project-qualified scalar
+references. It supports precedence, unary signs, parentheses, forward
+parameter dependencies, canonical unit evaluation, and stable diagnostics.
+Multiplication must currently have one dimensionless operand; division accepts
+a dimensionless divisor or equal dimensions. Derived area/volume dimensions,
+functions, ranges, and qualified topology references remain proposed.
+
 All physical values are typed. Addition and comparison require compatible
 dimensions; multiplication and division derive dimensions; trigonometric
 functions, when introduced, accept angles explicitly.
@@ -184,6 +195,42 @@ It is analogous to an SVG document only in the sense that it contains multiple
 named paths. Unlike SVG, it is dimensional, constrained, tolerance-aware, and
 must produce manufacturable regions.
 
+**Current v1 boundary:** `MULTI_SHAPE_SKETCH_V1` implements named
+`OPEN|CLOSED` shapes with `STOCK`, `ADDITIVE`, `HOLE`, or `CONSTRUCTION` roles;
+named points, lines, circular arcs, and circles; qualified `shape.point`
+constraints from the existing constraint family; `SOLVE FULL|ALLOW_UNDER`;
+and explicit `sketch.shape` PAD/POCKET inputs. Open paths are construction-only.
+The compiler rejects invalid chains, self-intersection, boundary contact, and
+holes without exactly one stock/additive container.
+`SKETCH_REGION_ARRANGEMENT_V1` is also current for one explicit `OUTER` plus
+optional `HOLES`, consumed as `sketch.region` by a single PAD/POCKET.
+`ADVANCED_SKETCH_CONSTRAINTS_V1` is current for `H_DISTANCE`, `V_DISTANCE`,
+`PARALLEL`, `PERPENDICULAR`, `EQUAL_LENGTH`, `CONCENTRIC`, `EQUAL_RADIUS`,
+`MIDPOINT`, and `SYMMETRIC ... ABOUT ...`.
+`SKETCH_LINE_ARC_TANGENCY_V1` is current for `TANGENT line arc AT
+shared_point`, where the contact is an endpoint common to a line and a
+non-full-circle arc. Role selectors, ellipse/spline/slot entities, full-circle
+tangency, arc-arc tangency, and projected-edge tangency remain proposal syntax.
+`PERSISTENT_FACE_REFERENCES_V1` is current for planar cap references using
+`feature.face.top|bottom`, optional body-local `FACE` aliases, strict source
+order, and canonical topology IDs. Side faces, edges, plural queries, and
+geometric fallback selection remain proposal syntax.
+
+`SEMANTIC_EDGE_LOOP_SELECTION_V1` is current for `SELECT EDGE TOP|BOTTOM
+INNER|OUTER` on circular annular results. It feeds native `FILLET` and
+`CHAMFER`, retains semantic selection intent, and exposes the valid operation
+list in agent visual feedback. General edge queries, chains, shell, offset
+face/edge, draft, split, and project remain proposed.
+
+`TOPOLOGY_QUERY_V1` is current for a named selection with the exact predicate
+set `EDGES WHERE`, `LOOP`, `CIRCULAR`, `CONCAVE|CONVEX`, and `ADJACENT_TO FACE
+top|bottom`, consumed through `SELECT EDGESET name`. The resolver currently
+accepts one circular loop on an annular REGION extrusion and requires the
+modifier to immediately follow its source result. Its stable topology ID,
+match evidence, applicability, and rejection reasons are serialized for the
+agent. Boolean-history remapping, arbitrary chains, geometric fallback, and
+plural cardinality remain proposed.
+
 ```icad
 SKETCH base_layout ON PLANE XY
   SHAPE outer CLOSED ROLE STOCK
@@ -205,6 +252,11 @@ SKETCH base_layout ON PLANE XY
   SHAPE bore_right CLOSED ROLE HOLE
     POINT center 45 mm 0 mm
     CIRCLE rim CENTER center RADIUS 6 mm
+  END
+
+  REGION base_material
+    OUTER outer
+    HOLES bore_left bore_right
   END
 
   CONSTRAINT pair EQUAL_RADIUS bore_left.rim bore_right.rim

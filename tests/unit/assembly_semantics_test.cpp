@@ -80,9 +80,9 @@ auto main() -> int {
 
     const auto base =
         std::filesystem::current_path() / "assembly-semantics-output" / "articulation";
-    const auto exported = icad::scene::export_web_bundle(project, base);
+    const auto exported = icad::scene::export_scene(project, base);
     if (!exported.success || exported.tracks != 1 || exported.keyframes != 3) {
-        std::cerr << "joint-driven web scene export failed\n";
+        std::cerr << "joint-driven native scene export failed\n";
         return 1;
     }
     std::ifstream scene{base.string() + ".scene.json", std::ios::binary};

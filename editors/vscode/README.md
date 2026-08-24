@@ -2,8 +2,17 @@
 
 This extension provides complete ICAD authoring support:
 
-- syntax and material highlighting, completion, definition navigation,
+- dedicated point, line, curve, surface, object, event, parameter, material,
+  constraint, unit, and lint highlighting through the bundled **ICAD Industrial
+  Dark** theme, plus completion and definition navigation,
   formatting, diagnostics, and safe quick-fix suggestions;
+- arithmetic parameter expressions, unit highlighting, and navigation from
+  project-qualified scalar references such as `robot.width`;
+- multi-shape sketch highlighting/completion and definition navigation for
+  stable `sketch.shape`, `sketch.region`, `shape.point`, and `shape.entity`
+  references, including the production advanced constraint family;
+- named topology-query highlighting/completion and definition navigation for
+  `SELECTION` declarations and `SELECT EDGESET` consumers;
 - configurable format-on-save and compiler check-on-save;
 - direct `.icad` launch into the native live editor and 3D workbench;
 - prompt-to-design agentic creation and complete artifact builds;
@@ -15,6 +24,11 @@ This extension provides complete ICAD authoring support:
 Run **ICAD: Create Design from Prompt** from the Command Palette to turn a
 short robot-arm, bridge, or generic-part request into editable `.icad` source
 and the complete generated artifact package in one compiler invocation.
+
+Choose **Preferences: Color Theme → ICAD Industrial Dark** for the bundled
+design-language palette. Compiler errors, warnings, information, and hints use
+separate lint colors; declaration scopes distinguish parameters, points,
+lines, curves, surfaces, objects, materials, constraints, and scene events.
 
 For local development, build ICAD in the repository's single `build/`
 directory. A workspace build or explicit `icad.executablePath` and

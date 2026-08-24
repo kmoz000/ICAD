@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -22,18 +23,24 @@ auto add_node(DependencyGraph& graph, std::string id, std::string kind,
     graph.nodes.push_back({std::move(id), std::move(kind), std::move(dependencies)});
 }
 
-[[nodiscard]] auto has_sketch(const ir::Project& project, const std::string& name) -> bool {
-    return std::ranges::any_of(project.sketches,
-                               [&](const auto& sketch) { return sketch.name == name; });
-}
-
 } // namespace
 
 auto build_dependency_graph(const ir::Project& project) -> DependencyGraph {
     DependencyGraph graph;
     add_node(graph, "tolerance:project", "tolerance");
-    for (const auto& parameter : project.parameters)
-        add_node(graph, "parameter:" + parameter.name, "parameter");
+    const std::string project_prefix = project.name + ".";
+    for (const auto& parameter : project.parameters) {
+        std::vector<std::string> dependencies;
+        for (const auto& reference : parameter.dependencies) {
+            const std::string_view local = reference.starts_with(project_prefix)
+                                               ? std::string_view{reference}.substr(
+                                                     project_prefix.size())
+                                               : std::string_view{reference};
+            append_unique(dependencies, "parameter:" + std::string{local});
+        }
+        add_node(graph, "parameter:" + parameter.name, "parameter",
+                 std::move(dependencies));
+    }
     for (const auto& angle : project.angles)
         add_node(graph, "angle:" + angle.name, "angle");
     for (const auto& material : project.materials)
@@ -61,11 +68,30 @@ auto build_dependency_graph(const ir::Project& project) -> DependencyGraph {
         }
         add_node(graph, "vector:" + direction.name, "vector", std::move(dependencies));
     }
+    for (const auto& body : project.bodies) {
+        for (const auto& reference : body.face_references) {
+            add_node(graph, "face-reference:" + body.name + '/' + reference.name,
+                     "face-reference",
+                     {"feature:" + body.name + '/' + reference.feature});
+        }
+    }
     for (const auto& sketch : project.sketches) {
         std::vector<std::string> dependencies;
         if (!sketch.body.empty() && !sketch.support_feature.empty())
             append_unique(dependencies,
                           "feature:" + sketch.body + '/' + sketch.support_feature);
+        if (!sketch.body.empty() && !sketch.support_reference.empty()) {
+            const auto body = std::ranges::find(project.bodies, sketch.body,
+                                                &ir::Body::name);
+            if (body != project.bodies.end() &&
+                std::ranges::any_of(body->face_references, [&](const auto& reference) {
+                    return reference.name == sketch.support_reference;
+                })) {
+                append_unique(dependencies,
+                              "face-reference:" + sketch.body + '/' +
+                                  sketch.support_reference);
+            }
+        }
         for (const auto& constraint : sketch.constraints) {
             if (!constraint.target_reference.empty()) {
                 append_unique(dependencies,
@@ -77,9 +103,22 @@ auto build_dependency_graph(const ir::Project& project) -> DependencyGraph {
     }
     for (const auto& profile : project.profiles) {
         std::vector<std::string> dependencies;
-        if (has_sketch(project, profile.name))
-            dependencies.push_back("sketch:" + profile.name);
+        const auto sketch = std::ranges::find_if(project.sketches, [&](const auto& candidate) {
+            return candidate.name == profile.name ||
+                   profile.name.starts_with(candidate.name + ".");
+        });
+        if (sketch != project.sketches.end())
+            dependencies.push_back("sketch:" + sketch->name);
         add_node(graph, "profile:" + profile.name, "profile", std::move(dependencies));
+    }
+    for (const auto& sketch : project.sketches) {
+        for (const auto& region : sketch.regions) {
+            std::vector<std::string> dependencies{"profile:" + region.outer_profile};
+            for (const auto& hole_profile : region.hole_profiles)
+                append_unique(dependencies, "profile:" + hole_profile);
+            add_node(graph, "region:" + sketch.name + "." + region.name, "region",
+                     std::move(dependencies));
+        }
     }
     for (const auto& pose : project.poses)
         add_node(graph, "pose:" + pose.body, "pose", {"point:" + pose.point});
@@ -91,16 +130,28 @@ auto build_dependency_graph(const ir::Project& project) -> DependencyGraph {
     for (const auto& body : project.bodies) {
         std::string previous_feature;
         std::vector<std::string> body_dependencies;
+        for (const auto& selection : body.topology_selections) {
+            const std::string selection_id =
+                "selection:" + body.name + '/' + selection.name;
+            add_node(graph, selection_id, "topology_selection",
+                     {"feature:" + body.name + '/' + selection.source_feature});
+            body_dependencies.push_back(selection_id);
+        }
         for (const auto& feature : body.features) {
             std::vector<std::string> dependencies;
             if (!previous_feature.empty())
                 append_unique(dependencies, previous_feature);
-            if (!feature.profile.empty())
+            if (!feature.region.empty())
+                append_unique(dependencies, "region:" + feature.region);
+            else if (!feature.profile.empty())
                 append_unique(dependencies, "profile:" + feature.profile);
             if (!feature.target_profile.empty())
                 append_unique(dependencies, "profile:" + feature.target_profile);
             if (!feature.selected_edge_point.empty())
                 append_unique(dependencies, "point:" + feature.selected_edge_point);
+            if (!feature.selected_edge_set.empty())
+                append_unique(dependencies,
+                              "selection:" + body.name + '/' + feature.selected_edge_set);
             if (!feature.direction.empty())
                 append_unique(dependencies, "vector:" + feature.direction);
             if (!feature.plane_point.empty())

@@ -4,18 +4,63 @@
   "scopeName": "source.icad",
   "patterns": [
     {"include": "#comments"},
+    {"include": "#strings"},
+    {"include": "#parameterDeclarations"},
+    {"include": "#pointDeclarations"},
+    {"include": "#lineDeclarations"},
+    {"include": "#curveDeclarations"},
+    {"include": "#surfaceOperations"},
+    {"include": "#objectDeclarations"},
+    {"include": "#sceneDeclarations"},
+    {"include": "#materialDeclarations"},
+    {"include": "#constraintDeclarations"},
     {"include": "#keywords"},
     {"include": "#types"},
     {"include": "#materials"},
     {"include": "#units"},
+    {"include": "#operators"},
     {"include": "#numbers"}
   ],
   "repository": {
     "comments": {"patterns": [{"name": "comment.line.number-sign.icad", "match": "#.*$"}]},
-    "keywords": {"patterns": [{"name": "keyword.control.icad", "match": "\\b(REQUIRES|ICAD|CAPABILITY|PROJECT|IMPORT|INJECT|UNITS|TOLERANCE|LINEAR|ANGULAR|PARAMETER|ANGLE|POINT3|VECTOR|POSE|INSTANCE|JOINT|MATERIAL|PRESET|BASE_COLOR|METALLIC|ROUGHNESS|TEXTURE_SCALE|UV_MODE|PROFILE|TARGET_PROFILE|SKETCH|BODY|FEATURE|PAD|POCKET|CONSTRAINT|MATE|SCENE|TRACK|KEYFRAME|END|TYPE|OPERATION|NEW|ADD|POSITION|ROTATION|VALUE|LIMIT|BACKGROUND|DURATION|FPS|LOOP|LIGHT|COLOR|INTENSITY|EVENT|EASING|VISIBLE|AT|ON|OF|FROM|TO|ALONG|DEPTH|DISTANCE|AROUND|BY|AXIS|FACE|SELECT|NEAREST|PATH|DIRECTION|COUNT|PLANE|NORMAL|CENTER|OFFSET|SECTION)\\b"}]},
-    "types": {"patterns": [{"name": "support.type.icad", "match": "\\b(BOX|CYLINDER|CONE|SPHERE|EXTRUDE|REVOLVE|SWEEP|LOFT|FREEFORM|UNION|CUT|INTERSECT|NEW|FIXED|REVOLUTE|PRISMATIC|BODY|CAMERA|JOINT|VISIBILITY|FACE|EDGE|POINT|START|LINE|ARC|CIRCLE|CLOSE|CW|CCW|PLANAR|CYLINDRICAL|SPHERICAL|MIN_DISTANCE|COINCIDENT|PARALLEL|PERPENDICULAR|ANGLE_BETWEEN|HORIZONTAL|VERTICAL|DIRECTIONAL|EASE_IN|EASE_OUT|EASE_IN_OUT|STEP|ON|OFF)\\b"}]},
+    "strings": {"patterns": [{"name": "string.quoted.double.icad", "begin": "\"", "end": "\"", "patterns": [{"name": "constant.character.escape.icad", "match": "\\\\."}]}]},
+    "parameterDeclarations": {"patterns": [{"match": "^(\\s*)(PARAMETER|ANGLE)(\\s+)([A-Za-z_][A-Za-z0-9_]*)", "captures": {"2": {"name": "storage.type.parameter.icad"}, "4": {"name": "variable.other.parameter.definition.icad"}}}]},
+    "pointDeclarations": {"patterns": [
+      {"match": "^(\\s*)(POINT3|VECTOR|POSE)(\\s+)([A-Za-z_][A-Za-z0-9_]*)", "captures": {"2": {"name": "keyword.declaration.spatial.icad"}, "4": {"name": "entity.name.spatial.icad"}}},
+      {"match": "^(\\s*)(POINT)(\\s+)([A-Za-z_][A-Za-z0-9_]*)", "captures": {"2": {"name": "keyword.declaration.point.icad"}, "4": {"name": "entity.name.point.icad"}}}
+    ]},
+    "lineDeclarations": {"patterns": [{"match": "^(\\s*)(LINE)(\\s+)([A-Za-z_][A-Za-z0-9_]*)", "captures": {"2": {"name": "keyword.declaration.line.icad"}, "4": {"name": "entity.name.line.icad"}}}]},
+    "curveDeclarations": {"patterns": [{"match": "^(\\s*)(ARC|CIRCLE)(\\s+)([A-Za-z_][A-Za-z0-9_]*)", "captures": {"2": {"name": "keyword.declaration.curve.icad"}, "4": {"name": "entity.name.curve.icad"}}}]},
+    "surfaceOperations": {"patterns": [
+      {"name": "support.type.surface.operation.icad", "match": "\\b(EXTRUDE|REVOLVE|SWEEP|LOFT|FREEFORM)\\b"},
+      {"name": "support.type.surface.selector.icad", "match": "\\b(FACE|EDGE|EDGESET|EDGES|LOOP|CIRCULAR|CONCAVE|CONVEX|ADJACENT_TO|TOP|BOTTOM|INNER|OUTER|PLANAR|CYLINDRICAL|SPHERICAL|X_MIN|X_MAX|Y_MIN|Y_MAX|Z_MIN|Z_MAX)\\b"}
+    ]},
+    "objectDeclarations": {"patterns": [{"match": "^(\\s*)(PROJECT|BODY|INSTANCE|FEATURE|PAD|POCKET|PROFILE|SKETCH|SHAPE|REGION|SELECTION)(\\s+)([A-Za-z_][A-Za-z0-9_]*)", "captures": {"2": {"name": "keyword.declaration.object.icad"}, "4": {"name": "entity.name.object.icad"}}}]},
+    "sceneDeclarations": {"patterns": [
+      {"match": "^(\\s*)(SCENE|TRACK)(\\s+)([A-Za-z_][A-Za-z0-9_]*)", "captures": {"2": {"name": "keyword.declaration.scene.icad"}, "4": {"name": "entity.name.scene.icad"}}},
+      {"match": "^(\\s*)(EVENT)(\\s+)([^\\s]+\\s+[A-Za-z]+)(\\s+)([A-Za-z_][A-Za-z0-9_]*)", "captures": {"2": {"name": "keyword.declaration.event.icad"}, "4": {"name": "constant.numeric.time.icad"}, "6": {"name": "entity.name.event.icad"}}},
+      {"name": "keyword.control.animation.icad", "match": "\\b(KEYFRAME|DURATION|FPS|LOOP|EASING|VISIBLE|BACKGROUND|LIGHT|COLOR|INTENSITY)\\b"}
+    ]},
+    "materialDeclarations": {"patterns": [{"match": "^(\\s*)(MATERIAL)(\\s+)([A-Za-z_][A-Za-z0-9_]*)", "captures": {"2": {"name": "keyword.declaration.material.icad"}, "4": {"name": "entity.name.material.icad"}}}]},
+    "constraintDeclarations": {"patterns": [
+      {"match": "^(\\s*)(CONSTRAINT|MATE|JOINT)(\\s+)([A-Za-z_][A-Za-z0-9_]*)", "captures": {"2": {"name": "keyword.declaration.constraint.icad"}, "4": {"name": "entity.name.constraint.icad"}}},
+      {"name": "support.type.constraint.icad", "match": "\\b(HORIZONTAL|VERTICAL|COINCIDENT|H_DISTANCE|V_DISTANCE|PARALLEL|PERPENDICULAR|EQUAL_LENGTH|CONCENTRIC|EQUAL_RADIUS|MIDPOINT|SYMMETRIC|TANGENT|MIN_DISTANCE|ANGLE_BETWEEN)\\b"}
+    ]},
+    "keywords": {"patterns": [{"name": "keyword.control.icad", "match": "\\b(REQUIRES|ICAD|CAPABILITY|IMPORT|INJECT|UNITS|TOLERANCE|LINEAR|ANGULAR|PRESET|BASE_COLOR|METALLIC|ROUGHNESS|TEXTURE_SCALE|UV_MODE|TARGET_PROFILE|OUTER|HOLES|ROLE|SOLVE|FULL|ALLOW_UNDER|TYPE|OPERATION|NEW|ADD|POSITION|ROTATION|VALUE|LIMIT|AT|ON|OF|FROM|TO|ALONG|DEPTH|DISTANCE|RADIUS|AROUND|BY|AXIS|SELECT|NEAREST|PATH|DIRECTION|COUNT|PLANE|NORMAL|CENTER|OFFSET|SECTION|ABOUT|WHERE|END)\\b"}]},
+    "types": {"patterns": [
+      {"name": "support.type.primitive.icad", "match": "\\b(BOX|CYLINDER|CONE|SPHERE)\\b"},
+      {"name": "support.type.operation.icad", "match": "\\b(UNION|CUT|INTERSECT|NEW|ADD)\\b"},
+      {"name": "support.type.assembly.icad", "match": "\\b(FIXED|REVOLUTE|PRISMATIC|CAMERA|VISIBILITY)\\b"},
+      {"name": "support.type.sketch.icad", "match": "\\b(START|CLOSE|CW|CCW|OPEN|CLOSED|STOCK|ADDITIVE|HOLE|CONSTRUCTION)\\b"},
+      {"name": "support.type.animation.icad", "match": "\\b(DIRECTIONAL|LINEAR|EASE_IN|EASE_OUT|EASE_IN_OUT|STEP|ON|OFF)\\b"}
+    ]},
     "materials": {"patterns": [{"name": "constant.language.material.icad", "match": "\\b(CONCRETE|STRUCTURAL_STEEL|ALUMINUM|ASPHALT|GLASS|WOOD|BRICK|GRANITE|MARBLE|COPPER|BRASS|TITANIUM|CHROME|RUSTED_STEEL|RUBBER|PLASTIC|CARBON_FIBER|CERAMIC|PLASTER|FABRIC|LEATHER|EARTH|GRASS|WATER|ICE|EMISSIVE_WHITE)\\b"}]},
-    "units": {"patterns": [{"name": "constant.language.unit.icad", "match": "\\b(mm|cm|m|in|deg|rad|s|ms)\\b"}]},
+    "units": {"patterns": [{"name": "constant.language.unit.icad", "match": "\\b(mm|cm|m|in|ft|deg|rad|s|ms|min|g|kg)\\b"}]},
+    "operators": {"patterns": [
+      {"name": "keyword.operator.arithmetic.icad", "match": "[+*/-]"},
+      {"name": "punctuation.accessor.icad", "match": "\\."},
+      {"name": "punctuation.section.parens.icad", "match": "[()]"}
+    ]},
     "numbers": {"patterns": [{"name": "constant.numeric.icad", "match": "(?<![A-Za-z_])[-+]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][-+]?\\d+)?"}]}
   }
 }

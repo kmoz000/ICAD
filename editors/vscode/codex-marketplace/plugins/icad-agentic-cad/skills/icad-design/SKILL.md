@@ -61,21 +61,57 @@ topology JSON.
   `REQUIRES ICAD 1.0` and one or more `REQUIRES CAPABILITY NAME` lines from the
   returned registry. Requirements must precede `PROJECT`; never use a proposed
   capability name that the running compiler does not advertise.
+- When `PARAMETER_EXPRESSIONS_V1` is advertised, derive related dimensions with
+  typed `+`, `-`, `*`, `/`, unary signs, and parentheses instead of duplicating
+  constants. Use project-qualified scalar names only when
+  `QUALIFIED_VALUE_REFERENCES_V1` is advertised. Read `visual.json.parameters`
+  to confirm the canonical value, formula, and dependency list.
+- When `MULTI_SHAPE_SKETCH_V1` is advertised, model one planar workspace with
+  named `SHAPE name OPEN|CLOSED ROLE STOCK|ADDITIVE|HOLE|CONSTRUCTION` blocks.
+  Use named `POINT`, `LINE`, `ARC`, and `CIRCLE` entities; qualify cross-shape
+  constraints as `shape.point` or `shape.entity`; use `SOLVE FULL` for released
+  geometry; and feed each closed shape explicitly to `PAD` or `POCKET` as
+  `sketch.shape`.
+  Read `visual.json.sketches[].shapes` to verify role, area, containment, and
+  source entities. When `SKETCH_REGION_ARRANGEMENT_V1` is advertised, group one
+  stock/additive `OUTER` and optional contained `HOLES` in a named `REGION`,
+  consume it as `sketch.region`, and verify `visual.json.sketches[].regions`.
+  When `ADVANCED_SKETCH_CONSTRAINTS_V1` is advertised, use the qualified
+  dimensional, line, circle, midpoint, and symmetry constraint families. When
+  `SKETCH_LINE_ARC_TANGENCY_V1` is advertised, use only
+  `TANGENT line arc AT shared_endpoint`; full-circle and arc-arc tangency remain
+  unavailable. Do not emit role selectors or spline/ellipse/slot entities.
+- When `SEMANTIC_EDGE_LOOP_SELECTION_V1` is advertised, select a circular rim
+  on the current annular result with `SELECT EDGE TOP|BOTTOM INNER|OUTER` and
+  use it only with `FILLET` or `CHAMFER`. Confirm the classification and
+  `applicableOperations` in `visual.json`; never substitute a mesh index.
+- When `TOPOLOGY_QUERY_V1` is advertised, prefer a named `SELECTION` with
+  `FROM feature`, `EDGES WHERE`, `LOOP`, `CIRCULAR`, `CONCAVE|CONVEX`, and
+  `ADJACENT_TO FACE top|bottom`, then consume it with `SELECT EDGESET name`.
+  Keep the FILLET/CHAMFER immediately after the annular REGION extrusion.
+  Confirm `matchedTopologyId`, `matchReason`, allowed operations, and rejection
+  reasons in `visual.json`; do not assume remapping through later history.
 - Prefer CAD-style body history for new manufactured parts: `SKETCH name ON
-  PLANE XY|XZ|YZ`, `PAD feature FROM sketch DEPTH value NEW`, then `SKETCH name
+  PLANE XY|XZ|YZ`, `PAD feature FROM sketch[.shape|.region] DEPTH value NEW`, then `SKETCH name
   ON FACE earlier_feature X_MIN|X_MAX|Y_MIN|Y_MAX|Z_MIN|Z_MAX` followed by
   `PAD ... ADD` or `POCKET ...`. Declare supports before use and inspect
   `visual.json.featureHistory` after compilation.
-- Give every body-local sketch an explicit `ON` support and a later consuming
-  operation. Correlate agent feedback by canonical `body::sketch` `sketchId`
+- When `PERSISTENT_FACE_REFERENCES_V1` is advertised, prefer
+  `FACE alias FROM earlier_feature.face.top|bottom` followed by
+  `SKETCH name ON FACE alias`, or use direct
+  `ON FACE earlier_feature.face.top|bottom`. Confirm the canonical
+  `supportTopologyId` in `visual.json`; side-face and edge selectors remain
+  unavailable until separately advertised.
+- Give every body-local sketch an explicit `ON` support and every
+  non-construction region a later consuming operation. Correlate agent feedback
+  by canonical `body::sketch[.shape|.region]` identifiers
   and preserved `PAD` or `POCKET` command; local sketch names may repeat across
   different bodies.
-- Treat a sketch as a constrained 2D workspace and its named `LINE`/`ARC`
-  entities as an ordered SVG-path-like contour. Declare every point first,
-  give every entity a stable name, close the chain end-to-start, and inspect
-  the emitted `entities` array in `visual.json`. The current compiler accepts
-  one explicit contour or one circle per sketch; do not invent the planned
-  multi-`SHAPE` syntax until `icad language` advertises it.
+- Treat a sketch as a constrained 2D workspace and each shape as one ordered
+  SVG-path-like contour. Declare every point before use, give every entity a
+  stable name, close material-producing chains end-to-start, and inspect the
+  emitted shapes/entities in `visual.json`. Keep legacy one-contour sketches
+  valid, but prefer explicit shape roles for new multi-region parts.
 - Use low-level `FEATURE` blocks only for operations without a history
   shorthand or while maintaining an existing model.
 - Use named `POINT3`, `VECTOR`, `ANGLE`, `POSE`, and `JOINT` declarations for

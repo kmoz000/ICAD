@@ -167,12 +167,14 @@ namespace {
     const auto end = source.find('\n', start);
     const auto line_end = end == std::string_view::npos ? source.size() : end;
     std::size_t position = std::min(start + target_column, line_end);
-    while (position > start && (std::isalnum(static_cast<unsigned char>(source[position - 1])) ||
-                                source[position - 1] == '_'))
+    const auto is_qualified_name_character = [](char character) {
+        return std::isalnum(static_cast<unsigned char>(character)) || character == '_' ||
+               character == '.';
+    };
+    while (position > start && is_qualified_name_character(source[position - 1]))
         --position;
     auto word_end = std::min(start + target_column, line_end);
-    while (word_end < line_end &&
-           (std::isalnum(static_cast<unsigned char>(source[word_end])) || source[word_end] == '_'))
+    while (word_end < line_end && is_qualified_name_character(source[word_end]))
         ++word_end;
     return std::string{source.substr(position, word_end - position)};
 }
@@ -180,26 +182,58 @@ namespace {
 struct DefinitionLocation {
     std::size_t line{};
     std::size_t column{};
+    std::size_t length{};
     bool found{};
 };
 
 [[nodiscard]] auto definition_of(std::string_view source, std::string_view symbol)
     -> DefinitionLocation {
+    std::string qualifier;
+    if (const auto dot = symbol.find_last_of('.'); dot != std::string_view::npos) {
+        qualifier = std::string{symbol.substr(0, dot)};
+        symbol.remove_prefix(dot + 1);
+    }
     std::istringstream input{std::string{source}};
     std::string line;
     std::size_t line_number{};
+    std::string current_project;
+    std::string current_sketch;
+    std::string current_shape;
     while (std::getline(input, line)) {
         std::istringstream words{line};
         std::string keyword_value;
         std::string declared;
         words >> keyword_value >> declared;
+        if (keyword_value == "END") {
+            if (!current_shape.empty())
+                current_shape.clear();
+            else if (!current_sketch.empty())
+                current_sketch.clear();
+            ++line_number;
+            continue;
+        }
+        if (keyword_value == "PROJECT")
+            current_project = declared;
+        else if (keyword_value == "SKETCH")
+            current_sketch = declared;
+        else if (keyword_value == "SHAPE")
+            current_shape = declared;
         constexpr std::string_view declarations[]{"PARAMETER", "ANGLE", "POINT3", "VECTOR",
-                                                   "MATERIAL", "PROFILE", "SKETCH", "BODY",
+                                                   "MATERIAL", "PROFILE", "SKETCH", "SHAPE", "REGION", "SELECTION", "BODY",
                                                    "INSTANCE", "JOINT", "CONSTRAINT", "MATE",
-                                                   "SCENE", "FEATURE", "TRACK"};
-        if (declared == symbol &&
+                                                   "SCENE", "FEATURE", "TRACK", "POINT", "LINE",
+                                                   "ARC", "CIRCLE"};
+        const bool scope_matches = qualifier.empty() ||
+                                   ((keyword_value == "PARAMETER" || keyword_value == "ANGLE") &&
+                                    current_project == qualifier) ||
+                                   ((keyword_value == "SHAPE" || keyword_value == "REGION") &&
+                                    current_sketch == qualifier) ||
+                                   ((keyword_value == "POINT" || keyword_value == "LINE" ||
+                                     keyword_value == "ARC" || keyword_value == "CIRCLE") &&
+                                    current_shape == qualifier);
+        if (declared == symbol && scope_matches &&
             std::ranges::find(declarations, keyword_value) != std::end(declarations)) {
-            return {line_number, line.find(declared), true};
+            return {line_number, line.find(declared), declared.size(), true};
         }
         ++line_number;
     }
@@ -275,10 +309,16 @@ struct DefinitionLocation {
     constexpr std::string_view items[]{
         "REQUIRES", "ICAD", "CAPABILITY", "PROJECT", "IMPORT", "INJECT", "UNITS", "TOLERANCE", "PARAMETER", "ANGLE", "POINT3", "VECTOR",
         "POSE", "INSTANCE", "JOINT", "MATERIAL", "PRESET", "BASE_COLOR", "METALLIC",
-        "ROUGHNESS", "TEXTURE_SCALE", "UV_MODE", "PROFILE", "SKETCH", "BODY", "FEATURE",
-        "PAD", "POCKET", "FROM", "DEPTH", "NEW", "ADD", "ON", "PLANE", "FACE",
+        "ROUGHNESS", "TEXTURE_SCALE", "UV_MODE", "PROFILE", "SKETCH", "SHAPE", "REGION", "OUTER", "HOLES", "ROLE",
+        "STOCK", "ADDITIVE", "HOLE", "CONSTRUCTION", "OPEN", "CLOSED", "SOLVE", "FULL",
+        "ALLOW_UNDER", "BODY", "FEATURE",
+        "PAD", "POCKET", "FROM", "DEPTH", "NEW", "ADD", "ON", "PLANE", "FACE", "SELECTION", "SELECT", "EDGE", "EDGESET",
+        "EDGES", "WHERE", "LOOP", "CIRCULAR", "CONCAVE", "CONVEX", "ADJACENT_TO", "TOP", "BOTTOM", "INNER", "OUTER",
         "XY", "XZ", "YZ", "X_MIN", "X_MAX", "Y_MIN", "Y_MAX", "Z_MIN", "Z_MAX",
-        "TYPE", "OPERATION", "CONSTRAINT", "MATE", "SCENE", "DURATION", "FPS",
+        "TYPE", "OPERATION", "CONSTRAINT", "HORIZONTAL", "VERTICAL", "COINCIDENT",
+        "DISTANCE", "H_DISTANCE", "V_DISTANCE", "ANGLE", "PARALLEL", "PERPENDICULAR",
+        "EQUAL_LENGTH", "CONCENTRIC", "EQUAL_RADIUS", "MIDPOINT", "SYMMETRIC", "TANGENT", "AT", "ABOUT",
+        "MATE", "SCENE", "DURATION", "FPS",
         "BACKGROUND", "LOOP", "LIGHT", "COLOR", "INTENSITY", "EVENT", "TRACK", "EASING",
         "KEYFRAME", "VISIBLE", "END",
         "BOX", "CYLINDER", "CONE", "SPHERE", "EXTRUDE", "REVOLVE", "SWEEP", "LOFT",
@@ -413,7 +453,7 @@ auto run(std::istream& input, std::ostream& output) -> int {
                              std::to_string(definition.line) + ",\"character\":" +
                              std::to_string(definition.column) + "},\"end\":{\"line\":" +
                              std::to_string(definition.line) + ",\"character\":" +
-                             std::to_string(definition.column + 1) + "}}}}");
+                             std::to_string(definition.column + definition.length) + "}}}}");
             }
         } else if (method == "textDocument/formatting") {
             const auto uri = string_field(message, "uri");

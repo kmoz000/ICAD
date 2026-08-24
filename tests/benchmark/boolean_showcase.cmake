@@ -27,7 +27,7 @@ if(NOT build_result EQUAL 0)
     message(FATAL_ERROR "boolean artifact build failed: ${build_error}${build_output}")
 endif()
 
-foreach(extension IN ITEMS step assembly.step stl obj html scene.json bom.json
+foreach(extension IN ITEMS step assembly.step stl obj scene.json bom.json
                            manufacturing.json drawing.svg topology.json)
     if(NOT EXISTS "${OUTPUT_ROOT}/boolean_showcase.${extension}")
         message(FATAL_ERROR "boolean build omitted boolean_showcase.${extension}")

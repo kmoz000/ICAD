@@ -11,7 +11,9 @@
 #include <cstddef>
 #include <iterator>
 #include <numbers>
+#include <set>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -175,6 +177,39 @@ auto append_diagnostics(SemanticResult& result, std::vector<Diagnostic> diagnost
     return false;
 }
 
+[[nodiscard]] auto boundaries_intersect(const std::vector<ir::Point2>& first,
+                                         const std::vector<ir::Point2>& second) -> bool {
+    for (std::size_t first_edge = 0; first_edge < first.size(); ++first_edge) {
+        for (std::size_t second_edge = 0; second_edge < second.size(); ++second_edge) {
+            if (segments_cross(first[first_edge], first[(first_edge + 1) % first.size()],
+                               second[second_edge],
+                               second[(second_edge + 1) % second.size()])) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+[[nodiscard]] auto point_inside(const ir::Point2& point,
+                                const std::vector<ir::Point2>& polygon) -> bool {
+    bool inside = false;
+    for (std::size_t index = 0, previous = polygon.size() - 1; index < polygon.size();
+         previous = index++) {
+        const auto& first = polygon[index];
+        const auto& second = polygon[previous];
+        const bool crosses = (first.y_mm > point.y_mm) != (second.y_mm > point.y_mm);
+        if (!crosses)
+            continue;
+        const double x = (second.x_mm - first.x_mm) * (point.y_mm - first.y_mm) /
+                             (second.y_mm - first.y_mm) +
+                         first.x_mm;
+        if (point.x_mm < x)
+            inside = !inside;
+    }
+    return inside;
+}
+
 [[nodiscard]] auto same_point(const ir::Point2& first, const ir::Point2& second) -> bool {
     return std::hypot(first.x_mm - second.x_mm, first.y_mm - second.y_mm) <= 1e-9;
 }
@@ -335,6 +370,144 @@ auto lower_profile(const ast::ProfileDecl& profile, ir::Profile& lowered, Semant
     }
 }
 
+[[nodiscard]] auto lower_sketch_constraint(
+    const ast::SketchConstraintDecl& constraint, ir::Sketch& sketch,
+    const std::unordered_map<std::string, ir::Quantity>& named_values, SemanticResult& result,
+    std::string_view diagnostic_code) -> bool {
+    const auto point_exists = [&](const std::string& name) {
+        return std::ranges::any_of(sketch.points,
+                                   [&](const auto& point) { return point.name == name; });
+    };
+    const auto entity = [&](const std::string& name) {
+        return std::ranges::find(sketch.entities, name, &ir::SketchEntity::name);
+    };
+    const auto line_entity = [&](const std::string& name) {
+        const auto found = entity(name);
+        return found != sketch.entities.end() &&
+               found->kind == ir::ProfileSegmentKind::line && !found->full_circle;
+    };
+    const auto circular_entity = [&](const std::string& name) {
+        const auto found = entity(name);
+        return found != sketch.entities.end() &&
+               found->kind == ir::ProfileSegmentKind::circular_arc;
+    };
+    const auto points_only = [&] {
+        return std::ranges::all_of(constraint.references, point_exists);
+    };
+
+    const bool point_pair = constraint.kind == "HORIZONTAL" ||
+                            constraint.kind == "VERTICAL" ||
+                            constraint.kind == "COINCIDENT" ||
+                            constraint.kind == "DISTANCE" ||
+                            constraint.kind == "H_DISTANCE" ||
+                            constraint.kind == "V_DISTANCE";
+    const bool line_pair = constraint.kind == "PARALLEL" ||
+                           constraint.kind == "PERPENDICULAR" ||
+                           constraint.kind == "EQUAL_LENGTH";
+    const bool circle_pair = constraint.kind == "CONCENTRIC" ||
+                             constraint.kind == "EQUAL_RADIUS";
+    const bool angle = constraint.kind == "ANGLE";
+    const bool midpoint = constraint.kind == "MIDPOINT";
+    const bool symmetric = constraint.kind == "SYMMETRIC";
+    const bool tangent = constraint.kind == "TANGENT";
+    bool valid = point_pair || line_pair || circle_pair || angle || midpoint || symmetric ||
+                 tangent;
+    if (!valid) {
+        add_error(result, std::string{diagnostic_code},
+                  "unsupported sketch constraint kind '" + constraint.kind + "'",
+                  constraint.location);
+        return false;
+    }
+
+    if ((point_pair && (constraint.references.size() != 2 || !points_only())) ||
+        (angle && (constraint.references.size() != 3 || !points_only())) ||
+        (line_pair &&
+         (constraint.references.size() != 2 || !line_entity(constraint.references[0]) ||
+          !line_entity(constraint.references[1]))) ||
+        (circle_pair &&
+         (constraint.references.size() != 2 || !circular_entity(constraint.references[0]) ||
+          !circular_entity(constraint.references[1]))) ||
+        (midpoint &&
+         (constraint.references.size() != 2 || !point_exists(constraint.references[0]) ||
+          !line_entity(constraint.references[1]))) ||
+        (symmetric &&
+         (constraint.references.size() != 3 || !point_exists(constraint.references[0]) ||
+          !point_exists(constraint.references[1]) || !line_entity(constraint.references[2])))) {
+        add_error(result, std::string{diagnostic_code},
+                  "sketch constraint references do not match the required point/entity types",
+                  constraint.location);
+        return false;
+    }
+
+    if (tangent) {
+        const bool first_line = constraint.references.size() == 3 &&
+                                line_entity(constraint.references[0]);
+        const bool second_line = constraint.references.size() == 3 &&
+                                 line_entity(constraint.references[1]);
+        const bool first_arc = constraint.references.size() == 3 &&
+                               circular_entity(constraint.references[0]) &&
+                               !entity(constraint.references[0])->full_circle;
+        const bool second_arc = constraint.references.size() == 3 &&
+                                circular_entity(constraint.references[1]) &&
+                                !entity(constraint.references[1])->full_circle;
+        const bool typed = constraint.references.size() == 3 &&
+                           ((first_line && second_arc) || (first_arc && second_line)) &&
+                           point_exists(constraint.references[2]);
+        if (!typed) {
+            add_error(result, std::string{diagnostic_code},
+                      "TANGENT requires one LINE, one ARC, and one shared endpoint",
+                      constraint.location);
+            return false;
+        }
+        const auto line = entity(first_line ? constraint.references[0]
+                                            : constraint.references[1]);
+        const auto arc = entity(first_arc ? constraint.references[0]
+                                          : constraint.references[1]);
+        const auto& contact = constraint.references[2];
+        const bool on_line = contact == line->start || contact == line->end;
+        const bool on_arc = contact == arc->start || contact == arc->end;
+        if (!on_line || !on_arc) {
+            add_error(result, std::string{diagnostic_code},
+                      "TANGENT contact point must be an endpoint shared by its LINE and ARC",
+                      constraint.location);
+            return false;
+        }
+    }
+
+    const bool duplicate_pair =
+        constraint.references.size() >= 2 &&
+        constraint.references[0] == constraint.references[1];
+    const bool duplicate_angle_leg =
+        angle && (constraint.references[0] == constraint.references[1] ||
+                  constraint.references[1] == constraint.references[2]);
+    if (duplicate_pair || duplicate_angle_leg) {
+        add_error(result, std::string{diagnostic_code},
+                  "sketch constraint references must identify distinct geometry",
+                  constraint.location);
+        return false;
+    }
+
+    const bool length_target = constraint.kind == "DISTANCE" ||
+                               constraint.kind == "H_DISTANCE" ||
+                               constraint.kind == "V_DISTANCE";
+    ir::Quantity target;
+    if (length_target || angle) {
+        target = lower_value(constraint.target,
+                             angle ? units::Dimension::angle : units::Dimension::length,
+                             named_values, result);
+        if (target.value < 0.0 || (angle && target.value > 180.0)) {
+            add_error(result, std::string{diagnostic_code},
+                      "sketch distance or angle target is outside its valid range",
+                      constraint.location);
+            valid = false;
+        }
+    }
+    sketch.constraints.push_back(ir::SketchConstraint{
+        constraint.name, constraint.kind, constraint.references, target.value, target.unit,
+        constraint.target.parameter_reference});
+    return valid;
+}
+
 } // namespace
 
 auto analyze(const ast::Program& program) -> SemanticResult {
@@ -363,7 +536,7 @@ auto analyze(const ast::Program& program) -> SemanticResult {
         }
         return std::string{reference};
     };
-    std::unordered_set<std::string> unresolved_parameters;
+    std::set<std::string> unresolved_parameters;
     for (const auto& parameter : program.parameters) {
         unresolved_parameters.insert(parameter.name);
     }
@@ -731,6 +904,318 @@ auto analyze(const ast::Program& program) -> SemanticResult {
         lowered_sketch.plane = sketch.plane;
         lowered_sketch.support_feature = sketch.support_feature;
         lowered_sketch.support_face = sketch.support_face;
+        lowered_sketch.support_reference = sketch.support_reference;
+        lowered_sketch.support_topology_id = sketch.support_topology_path;
+        lowered_sketch.solve_requirement = sketch.solve_requirement;
+        if (!sketch.shapes.empty()) {
+            bool valid = true;
+            std::unordered_set<std::string> point_names;
+            std::unordered_set<std::string> entity_names;
+            for (const auto& shape : sketch.shapes) {
+                ir::SketchShape lowered_shape;
+                lowered_shape.name = shape.name;
+                lowered_shape.role = shape.role;
+                lowered_shape.closed = shape.closure == "CLOSED";
+                lowered_shape.profile = canonical_name + "." + shape.name;
+                if (!lowered_shape.closed && shape.role != "CONSTRUCTION") {
+                    add_error(result, "ICAD-S0042",
+                              "OPEN SHAPE requires ROLE CONSTRUCTION in MULTI_SHAPE_SKETCH_V1",
+                              shape.location);
+                    valid = false;
+                }
+                for (const auto& point : shape.points) {
+                    const std::string scoped_name = shape.name + "." + point.name;
+                    if (!point_names.insert(scoped_name).second) {
+                        add_error(result, "ICAD-S0042",
+                                  "duplicate scoped SHAPE point '" + scoped_name + "'",
+                                  point.location);
+                        valid = false;
+                    }
+                    const double x = lower_value(point.x, units::Dimension::length,
+                                                 parameter_values, result)
+                                         .value;
+                    const double y = lower_value(point.y, units::Dimension::length,
+                                                 parameter_values, result)
+                                         .value;
+                    lowered_sketch.points.push_back(
+                        ir::SketchPoint{scoped_name, {x, y}, {x, y}, point.fixed});
+                    lowered_shape.points.push_back(scoped_name);
+                }
+                bool saw_circle = false;
+                for (const auto& entity : shape.entities) {
+                    const std::string scoped_name = shape.name + "." + entity.name;
+                    const auto point_name = [&](const std::string& local) {
+                        return local.empty() ? std::string{} : shape.name + "." + local;
+                    };
+                    ir::SketchEntity lowered_entity;
+                    lowered_entity.name = scoped_name;
+                    lowered_entity.kind = entity.kind == ast::SketchEntityKind::line
+                                              ? ir::ProfileSegmentKind::line
+                                              : ir::ProfileSegmentKind::circular_arc;
+                    lowered_entity.start = point_name(entity.start);
+                    lowered_entity.end = point_name(entity.end);
+                    lowered_entity.center = point_name(entity.center);
+                    lowered_entity.counterclockwise = entity.counterclockwise;
+                    lowered_entity.full_circle = entity.kind == ast::SketchEntityKind::circle;
+                    if (lowered_entity.full_circle) {
+                        const auto radius = lower_value(entity.radius, units::Dimension::length,
+                                                        parameter_values, result);
+                        lowered_entity.radius_mm = radius.value;
+                        lowered_entity.radius_reference = entity.radius.parameter_reference;
+                        if (radius.value <= 0.0) {
+                            add_error(result, "ICAD-S0042",
+                                      "SHAPE CIRCLE radius must be positive", entity.location);
+                            valid = false;
+                        }
+                        saw_circle = true;
+                    }
+                    if (!entity_names.insert(scoped_name).second ||
+                        (lowered_entity.full_circle &&
+                         !point_names.contains(lowered_entity.center)) ||
+                        (!lowered_entity.full_circle &&
+                         (!point_names.contains(lowered_entity.start) ||
+                          !point_names.contains(lowered_entity.end) ||
+                          (entity.kind == ast::SketchEntityKind::circular_arc &&
+                           !point_names.contains(lowered_entity.center))))) {
+                        add_error(result, "ICAD-S0042",
+                                  "SHAPE entities must be unique and reference local points",
+                                  entity.location);
+                        valid = false;
+                    }
+                    lowered_sketch.entities.push_back(std::move(lowered_entity));
+                    lowered_shape.entities.push_back(scoped_name);
+                }
+                if (shape.entities.empty()) {
+                    add_error(result, "ICAD-S0042", "SHAPE requires boundary entities",
+                              shape.location);
+                    valid = false;
+                }
+                if (saw_circle && shape.entities.size() != 1) {
+                    add_error(result, "ICAD-S0042",
+                              "a CIRCLE must be the only boundary entity in its SHAPE",
+                              shape.location);
+                    valid = false;
+                }
+                if (lowered_shape.closed && !saw_circle) {
+                    for (std::size_t entity = 0; entity < shape.entities.size(); ++entity) {
+                        const auto& current = shape.entities[entity];
+                        const auto& next = shape.entities[(entity + 1) % shape.entities.size()];
+                        if (current.end != next.start) {
+                            add_error(result, "ICAD-S0043",
+                                      "ordered CLOSED SHAPE entities must form one endpoint chain",
+                                      next.location);
+                            valid = false;
+                        }
+                    }
+                }
+                lowered_sketch.shapes.push_back(std::move(lowered_shape));
+            }
+            for (const auto& constraint : sketch.constraints) {
+                if (!lower_sketch_constraint(constraint, lowered_sketch, parameter_values, result,
+                                             "ICAD-S0042"))
+                    valid = false;
+            }
+            if (valid) {
+                constraints::solve_sketch(lowered_sketch);
+                if (lowered_sketch.status == ir::SketchSolveStatus::inconsistent) {
+                    add_error(result, "ICAD-S0044",
+                              "multi-shape sketch constraints are inconsistent", sketch.location);
+                    valid = false;
+                } else if (sketch.solve_requirement == "FULL" &&
+                           lowered_sketch.status != ir::SketchSolveStatus::fully_constrained) {
+                    add_error(result, "ICAD-S0044",
+                              "SOLVE FULL requires a fully constrained multi-shape sketch",
+                              sketch.location);
+                    valid = false;
+                }
+            }
+            std::vector<std::size_t> shape_profile_indices(sketch.shapes.size(),
+                                                           static_cast<std::size_t>(-1));
+            if (valid) {
+                const auto solved_point = [&](const std::string& name) {
+                    return std::ranges::find(lowered_sketch.points, name,
+                                             &ir::SketchPoint::name)
+                        ->solved;
+                };
+                constexpr double full_circle = 2.0 * std::numbers::pi;
+                for (std::size_t shape_index = 0; shape_index < sketch.shapes.size();
+                     ++shape_index) {
+                    const auto& shape = sketch.shapes[shape_index];
+                    auto& lowered_shape = lowered_sketch.shapes[shape_index];
+                    if (!lowered_shape.closed)
+                        continue;
+                    ir::Profile profile;
+                    profile.name = lowered_shape.profile;
+                    const auto first_entity = std::ranges::find(
+                        lowered_sketch.entities, lowered_shape.entities.front(),
+                        &ir::SketchEntity::name);
+                    if (first_entity != lowered_sketch.entities.end() &&
+                        first_entity->full_circle) {
+                        const auto center = solved_point(first_entity->center);
+                        const ir::Point2 start{center.x_mm + first_entity->radius_mm, center.y_mm};
+                        profile.segments.push_back({ir::ProfileSegmentKind::circular_arc, start,
+                                                    start, center, first_entity->radius_mm,
+                                                    full_circle});
+                    } else {
+                        for (const auto& entity_name : lowered_shape.entities) {
+                            const auto entity = std::ranges::find(
+                                lowered_sketch.entities, entity_name, &ir::SketchEntity::name);
+                            if (entity == lowered_sketch.entities.end())
+                                continue;
+                            const auto start = solved_point(entity->start);
+                            const auto end = solved_point(entity->end);
+                            if (entity->kind == ir::ProfileSegmentKind::line) {
+                                profile.segments.push_back(line_segment(start, end));
+                                continue;
+                            }
+                            const auto center = solved_point(entity->center);
+                            const double start_radius =
+                                std::hypot(start.x_mm - center.x_mm, start.y_mm - center.y_mm);
+                            const double end_radius =
+                                std::hypot(end.x_mm - center.x_mm, end.y_mm - center.y_mm);
+                            const double scale = std::max({1.0, start_radius, end_radius});
+                            if (start_radius <= 1e-9 ||
+                                std::abs(start_radius - end_radius) > 1e-7 * scale) {
+                                add_error(result, "ICAD-S0043",
+                                          "SHAPE ARC endpoints require an equal non-zero radius",
+                                          shape.location);
+                                valid = false;
+                            }
+                            const double start_angle =
+                                std::atan2(start.y_mm - center.y_mm,
+                                           start.x_mm - center.x_mm);
+                            const double end_angle =
+                                std::atan2(end.y_mm - center.y_mm, end.x_mm - center.x_mm);
+                            double sweep = end_angle - start_angle;
+                            if (entity->counterclockwise) {
+                                while (sweep <= 0.0)
+                                    sweep += full_circle;
+                            } else {
+                                while (sweep >= 0.0)
+                                    sweep -= full_circle;
+                            }
+                            profile.segments.push_back({ir::ProfileSegmentKind::circular_arc,
+                                                        start, end, center, start_radius, sweep});
+                        }
+                    }
+                    profile.points = tessellate(profile.segments);
+                    if (signed_area(profile.points) < 0.0) {
+                        reverse_segments(profile.segments);
+                        profile.points = tessellate(profile.segments);
+                    }
+                    if (profile.points.size() < 3 ||
+                        std::abs(signed_area(profile.points)) <= 1e-9 ||
+                        has_duplicate_consecutive_point(profile.points) ||
+                        has_adjacent_overlap(profile.points) || self_intersects(profile.points)) {
+                        add_error(result, "ICAD-S0043",
+                                  "CLOSED SHAPE must produce a simple non-zero region",
+                                  shape.location);
+                        valid = false;
+                        continue;
+                    }
+                    lowered_shape.area_mm2 = std::abs(signed_area(profile.points));
+                    shape_profile_indices[shape_index] = lowered.profiles.size();
+                    profile_indices.emplace(profile.name, lowered.profiles.size());
+                    lowered.profiles.push_back(std::move(profile));
+                }
+            }
+            if (valid) {
+                for (std::size_t first = 0; first < sketch.shapes.size(); ++first) {
+                    if (shape_profile_indices[first] == static_cast<std::size_t>(-1))
+                        continue;
+                    for (std::size_t second = first + 1; second < sketch.shapes.size(); ++second) {
+                        if (shape_profile_indices[second] == static_cast<std::size_t>(-1))
+                            continue;
+                        const auto& first_profile = lowered.profiles[shape_profile_indices[first]];
+                        const auto& second_profile = lowered.profiles[shape_profile_indices[second]];
+                        if (boundaries_intersect(first_profile.points, second_profile.points)) {
+                            add_error(result, "ICAD-S0045",
+                                      "SHAPE boundaries may not intersect or touch",
+                                      sketch.shapes[second].location);
+                            valid = false;
+                        }
+                    }
+                }
+                for (std::size_t hole = 0; hole < sketch.shapes.size(); ++hole) {
+                    if (sketch.shapes[hole].role != "HOLE" ||
+                        shape_profile_indices[hole] == static_cast<std::size_t>(-1)) {
+                        continue;
+                    }
+                    const auto& hole_profile = lowered.profiles[shape_profile_indices[hole]];
+                    std::size_t containers = 0;
+                    for (std::size_t material = 0; material < sketch.shapes.size(); ++material) {
+                        const auto role = sketch.shapes[material].role;
+                        if ((role != "STOCK" && role != "ADDITIVE") ||
+                            shape_profile_indices[material] == static_cast<std::size_t>(-1)) {
+                            continue;
+                        }
+                        const auto& material_profile =
+                            lowered.profiles[shape_profile_indices[material]];
+                        if (point_inside(hole_profile.points.front(), material_profile.points)) {
+                            ++containers;
+                            lowered_sketch.shapes[hole].containing_shape =
+                                sketch.shapes[material].name;
+                        }
+                    }
+                    if (containers != 1) {
+                        add_error(result, "ICAD-S0045",
+                                  "HOLE SHAPE must be contained by exactly one STOCK or ADDITIVE "
+                                  "SHAPE",
+                                  sketch.shapes[hole].location);
+                        valid = false;
+                    }
+                }
+            }
+            if (valid) {
+                std::unordered_set<std::string> region_names;
+                for (const auto& region : sketch.regions) {
+                    ir::SketchRegion lowered_region;
+                    lowered_region.name = region.name;
+                    lowered_region.outer_shape = region.outer_shape;
+                    lowered_region.hole_shapes = region.hole_shapes;
+                    if (!region_names.insert(region.name).second) {
+                        add_error(result, "ICAD-S0046",
+                                  "duplicate REGION name '" + region.name + "'", region.location);
+                        valid = false;
+                        continue;
+                    }
+                    const auto outer = std::ranges::find(
+                        lowered_sketch.shapes, region.outer_shape, &ir::SketchShape::name);
+                    if (outer == lowered_sketch.shapes.end() || !outer->closed ||
+                        (outer->role != "STOCK" && outer->role != "ADDITIVE")) {
+                        add_error(result, "ICAD-S0046",
+                                  "REGION OUTER must name one closed STOCK or ADDITIVE SHAPE",
+                                  region.location);
+                        valid = false;
+                        continue;
+                    }
+                    lowered_region.outer_profile = outer->profile;
+                    lowered_region.area_mm2 = outer->area_mm2;
+                    for (const auto& hole_name : region.hole_shapes) {
+                        const auto hole = std::ranges::find(
+                            lowered_sketch.shapes, hole_name, &ir::SketchShape::name);
+                        if (hole == lowered_sketch.shapes.end() || !hole->closed ||
+                            hole->role != "HOLE" || hole->containing_shape != outer->name) {
+                            add_error(result, "ICAD-S0046",
+                                      "REGION HOLES must name closed HOLE SHAPEs contained by its OUTER",
+                                      region.location);
+                            valid = false;
+                            continue;
+                        }
+                        lowered_region.hole_profiles.push_back(hole->profile);
+                        lowered_region.area_mm2 -= hole->area_mm2;
+                    }
+                    if (lowered_region.area_mm2 <= 1e-9) {
+                        add_error(result, "ICAD-S0046",
+                                  "REGION must retain positive material area", region.location);
+                        valid = false;
+                    }
+                    lowered_sketch.regions.push_back(std::move(lowered_region));
+                }
+            }
+            lowered.sketches.push_back(std::move(lowered_sketch));
+            continue;
+        }
         if (sketch.circle) {
             const auto center_x = lower_value(sketch.circle_center[0], units::Dimension::length,
                                               parameter_values, result);
@@ -794,7 +1279,8 @@ auto analyze(const ast::Program& program) -> SemanticResult {
                  entity.kind == ast::SketchEntityKind::circular_arc
                      ? ir::ProfileSegmentKind::circular_arc
                      : ir::ProfileSegmentKind::line,
-                 entity.start, entity.end, entity.center, entity.counterclockwise});
+                 entity.start, entity.end, entity.center, entity.counterclockwise, false, 0.0,
+                 {}});
         }
         if (!sketch.entities.empty()) {
             for (std::size_t entity = 0; entity < sketch.entities.size(); ++entity) {
@@ -809,50 +1295,9 @@ auto analyze(const ast::Program& program) -> SemanticResult {
             }
         }
         for (const auto& constraint : sketch.constraints) {
-            const bool angle = constraint.kind == "ANGLE";
-            const bool dimensional = constraint.kind == "DISTANCE" || angle;
-            const bool supported = dimensional || constraint.kind == "HORIZONTAL" ||
-                                   constraint.kind == "VERTICAL" ||
-                                   constraint.kind == "COINCIDENT";
-            if (!supported) {
-                add_error(result, "ICAD-S0037",
-                          "unsupported sketch constraint kind '" + constraint.kind + "'",
-                          constraint.location);
+            if (!lower_sketch_constraint(constraint, lowered_sketch, parameter_values, result,
+                                         "ICAD-S0037"))
                 valid = false;
-            }
-            const std::size_t expected_references = angle ? 3 : 2;
-            if (constraint.references.size() != expected_references ||
-                std::ranges::any_of(constraint.references, [&](const auto& reference) {
-                    return !sketch_point_names.contains(reference);
-                })) {
-                add_error(result, "ICAD-S0037",
-                          "sketch constraint references unknown or invalid points",
-                          constraint.location);
-                valid = false;
-            }
-            if (constraint.references.size() >= 2 &&
-                constraint.references[0] == constraint.references[1]) {
-                add_error(result, "ICAD-S0037",
-                          "sketch constraint requires distinct point references",
-                          constraint.location);
-                valid = false;
-            }
-            ir::Quantity target;
-            if (dimensional) {
-                target = lower_value(constraint.target,
-                                     angle ? units::Dimension::angle : units::Dimension::length,
-                                     parameter_values, result);
-                if (target.value < 0.0 || (angle && target.value > 180.0)) {
-                    add_error(result, "ICAD-S0037",
-                              "sketch distance or angle target is outside its valid range",
-                              constraint.location);
-                    valid = false;
-                }
-            }
-            lowered_sketch.constraints.push_back(
-                ir::SketchConstraint{constraint.name, constraint.kind, constraint.references,
-                                     target.value, target.unit,
-                                     constraint.target.parameter_reference});
         }
         if (valid) {
             constraints::solve_sketch(lowered_sketch);
@@ -860,6 +1305,10 @@ auto analyze(const ast::Program& program) -> SemanticResult {
                 add_error(result, "ICAD-S0038",
                           "SKETCH constraints are inconsistent or failed to converge",
                           sketch.location);
+            } else if (sketch.solve_requirement == "FULL" &&
+                       lowered_sketch.status != ir::SketchSolveStatus::fully_constrained) {
+                add_error(result, "ICAD-S0044",
+                          "SOLVE FULL requires a fully constrained sketch", sketch.location);
             }
         }
         if (valid && lowered_sketch.status != ir::SketchSolveStatus::inconsistent &&
@@ -1005,6 +1454,67 @@ auto analyze(const ast::Program& program) -> SemanticResult {
         ir::Body lowered_body;
         lowered_body.name = body.name;
         lowered_body.material = body.material;
+        for (const auto& reference : body.face_references) {
+            lowered_body.face_references.push_back(
+                {reference.name, reference.feature, reference.role, reference.topology_path});
+        }
+        for (const auto& selection : body.topology_selections) {
+            const auto source_feature = std::ranges::find(
+                body.features, selection.source_feature, &ast::FeatureDecl::name);
+            bool annular_source = source_feature != body.features.end() &&
+                                  source_feature->type == "EXTRUDE" &&
+                                  !source_feature->region.empty();
+            if (annular_source) {
+                const auto separator = source_feature->region.find('.');
+                const auto sketch_name = source_feature->region.substr(0, separator);
+                const auto region_name = separator == std::string::npos
+                                             ? std::string{}
+                                             : source_feature->region.substr(separator + 1);
+                const auto sketch = std::ranges::find(body.sketches, sketch_name,
+                                                      &ast::SketchDecl::name);
+                if (sketch == body.sketches.end()) {
+                    annular_source = false;
+                } else {
+                    const auto region = std::ranges::find(sketch->regions, region_name,
+                                                          &ast::SketchRegionDecl::name);
+                    annular_source = region != sketch->regions.end() &&
+                                     region->hole_shapes.size() == 1;
+                    if (annular_source) {
+                        const auto outer = std::ranges::find(
+                            sketch->shapes, region->outer_shape, &ast::SketchShapeDecl::name);
+                        const auto hole = std::ranges::find(
+                            sketch->shapes, region->hole_shapes.front(),
+                            &ast::SketchShapeDecl::name);
+                        annular_source = outer != sketch->shapes.end() &&
+                                         hole != sketch->shapes.end() &&
+                                         outer->entities.size() == 1 &&
+                                         hole->entities.size() == 1 &&
+                                         outer->entities.front().kind ==
+                                             ast::SketchEntityKind::circle &&
+                                         hole->entities.front().kind ==
+                                             ast::SketchEntityKind::circle;
+                    }
+                }
+            }
+            if (!annular_source) {
+                add_error(result, "ICAD-S0047",
+                          "TOPOLOGY_QUERY_V1 currently requires an EXTRUDE source from a REGION with exactly one circular hole",
+                          selection.location);
+            }
+            const std::string location = selection.adjacent_face;
+            const std::string classification =
+                selection.convexity == "CONCAVE" ? "INNER" : "OUTER";
+            lowered_body.topology_selections.push_back(
+                {selection.name,
+                 selection.source_feature,
+                 selection.entity_kind,
+                 selection.geometry,
+                 selection.convexity,
+                 selection.adjacent_face,
+                 body.name + "/" + selection.source_feature + "/edge.loop." +
+                     (location == "TOP" ? "top" : "bottom") + "." +
+                     (classification == "INNER" ? "inner" : "outer")});
+        }
         if (!body.material.empty() && !material_names.contains(body.material)) {
             add_error(result, "ICAD-S0012",
                       "BODY references unknown material '" + body.material + "'", body.location);
@@ -1012,8 +1522,10 @@ auto analyze(const ast::Program& program) -> SemanticResult {
         const auto scoped_profile = [&](const std::string& name) {
             if (name.empty())
                 return std::string{};
+            const auto separator = name.find('.');
+            const auto sketch_name = name.substr(0, separator);
             const bool body_sketch = std::ranges::any_of(
-                body.sketches, [&](const auto& sketch) { return sketch.name == name; });
+                body.sketches, [&](const auto& sketch) { return sketch.name == sketch_name; });
             return body_sketch ? body.name + "::" + name : name;
         };
         for (std::size_t feature_index = 0; feature_index < body.features.size(); ++feature_index) {
@@ -1022,15 +1534,75 @@ auto analyze(const ast::Program& program) -> SemanticResult {
             lowered_feature.name = feature.name;
             lowered_feature.source_keyword = feature.source_keyword;
             lowered_feature.type = feature.type;
+            lowered_feature.region = scoped_profile(feature.region);
             lowered_feature.profile = scoped_profile(feature.profile);
+            if (!lowered_feature.region.empty()) {
+                bool found_region = false;
+                for (const auto& candidate_sketch : lowered.sketches) {
+                    const std::string prefix = candidate_sketch.name + ".";
+                    if (!lowered_feature.region.starts_with(prefix))
+                        continue;
+                    const auto region_name = lowered_feature.region.substr(prefix.size());
+                    const auto region = std::ranges::find(candidate_sketch.regions, region_name,
+                                                          &ir::SketchRegion::name);
+                    if (region == candidate_sketch.regions.end())
+                        continue;
+                    lowered_feature.profile = region->outer_profile;
+                    lowered_feature.region_hole_profiles = region->hole_profiles;
+                    found_region = true;
+                    break;
+                }
+                if (!found_region) {
+                    add_error(result, "ICAD-S0046",
+                              "feature references unknown or invalid REGION '" + feature.region +
+                                  "'",
+                              feature.location);
+                }
+            }
             lowered_feature.target_profile = scoped_profile(feature.target_profile);
             lowered_feature.selected_edge_point = feature.selected_edge_point;
+            lowered_feature.selected_edge_location = feature.selected_edge_location;
+            lowered_feature.selected_edge_classification =
+                feature.selected_edge_classification;
+            lowered_feature.selected_edge_set = feature.selected_edge_set;
+            if (!feature.selected_edge_set.empty()) {
+                const auto selection = std::ranges::find(
+                    lowered_body.topology_selections, feature.selected_edge_set,
+                    &ir::TopologySelection::name);
+                const auto declaration = std::ranges::find(
+                    body.topology_selections, feature.selected_edge_set,
+                    &ast::TopologySelectionDecl::name);
+                if (selection == lowered_body.topology_selections.end() ||
+                    declaration == body.topology_selections.end()) {
+                    add_error(result, "ICAD-S0047",
+                              "SELECT EDGESET references unknown SELECTION '" +
+                                  feature.selected_edge_set + "'",
+                              feature.location);
+                } else if (declaration->location.line >= feature.location.line) {
+                    add_error(result, "ICAD-S0047",
+                              "SELECT EDGESET must reference an earlier SELECTION in the BODY",
+                              feature.location);
+                } else if (feature_index == 0 ||
+                           body.features[feature_index - 1].name !=
+                               selection->source_feature) {
+                    add_error(result, "ICAD-S0047",
+                              "TOPOLOGY_QUERY_V1 selection source must be the immediately previous feature result",
+                              feature.location);
+                } else {
+                    lowered_feature.selected_edge_location = selection->adjacent_face;
+                    lowered_feature.selected_edge_classification =
+                        selection->convexity == "CONCAVE" ? "INNER" : "OUTER";
+                    lowered_feature.selected_topology_id = selection->topology_id;
+                }
+            }
             lowered_feature.direction = feature.direction;
             lowered_feature.plane_point = feature.plane_point;
             lowered_feature.plane_normal = feature.plane_normal;
             lowered_feature.sketch_plane = feature.sketch_plane;
             lowered_feature.support_feature = feature.support_feature;
             lowered_feature.support_face = feature.support_face;
+            lowered_feature.support_reference = feature.support_reference;
+            lowered_feature.support_topology_id = feature.support_topology_path;
             lowered_feature.path_points = feature.path_points;
             lowered_feature.count = feature.count;
             if (feature.operation.empty() || feature.operation == "NEW") {
@@ -1081,11 +1653,16 @@ auto analyze(const ast::Program& program) -> SemanticResult {
                           "modeling modifiers do not accept OPERATION", feature.location);
             }
             if (edge_modifier) {
-                if (feature.selected_edge_point.empty()) {
+                const bool semantic_loop = !feature.selected_edge_location.empty() &&
+                                           !feature.selected_edge_classification.empty();
+                const bool named_loop = !feature.selected_edge_set.empty();
+                if (feature.selected_edge_point.empty() && !semantic_loop && !named_loop) {
                     add_error(result, "ICAD-S0035",
-                              feature.type + " requires SELECT EDGE NEAREST point",
+                              feature.type +
+                                  " requires SELECT EDGE NEAREST point, EDGE TOP|BOTTOM INNER|OUTER, or EDGESET name",
                               feature.location);
-                } else if (!point_values.contains(feature.selected_edge_point)) {
+                } else if (!feature.selected_edge_point.empty() &&
+                           !point_values.contains(feature.selected_edge_point)) {
                     add_error(result, "ICAD-S0035",
                               "edge selector references unknown POINT3 '" +
                                   feature.selected_edge_point + "'",
@@ -1150,7 +1727,9 @@ auto analyze(const ast::Program& program) -> SemanticResult {
                               "FREEFORM COUNT must be between 3 and 128 sections",
                               feature.location);
                 }
-            } else if (!feature.selected_edge_point.empty() || !feature.direction.empty() ||
+            } else if (!feature.selected_edge_point.empty() ||
+                       !feature.selected_edge_location.empty() ||
+                       !feature.selected_edge_set.empty() || !feature.direction.empty() ||
                        !feature.plane_point.empty() || feature.has_count ||
                        !feature.path_points.empty() || !feature.target_profile.empty()) {
                 add_error(result, "ICAD-S0035",

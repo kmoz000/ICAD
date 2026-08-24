@@ -6,18 +6,19 @@ BUILD_FLAGS ?=
 
 .DEFAULT_GOAL := build
 
-.PHONY: help configure build viewer test test-unit test-integration test-sandbox sandbox benchmark advanced agent-demo quality sanitizers thread-sanitizer clean distclean
+.PHONY: help configure build viewer viewer-package test test-unit test-integration test-sandbox sandbox benchmark advanced agent-demo quality sanitizers thread-sanitizer clean distclean
 
 help:
 	@$(CMAKE) -E echo "ICAD developer targets:"
 	@$(CMAKE) -E echo "  make build             Configure and compile (default)"
-	@$(CMAKE) -E echo "  make viewer            Build optional webview/webview desktop host"
+	@$(CMAKE) -E echo "  make viewer            Build native Qt/OpenGL ICAD Studio"
+	@$(CMAKE) -E echo "  make viewer-package    Stage the minimal signed/deployed viewer app"
 	@$(CMAKE) -E echo "  make test              Run every CTest test"
 	@$(CMAKE) -E echo "  make test-unit         Run lexer/component tests"
 	@$(CMAKE) -E echo "  make test-integration  Run CLI integration tests"
 	@$(CMAKE) -E echo "  make test-sandbox      Run isolated-workspace tests"
 	@$(CMAKE) -E echo "  make benchmark         Build and read back the advanced bridge"
-	@$(CMAKE) -E echo "  make advanced          Emit complete STEP/STL/OBJ/glTF/3MF/DXF/viewer package"
+	@$(CMAKE) -E echo "  make advanced          Emit STEP/STL/OBJ/glTF/3MF/DXF/scene package"
 	@$(CMAKE) -E echo "  make agent-demo        Create the detailed robot arm from one short prompt"
 	@$(CMAKE) -E echo "  make quality           Werror tests plus sanitizer tests"
 	@$(CMAKE) -E echo "  make sanitizers        Rebuild and test with ASan/UBSan"
@@ -32,7 +33,11 @@ build: configure
 	$(CMAKE) --build $(BUILD_DIR) --parallel $(BUILD_FLAGS)
 
 viewer:
-	$(MAKE) BUILD_DIR=$(BUILD_DIR) CMAKE_FLAGS="-DICAD_BUILD_DESKTOP_VIEWER=ON" build
+	$(CMAKE) -S . -B $(BUILD_DIR) -DCMAKE_BUILD_TYPE=$(BUILD_TYPE) -DBUILD_TESTING=ON -DICAD_BUILD_DESKTOP_VIEWER=ON $(CMAKE_FLAGS)
+	$(CMAKE) --build $(BUILD_DIR) --target icad-viewer --parallel $(BUILD_FLAGS)
+
+viewer-package: viewer
+	$(CMAKE) --install $(BUILD_DIR) --config $(BUILD_TYPE) --component Viewer --prefix $(BUILD_DIR)/viewer-stage
 
 test: build
 	$(CMAKE) --build $(BUILD_DIR) --target test

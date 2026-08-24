@@ -1,0 +1,104 @@
+name: Release ICAD Studio Viewer
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  viewer:
+    name: ${{ matrix.asset }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            asset: icad-viewer-linux-x86_64
+            archive: tar.xz
+          - runner: windows-2025
+            asset: icad-viewer-windows-x86_64
+            archive: 7z
+          - runner: macos-15-intel
+            asset: icad-viewer-macos-x86_64
+            archive: tar.xz
+          - runner: macos-15
+            asset: icad-viewer-macos-arm64
+            archive: tar.xz
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Linux OpenGL runtime headers
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libgl1-mesa-dev libxkbcommon-x11-0
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: 6.8.3
+          cache: true
+      - name: Configure minimal release viewer
+        run: >-
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=MinSizeRel
+          -DBUILD_TESTING=OFF
+          -DICAD_WARNINGS_AS_ERRORS=ON
+          -DICAD_BUILD_DESKTOP_VIEWER=ON
+      - name: Build native viewer
+        run: cmake --build build --config MinSizeRel --target icad-viewer --parallel
+      - name: Install viewer and required Qt runtime only
+        run: cmake --install build --config MinSizeRel --component Viewer --prefix build/stage
+      - name: Native compiler-to-renderer self-test (Linux)
+        if: runner.os == 'Linux'
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: build/stage/bin/icad-viewer --self-test examples/advanced.icad
+      - name: Native compiler-to-renderer self-test (macOS)
+        if: runner.os == 'macOS'
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: build/stage/icad-viewer.app/Contents/MacOS/icad-viewer --self-test examples/advanced.icad
+      - name: Native compiler-to-renderer self-test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: '& build/stage/bin/icad-viewer.exe --self-test examples/advanced.icad'
+      - name: Create maximum-compression tar.xz
+        if: matrix.archive == 'tar.xz'
+        shell: bash
+        run: tar -C build/stage -cJf "${{ matrix.asset }}.tar.xz" .
+      - name: Create maximum-compression 7z
+        if: matrix.archive == '7z'
+        shell: pwsh
+        run: 7z a -t7z -mx=9 "${{ matrix.asset }}.7z" "./build/stage/*"
+      - name: Generate checksum
+        shell: bash
+        run: cmake -E sha256sum "${{ matrix.asset }}.${{ matrix.archive }}" > "${{ matrix.asset }}.${{ matrix.archive }}.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: |
+            ${{ matrix.asset }}.${{ matrix.archive }}
+            ${{ matrix.asset }}.${{ matrix.archive }}.sha256
+          if-no-files-found: error
+
+  publish:
+    name: Publish viewer assets
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: viewer
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          path: release-assets
+      - name: Attach native viewer packages to the version release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --generate-notes
+          find release-assets -type f -print0 | xargs -0 gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --clobber

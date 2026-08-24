@@ -1,0 +1,29 @@
+# Rounded profile with explicit line-arc endpoint tangency.
+REQUIRES ICAD 1.0
+REQUIRES CAPABILITY MULTI_SHAPE_SKETCH_V1
+REQUIRES CAPABILITY SKETCH_LINE_ARC_TANGENCY_V1
+PROJECT rounded_tangent_plate
+UNITS mm
+
+BODY plate
+SKETCH outline ON PLANE XY
+SHAPE capsule CLOSED ROLE STOCK
+POINT lower_left -30 mm -10 mm FIXED
+POINT lower_right 30 mm -10 mm FIXED
+POINT upper_right 30 mm 10 mm FIXED
+POINT upper_left -30 mm 10 mm FIXED
+POINT right_center 30 mm 0 mm FIXED
+POINT left_center -30 mm 0 mm FIXED
+LINE bottom FROM lower_left TO lower_right
+ARC right_end FROM lower_right TO upper_right CENTER right_center CCW
+LINE top FROM upper_right TO upper_left
+ARC left_end FROM upper_left TO lower_left CENTER left_center CCW
+END
+CONSTRAINT bottom_right TANGENT capsule.bottom capsule.right_end AT capsule.lower_right
+CONSTRAINT right_top TANGENT capsule.right_end capsule.top AT capsule.upper_right
+CONSTRAINT top_left TANGENT capsule.top capsule.left_end AT capsule.upper_left
+CONSTRAINT left_bottom TANGENT capsule.left_end capsule.bottom AT capsule.lower_left
+SOLVE FULL
+END
+PAD plate_solid FROM outline.capsule DEPTH 8 mm NEW
+END

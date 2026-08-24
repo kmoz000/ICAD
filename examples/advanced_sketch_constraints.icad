@@ -1,0 +1,68 @@
+# Industrial constraint acceptance model with one explicit material REGION.
+REQUIRES ICAD 1.0
+REQUIRES CAPABILITY MULTI_SHAPE_SKETCH_V1
+REQUIRES CAPABILITY SKETCH_REGION_ARRANGEMENT_V1
+REQUIRES CAPABILITY ADVANCED_SKETCH_CONSTRAINTS_V1
+PROJECT advanced_sketch_constraints
+UNITS mm
+
+BODY plate
+SKETCH layout ON PLANE XY
+SHAPE outer CLOSED ROLE STOCK
+POINT p0 0 mm 0 mm FIXED
+POINT p1 98 mm 2 mm
+POINT p2 101 mm 59 mm
+POINT p3 -1 mm 61 mm
+LINE bottom FROM p0 TO p1
+LINE right FROM p1 TO p2
+LINE top FROM p2 TO p3
+LINE left FROM p3 TO p0
+END
+SHAPE hole_left CLOSED ROLE HOLE
+POINT center 18 mm 28 mm
+CIRCLE rim CENTER center RADIUS 5 mm
+END
+SHAPE hole_right CLOSED ROLE HOLE
+POINT center 82 mm 32 mm
+CIRCLE rim CENTER center RADIUS 5 mm
+END
+SHAPE datum_left OPEN ROLE CONSTRUCTION
+POINT center 20 mm 30 mm FIXED
+CIRCLE rim CENTER center RADIUS 5 mm
+END
+SHAPE datum_right OPEN ROLE CONSTRUCTION
+POINT center 80 mm 30 mm FIXED
+CIRCLE rim CENTER center RADIUS 5 mm
+END
+SHAPE guides OPEN ROLE CONSTRUCTION
+POINT axis_bottom 50 mm 0 mm FIXED
+POINT axis_top 50 mm 60 mm FIXED
+POINT cross_left 20 mm 30 mm FIXED
+POINT cross_right 80 mm 30 mm FIXED
+POINT middle 50 mm 30 mm
+LINE axis FROM axis_bottom TO axis_top
+LINE crossbar FROM cross_left TO cross_right
+END
+CONSTRAINT lower_horizontal HORIZONTAL outer.p0 outer.p1
+CONSTRAINT right_vertical VERTICAL outer.p1 outer.p2
+CONSTRAINT upper_horizontal HORIZONTAL outer.p2 outer.p3
+CONSTRAINT left_vertical VERTICAL outer.p3 outer.p0
+CONSTRAINT plate_width H_DISTANCE outer.p0 outer.p1 100 mm
+CONSTRAINT plate_height V_DISTANCE outer.p1 outer.p2 60 mm
+CONSTRAINT opposite_parallel PARALLEL outer.bottom outer.top
+CONSTRAINT corner_square PERPENDICULAR outer.bottom outer.right
+CONSTRAINT opposite_equal EQUAL_LENGTH outer.bottom outer.top
+CONSTRAINT left_located CONCENTRIC hole_left.rim datum_left.rim
+CONSTRAINT right_located CONCENTRIC hole_right.rim datum_right.rim
+CONSTRAINT bores_equal EQUAL_RADIUS hole_left.rim hole_right.rim
+CONSTRAINT bores_symmetric SYMMETRIC hole_left.center hole_right.center ABOUT guides.axis
+CONSTRAINT bore_pitch H_DISTANCE hole_left.center hole_right.center 60 mm
+CONSTRAINT center_marker MIDPOINT guides.middle guides.crossbar
+REGION perforated_plate
+OUTER outer
+HOLES hole_left hole_right
+END
+SOLVE FULL
+END
+PAD solid FROM layout.perforated_plate DEPTH 8 mm NEW
+END

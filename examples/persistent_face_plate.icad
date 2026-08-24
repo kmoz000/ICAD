@@ -1,0 +1,30 @@
+# Persistent semantic face-reference acceptance model.
+REQUIRES ICAD 1.0
+REQUIRES CAPABILITY PERSISTENT_FACE_REFERENCES_V1
+PROJECT persistent_face_plate
+UNITS mm
+
+PARAMETER plate_radius 40 mm
+PARAMETER plate_depth 8 mm
+PARAMETER boss_radius 14 mm
+PARAMETER boss_depth 12 mm
+PARAMETER bore_radius 5 mm
+
+BODY plate
+SKETCH plate_profile ON PLANE XY
+CIRCLE 0 mm 0 mm plate_radius
+END
+PAD plate_solid FROM plate_profile DEPTH plate_depth NEW
+
+FACE mounting_face FROM plate_solid.face.top
+
+SKETCH boss_profile ON FACE mounting_face
+CIRCLE 0 mm 0 mm boss_radius
+END
+PAD boss_solid FROM boss_profile DEPTH boss_depth ADD
+
+SKETCH bore_profile ON FACE boss_solid.face.top
+CIRCLE 0 mm 0 mm bore_radius
+END
+POCKET mounting_bore FROM bore_profile DEPTH boss_depth
+END

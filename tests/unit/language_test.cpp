@@ -38,8 +38,25 @@ auto main() -> int {
             icad::compiler::language::supports_capability(
                 "QUALIFIED_VALUE_REFERENCES_V1"),
         "completed expression and qualified-reference slices are advertised");
+    passed &= require(
+        icad::compiler::language::supports_capability("MULTI_SHAPE_SKETCH_V1") &&
+            icad::compiler::language::supports_capability(
+                "SKETCH_REGION_ARRANGEMENT_V1") &&
+            icad::compiler::language::supports_capability(
+                "ADVANCED_SKETCH_CONSTRAINTS_V1") &&
+            icad::compiler::language::supports_capability(
+                "SKETCH_LINE_ARC_TANGENCY_V1"),
+        "implemented multi-shape, region, and tangency syntax is advertised");
+    passed &= require(
+        icad::compiler::language::supports_capability("PERSISTENT_FACE_REFERENCES_V1"),
+        "implemented persistent cap-face references are advertised");
+    passed &= require(
+        icad::compiler::language::supports_capability("SEMANTIC_EDGE_LOOP_SELECTION_V1"),
+        "implemented inner/outer circular edge-loop selection is advertised");
+    passed &= require(icad::compiler::language::supports_capability("TOPOLOGY_QUERY_V1"),
+                      "implemented named topology queries are advertised");
     passed &= require(!icad::compiler::language::supports_capability("MULTI_SHAPE_SKETCH"),
-                      "proposed multi-shape syntax is not advertised");
+                      "the broader proposed multi-shape capability is not advertised");
 
     const auto supported = parse_source(
         "# requirements are a source header\n"

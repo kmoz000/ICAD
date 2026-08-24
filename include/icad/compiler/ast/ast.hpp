@@ -200,7 +200,7 @@ struct SketchConstraintDecl {
     SourceLocation location;
 };
 
-enum class SketchEntityKind { line, circular_arc };
+enum class SketchEntityKind { line, circular_arc, circle };
 
 struct SketchEntityDecl {
     std::string name;
@@ -208,7 +208,42 @@ struct SketchEntityDecl {
     std::string start;
     std::string end;
     std::string center;
+    ValueDecl radius;
     bool counterclockwise{};
+    SourceLocation location;
+};
+
+struct SketchShapeDecl {
+    std::string name;
+    std::string closure{"CLOSED"};
+    std::string role{"STOCK"};
+    std::vector<SketchPointDecl> points;
+    std::vector<SketchEntityDecl> entities;
+    SourceLocation location;
+};
+
+struct SketchRegionDecl {
+    std::string name;
+    std::string outer_shape;
+    std::vector<std::string> hole_shapes;
+    SourceLocation location;
+};
+
+struct FaceReferenceDecl {
+    std::string name;
+    std::string feature;
+    std::string role;
+    std::string topology_path;
+    SourceLocation location;
+};
+
+struct TopologySelectionDecl {
+    std::string name;
+    std::string source_feature;
+    std::string entity_kind{"EDGE_LOOP"};
+    std::string geometry{"CIRCULAR"};
+    std::string convexity;
+    std::string adjacent_face;
     SourceLocation location;
 };
 
@@ -217,12 +252,17 @@ struct SketchDecl {
     std::string plane{"XY"};
     std::string support_feature;
     std::string support_face;
+    std::string support_reference;
+    std::string support_topology_path;
     std::vector<SketchPointDecl> points;
     std::vector<SketchEntityDecl> entities;
+    std::vector<SketchShapeDecl> shapes;
+    std::vector<SketchRegionDecl> regions;
     std::vector<SketchConstraintDecl> constraints;
     std::array<ValueDecl, 2> circle_center;
     ValueDecl circle_radius;
     bool circle{};
+    std::string solve_requirement;
     SourceLocation location;
 };
 
@@ -251,15 +291,21 @@ struct FeatureDecl {
     std::string source_keyword{"FEATURE"};
     std::string type;
     std::string profile;
+    std::string region;
     std::string target_profile;
     std::string operation;
     std::string selected_edge_point;
+    std::string selected_edge_location;
+    std::string selected_edge_classification;
+    std::string selected_edge_set;
     std::string direction;
     std::string plane_point;
     std::string plane_normal;
     std::string sketch_plane{"XY"};
     std::string support_feature;
     std::string support_face;
+    std::string support_reference;
+    std::string support_topology_path;
     std::vector<std::string> path_points;
     std::size_t count{};
     bool has_count{};
@@ -273,6 +319,8 @@ struct BodyDecl {
     std::vector<SketchDecl> sketches;
     std::vector<FeatureDecl> features;
     SourceLocation location;
+    std::vector<FaceReferenceDecl> face_references;
+    std::vector<TopologySelectionDecl> topology_selections;
 };
 
 struct KeyframeDecl {

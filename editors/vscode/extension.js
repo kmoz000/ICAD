@@ -16,6 +16,10 @@ function configuration() {
 function localBinary(name) {
   const folder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   if (!folder) return undefined;
+  if (process.platform === "darwin" && name === "icad-viewer") {
+    const appBinary = path.join(folder, "build", "bin", "icad-viewer.app", "Contents", "MacOS", "icad-viewer");
+    return fs.existsSync(appBinary) ? appBinary : undefined;
+  }
   const suffix = process.platform === "win32" ? ".exe" : "";
   const candidate = path.join(folder, "build", "bin", `${name}${suffix}`);
   return fs.existsSync(candidate) ? candidate : undefined;
@@ -134,7 +138,7 @@ async function buildDesign(showNotice = true) {
   try {
     await run(toolchain.compiler, ["build", document.uri.fsPath, "--output-dir", outputDirectory]);
     if (showNotice) vscode.window.showInformationMessage(`ICAD built ${stem} into ${outputDirectory}`);
-    return path.join(outputDirectory, `${stem}.html`);
+    return outputDirectory;
   } catch (error) {
     vscode.window.showErrorMessage(`ICAD build failed: ${error.message.trim()}`);
     return undefined;
@@ -150,8 +154,8 @@ async function openViewer() {
   });
   process.on("error", async error => {
     output.appendLine(`[viewer] ${error.message}`);
-    const html = await buildDesign(false);
-    if (html) await vscode.env.openExternal(vscode.Uri.file(html));
+    await buildDesign(false);
+    vscode.window.showErrorMessage(`ICAD native viewer failed to start: ${error.message}`);
   });
   process.unref();
 }

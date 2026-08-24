@@ -70,7 +70,9 @@ function installedPaths(root) {
   const suffix = process.platform === "win32" ? ".exe" : "";
   return {
     compiler: path.join(root, "stage", "bin", `icad${suffix}`),
-    viewer: path.join(root, "stage", "bin", `icad-viewer${suffix}`)
+    viewer: process.platform === "darwin"
+      ? path.join(root, "stage", "icad-viewer.app", "Contents", "MacOS", "icad-viewer")
+      : path.join(root, "stage", "bin", `icad-viewer${suffix}`)
   };
 }
 

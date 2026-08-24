@@ -587,6 +587,51 @@ auto orient_history_part(Part& part, const compiler::ir::Feature& feature,
     return part;
 }
 
+auto append_geometry(Part& destination, const Part& source) -> void {
+    const std::size_t offset = destination.vertices.size();
+    destination.vertices.insert(destination.vertices.end(), source.vertices.begin(),
+                                source.vertices.end());
+    for (const auto& triangle : source.triangles) {
+        destination.triangles.push_back(
+            {triangle[0] + offset, triangle[1] + offset, triangle[2] + offset});
+    }
+}
+
+[[nodiscard]] auto make_region_part(const compiler::ir::Project& project,
+                                    const compiler::ir::Feature& feature,
+                                    const Part* support) -> Part {
+    Part material = make_part(project, feature, support);
+    if (feature.region_hole_profiles.empty())
+        return material;
+
+    Part holes;
+    for (const auto& hole_profile : feature.region_hole_profiles) {
+        auto hole_feature = feature;
+        hole_feature.profile = hole_profile;
+        hole_feature.region.clear();
+        hole_feature.region_hole_profiles.clear();
+        append_geometry(holes, make_part(project, hole_feature, support));
+    }
+    auto result = apply_boolean(material, holes, compiler::ir::FeatureOperation::cut,
+                                feature.name + "_region");
+    result.part.boolean_result = true;
+    result.part.repairs = std::move(result.repairs);
+    result.part.repairs.push_back(
+        "subtracted " + std::to_string(feature.region_hole_profiles.size()) +
+        " REGION hole profile(s) in one boolean transaction");
+    return result.part;
+}
+
+[[nodiscard]] auto compatible_cut_batch(const compiler::ir::Feature& first,
+                                        const compiler::ir::Feature& second) -> bool {
+    return first.operation == compiler::ir::FeatureOperation::cut &&
+           second.operation == compiler::ir::FeatureOperation::cut &&
+           first.type == "EXTRUDE" && second.type == "EXTRUDE" &&
+           first.sketch_plane == second.sketch_plane &&
+           first.support_feature == second.support_feature &&
+           first.support_face == second.support_face;
+}
+
 [[nodiscard]] auto triangle_area_twice(const Part& part, const Triangle& triangle) -> double {
     const Point3& a = part.vertices[triangle[0]];
     const Point3& b = part.vertices[triangle[1]];
@@ -750,8 +795,97 @@ enum class PrincipalAxis { x, y, z };
     return result;
 }
 
+[[nodiscard]] auto semantic_loop_modified(const Part& source,
+                                          const compiler::ir::Feature& feature) -> Part {
+    const auto bounds = part_bounds(source);
+    const double center_x = (bounds.minimum.x + bounds.maximum.x) * 0.5;
+    const double center_y = (bounds.minimum.y + bounds.maximum.y) * 0.5;
+    double inner_radius = std::numeric_limits<double>::infinity();
+    double outer_radius = 0.0;
+    for (const auto& vertex : source.vertices) {
+        const double radius = std::hypot(vertex.x - center_x, vertex.y - center_y);
+        if (radius > 1e-6)
+            inner_radius = std::min(inner_radius, radius);
+        outer_radius = std::max(outer_radius, radius);
+    }
+    const double amount = property(feature, feature.type == "FILLET" ? "RADIUS" : "DISTANCE");
+    const double bottom = bounds.minimum.z;
+    const double top = bounds.maximum.z;
+    if (!std::isfinite(inner_radius) || inner_radius <= outer_radius * 0.1 ||
+        outer_radius - inner_radius <= amount * 2.0 || top - bottom <= amount * 2.0 ||
+        amount <= 0.0) {
+        return {};
+    }
+
+    using compiler::ir::Point2;
+    std::vector<Point2> section;
+    const bool top_edge = feature.selected_edge_location == "TOP";
+    const bool inner_edge = feature.selected_edge_classification == "INNER";
+    const auto append_arc = [&](Point2 center, double start, double end) {
+        constexpr std::size_t segments = 8;
+        for (std::size_t index = 1; index < segments; ++index) {
+            const double angle = start + (end - start) * static_cast<double>(index) /
+                                             static_cast<double>(segments);
+            section.push_back({center.x_mm + amount * std::cos(angle),
+                               center.y_mm + amount * std::sin(angle)});
+        }
+    };
+    if (top_edge && !inner_edge) {
+        section = {{inner_radius, bottom}, {outer_radius, bottom},
+                   {outer_radius, top - amount}};
+        if (feature.type == "FILLET")
+            append_arc({outer_radius - amount, top - amount}, 0.0,
+                       std::numbers::pi * 0.5);
+        section.push_back({outer_radius - amount, top});
+        section.push_back({inner_radius, top});
+    } else if (top_edge && inner_edge) {
+        section = {{inner_radius, bottom}, {outer_radius, bottom}, {outer_radius, top},
+                   {inner_radius + amount, top}};
+        if (feature.type == "FILLET")
+            append_arc({inner_radius + amount, top - amount}, std::numbers::pi * 0.5,
+                       std::numbers::pi);
+        section.push_back({inner_radius, top - amount});
+    } else if (!top_edge && !inner_edge) {
+        section = {{inner_radius, bottom}, {outer_radius - amount, bottom}};
+        if (feature.type == "FILLET")
+            append_arc({outer_radius - amount, bottom + amount}, -std::numbers::pi * 0.5,
+                       0.0);
+        section.push_back({outer_radius, bottom + amount});
+        section.push_back({outer_radius, top});
+        section.push_back({inner_radius, top});
+    } else {
+        section = {{inner_radius, bottom + amount}};
+        if (feature.type == "FILLET")
+            append_arc({inner_radius + amount, bottom + amount}, std::numbers::pi,
+                       std::numbers::pi * 1.5);
+        section.push_back({inner_radius + amount, bottom});
+        section.push_back({outer_radius, bottom});
+        section.push_back({outer_radius, top});
+        section.push_back({inner_radius, top});
+    }
+
+    compiler::ir::Profile profile;
+    profile.points = std::move(section);
+    auto result = make_revolve(profile);
+    for (auto& vertex : result.vertices) {
+        vertex.x += center_x;
+        vertex.y += center_y;
+    }
+    result.body = source.body;
+    result.material = source.material;
+    result.boolean_result = source.boolean_result;
+    result.faceted_result = true;
+    result.repairs = source.repairs;
+    result.repairs.push_back("semantic " + feature.selected_edge_location + " " +
+                             feature.selected_edge_classification +
+                             " circular edge loop for native " + feature.type);
+    return result;
+}
+
 [[nodiscard]] auto edge_modified(const Part& source, const compiler::ir::Project& project,
                                  const compiler::ir::Feature& feature) -> Part {
+    if (!feature.selected_edge_location.empty())
+        return semantic_loop_modified(source, feature);
     const auto bounds = part_bounds(source);
     if (!axis_aligned_box(source, bounds))
         return {};
@@ -949,7 +1083,9 @@ auto build_model(const compiler::ir::Project& project) -> Model {
     Model model;
     for (const auto& body : project.bodies) {
         std::vector<Part> body_parts;
-        for (const auto& feature : body.features) {
+        for (std::size_t feature_index = 0; feature_index < body.features.size();
+             ++feature_index) {
+            const auto& feature = body.features[feature_index];
             const bool modifier = feature.type == "CHAMFER" || feature.type == "FILLET" ||
                                   feature.type == "LINEAR_PATTERN" || feature.type == "MIRROR";
             if (modifier) {
@@ -973,8 +1109,8 @@ auto build_model(const compiler::ir::Project& project) -> Model {
                 body_parts.back() = std::move(modified);
                 continue;
             }
-            Part part = make_part(project, feature,
-                                  body_parts.empty() ? nullptr : &body_parts.back());
+            Part part = make_region_part(project, feature,
+                                         body_parts.empty() ? nullptr : &body_parts.back());
             part.name = body.name + "_" + feature.name;
             part.body = body.name;
             part.material = body.material;
@@ -989,11 +1125,29 @@ auto build_model(const compiler::ir::Project& project) -> Model {
                 body_parts.push_back(std::move(part));
                 continue;
             }
-            auto boolean = apply_boolean(body_parts.back(), part, feature.operation,
-                                         body.name + "_" + feature.name);
+            std::size_t batch_end = feature_index + 1;
+            std::string result_name = body.name + "_" + feature.name;
+            if (feature.operation == compiler::ir::FeatureOperation::cut) {
+                while (batch_end < body.features.size() &&
+                       compatible_cut_batch(feature, body.features[batch_end])) {
+                    const auto& batched_feature = body.features[batch_end];
+                    auto cutter = make_region_part(project, batched_feature, &body_parts.back());
+                    append_geometry(part, cutter);
+                    result_name = body.name + "_" + batched_feature.name;
+                    ++batch_end;
+                }
+            }
+            auto boolean =
+                apply_boolean(body_parts.back(), part, feature.operation, std::move(result_name));
             boolean.part.boolean_result = true;
             boolean.part.feature_type = "BOOLEAN";
             boolean.part.repairs = std::move(boolean.repairs);
+            if (batch_end > feature_index + 1) {
+                boolean.part.repairs.push_back(
+                    "batched " + std::to_string(batch_end - feature_index) +
+                    " compatible cut features into one boolean transaction");
+                feature_index = batch_end - 1;
+            }
             body_parts.back() = std::move(boolean.part);
         }
         const auto pose =

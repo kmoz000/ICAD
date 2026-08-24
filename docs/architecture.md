@@ -1,8 +1,9 @@
 # ICAD architecture
 
 ICAD is an agent-first compiler with a single, repository-owned geometry
-engine. External CAD kernels, desktop GUI frameworks, image libraries, JSON
-libraries, and JavaScript frameworks are outside the core architecture.
+engine. External CAD kernels, image libraries, JSON libraries, WebViews, and
+JavaScript frameworks are outside the core architecture. The optional desktop
+presentation layer uses Qt 6 while the compiler and geometry engine remain Qt-free.
 
 This page describes the implemented architecture. The proposed lossless lexer,
 v2 compiler passes, direct modeling-kernel layers, persistent topology, and
@@ -24,12 +25,11 @@ parallel revision model are specified separately in the
        -> deterministic AABB broad phase and surface intersections
        -> direct analytic STEP B-Rep and assembly
        -> direct STL, Wavefront OBJ, glTF/GLB, and 3MF
-       -> compiled web model
+       -> renderer-neutral native scene model
        -> BOM, manufacturing report, projected-edge SVG/DXF
   -> native material texture generator
   -> scene animation compiler
-  -> plain JavaScript WebGL2 viewer bundle with Canvas fallback
-  -> optional pinned webview/webview native host
+  -> optional native Qt/OpenGL ICAD Studio
        -> coalesced background preview queue
        -> incremental body topology and delivery-mesh cache
        -> independent complete-package export
@@ -48,7 +48,7 @@ AST <- resolver ----------+-> semantic -> canonical IR
                             |              |              |
                        geometry        materials       scenes
                             |              |              |
-                            +-- STEP / STL / OBJ / glTF / 3MF / web --+
+                            +-- STEP / STL / OBJ / glTF / 3MF / scene --+
                                            |
                               analysis / documents / drawings
 ```
@@ -56,7 +56,7 @@ AST <- resolver ----------+-> semantic -> canonical IR
 Lexer, parser, resolver, and semantic-lowering code cannot depend on geometry
 or presentation code. The top-level compiler driver runs the topology gate
 after semantic lowering.
-Exporters cannot create their own shapes: STEP, OBJ, and the web viewer all
+Exporters cannot create their own shapes: STEP, OBJ, and the native viewer all
 consume the same validated native model. The CLI performs file I/O and output
 selection only.
 
@@ -112,8 +112,8 @@ body topology and delivery meshes in source order. A revision mutex prevents
 partially published cache state across concurrent callers. Live viewer requests
 run on a coalescing worker so the UI thread remains responsive; unchanged source
 returns compact cached metadata unless an imported file timestamp changed.
-The compiled render model is passed directly through the webview bridge and
-mounted in the workbench canvas, avoiding temporary-file iframe navigation.
+The compiled render model is passed directly through the engine API and uploaded
+to native OpenGL buffers, avoiding subprocess, browser, network, and temporary-file bridges.
 Full artifact export uses a separate clean compilation and atomic project build,
 so it cannot corrupt the interactive cache or block editor refresh.
 
@@ -132,7 +132,7 @@ The scene exporter generates and base64-embeds deterministic BMP textures.
 Animation tracks reference semantic BODY names, joints, visibility targets, or
 named cameras. Time, translation, rotation, easing, events, lights, and loops
 are dimension/range checked and normalized before export.
-The web viewer only interpolates valid canonical keyframes; it does not repair
+The native viewer only consumes valid canonical keyframes; it does not repair
 invalid source at runtime.
 
 ## Test layers
@@ -142,12 +142,12 @@ invalid source at runtime.
   spatial mechanisms, constraints, STEP/STL/OBJ/glTF/GLB/3MF, documents,
   manufacturing, agent JSON,
   LSP completion/navigation/formatting, materials, embedded textures, advanced
-  scene timelines, and viewer bundles.
+  scene timelines, and native render scenes.
 - Integration: CLI status and diagnostic contracts.
 - Sandbox: execution from a clean directory without repository-relative data.
 - Benchmark: the advanced bridge plus a robotic-arm comparison across IR, STEP
   assembly read-back, STL/OBJ topology, engineering artifacts, textures,
-  animation, and HTML outputs.
+  animation, and native scene outputs.
 - Quality: warnings-as-errors plus AddressSanitizer/UndefinedBehaviorSanitizer.
 
 ## Agent rule

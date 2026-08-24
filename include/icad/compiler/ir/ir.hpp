@@ -147,6 +147,46 @@ struct SketchEntity {
     std::string end;
     std::string center;
     bool counterclockwise{};
+    bool full_circle{};
+    double radius_mm{};
+    std::string radius_reference;
+};
+
+struct SketchShape {
+    std::string name;
+    std::string role;
+    bool closed{};
+    std::vector<std::string> points;
+    std::vector<std::string> entities;
+    std::string profile;
+    double area_mm2{};
+    std::string containing_shape;
+};
+
+struct SketchRegion {
+    std::string name;
+    std::string outer_shape;
+    std::vector<std::string> hole_shapes;
+    std::string outer_profile;
+    std::vector<std::string> hole_profiles;
+    double area_mm2{};
+};
+
+struct FaceReference {
+    std::string name;
+    std::string feature;
+    std::string role;
+    std::string topology_id;
+};
+
+struct TopologySelection {
+    std::string name;
+    std::string source_feature;
+    std::string entity_kind;
+    std::string geometry;
+    std::string convexity;
+    std::string adjacent_face;
+    std::string topology_id;
 };
 
 enum class SketchSolveStatus { fully_constrained, under_constrained, inconsistent };
@@ -157,9 +197,14 @@ struct Sketch {
     std::string plane{"XY"};
     std::string support_feature;
     std::string support_face;
+    std::string support_reference;
+    std::string support_topology_id;
     std::vector<SketchPoint> points;
     std::vector<SketchEntity> entities;
+    std::vector<SketchShape> shapes;
+    std::vector<SketchRegion> regions;
     std::vector<SketchConstraint> constraints;
+    std::string solve_requirement;
     SketchSolveStatus status{SketchSolveStatus::under_constrained};
     std::size_t degrees_of_freedom{};
     std::size_t iterations{};
@@ -173,15 +218,23 @@ struct Feature {
     std::string source_keyword{"FEATURE"};
     std::string type;
     std::string profile;
+    std::string region;
+    std::vector<std::string> region_hole_profiles;
     std::string target_profile;
     FeatureOperation operation{FeatureOperation::create};
     std::string selected_edge_point;
+    std::string selected_edge_location;
+    std::string selected_edge_classification;
+    std::string selected_edge_set;
+    std::string selected_topology_id;
     std::string direction;
     std::string plane_point;
     std::string plane_normal;
     std::string sketch_plane{"XY"};
     std::string support_feature;
     std::string support_face;
+    std::string support_reference;
+    std::string support_topology_id;
     std::vector<std::string> path_points;
     std::size_t count{};
     std::vector<Property> properties;
@@ -203,6 +256,8 @@ struct Body {
     std::string name;
     std::string material;
     std::vector<Feature> features;
+    std::vector<FaceReference> face_references;
+    std::vector<TopologySelection> topology_selections;
 };
 
 struct Constraint {

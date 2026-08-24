@@ -37,24 +37,76 @@ struct Variables {
     return sketch.points[variables.point_index.at(name)].solved;
 }
 
+[[nodiscard]] auto entity(const compiler::ir::Sketch& sketch, const std::string& name)
+    -> const compiler::ir::SketchEntity& {
+    return *std::ranges::find(sketch.entities, name, &compiler::ir::SketchEntity::name);
+}
+
+struct Vector2 {
+    double x{};
+    double y{};
+};
+
+[[nodiscard]] auto line_vector(const compiler::ir::Sketch& sketch, const Variables& variables,
+                               const compiler::ir::SketchEntity& line) -> Vector2 {
+    const auto& start = point(sketch, variables, line.start);
+    const auto& end = point(sketch, variables, line.end);
+    return {end.x_mm - start.x_mm, end.y_mm - start.y_mm};
+}
+
+[[nodiscard]] auto length(Vector2 value) -> double {
+    return std::hypot(value.x, value.y);
+}
+
+[[nodiscard]] auto center(const compiler::ir::Sketch& sketch, const Variables& variables,
+                          const compiler::ir::SketchEntity& circular)
+    -> const compiler::ir::Point2& {
+    return point(sketch, variables, circular.center);
+}
+
+[[nodiscard]] auto radius(const compiler::ir::Sketch& sketch, const Variables& variables,
+                          const compiler::ir::SketchEntity& circular) -> double {
+    if (circular.full_circle)
+        return circular.radius_mm;
+    const auto& arc_center = center(sketch, variables, circular);
+    const auto& start = point(sketch, variables, circular.start);
+    return std::hypot(start.x_mm - arc_center.x_mm, start.y_mm - arc_center.y_mm);
+}
+
 [[nodiscard]] auto residuals(const compiler::ir::Sketch& sketch, const Variables& variables)
     -> std::vector<double> {
     std::vector<double> values;
     for (const auto& constraint : sketch.constraints) {
-        const auto& first = point(sketch, variables, constraint.references[0]);
-        const auto& second = point(sketch, variables, constraint.references[1]);
         if (constraint.kind == "HORIZONTAL") {
+            const auto& first = point(sketch, variables, constraint.references[0]);
+            const auto& second = point(sketch, variables, constraint.references[1]);
             values.push_back(second.y_mm - first.y_mm);
         } else if (constraint.kind == "VERTICAL") {
+            const auto& first = point(sketch, variables, constraint.references[0]);
+            const auto& second = point(sketch, variables, constraint.references[1]);
             values.push_back(second.x_mm - first.x_mm);
         } else if (constraint.kind == "COINCIDENT") {
+            const auto& first = point(sketch, variables, constraint.references[0]);
+            const auto& second = point(sketch, variables, constraint.references[1]);
             values.push_back(second.x_mm - first.x_mm);
             values.push_back(second.y_mm - first.y_mm);
         } else if (constraint.kind == "DISTANCE") {
+            const auto& first = point(sketch, variables, constraint.references[0]);
+            const auto& second = point(sketch, variables, constraint.references[1]);
             values.push_back(std::hypot(second.x_mm - first.x_mm,
                                         second.y_mm - first.y_mm) -
                              constraint.target_value);
+        } else if (constraint.kind == "H_DISTANCE") {
+            const auto& first = point(sketch, variables, constraint.references[0]);
+            const auto& second = point(sketch, variables, constraint.references[1]);
+            values.push_back(second.x_mm - first.x_mm - constraint.target_value);
+        } else if (constraint.kind == "V_DISTANCE") {
+            const auto& first = point(sketch, variables, constraint.references[0]);
+            const auto& second = point(sketch, variables, constraint.references[1]);
+            values.push_back(second.y_mm - first.y_mm - constraint.target_value);
         } else if (constraint.kind == "ANGLE") {
+            const auto& first = point(sketch, variables, constraint.references[0]);
+            const auto& second = point(sketch, variables, constraint.references[1]);
             const auto& third = point(sketch, variables, constraint.references[2]);
             const double first_x = first.x_mm - second.x_mm;
             const double first_y = first.y_mm - second.y_mm;
@@ -74,6 +126,88 @@ struct Variables {
             // Ten millimetres per radian keeps angular and dimensional
             // equations numerically comparable without changing their roots.
             values.push_back(difference * 10.0);
+        } else if (constraint.kind == "PARALLEL" ||
+                   constraint.kind == "PERPENDICULAR" ||
+                   constraint.kind == "EQUAL_LENGTH") {
+            const auto& first_entity = entity(sketch, constraint.references[0]);
+            const auto& second_entity = entity(sketch, constraint.references[1]);
+            const Vector2 first = line_vector(sketch, variables, first_entity);
+            const Vector2 second = line_vector(sketch, variables, second_entity);
+            const double first_length = length(first);
+            const double second_length = length(second);
+            if (first_length * second_length <= 1e-12) {
+                values.push_back(1e6);
+                continue;
+            }
+            if (constraint.kind == "PARALLEL") {
+                values.push_back((first.x * second.y - first.y * second.x) * 10.0 /
+                                 (first_length * second_length));
+            } else if (constraint.kind == "PERPENDICULAR") {
+                values.push_back((first.x * second.x + first.y * second.y) * 10.0 /
+                                 (first_length * second_length));
+            } else {
+                values.push_back(first_length - second_length);
+            }
+        } else if (constraint.kind == "CONCENTRIC" ||
+                   constraint.kind == "EQUAL_RADIUS") {
+            const auto& first_entity = entity(sketch, constraint.references[0]);
+            const auto& second_entity = entity(sketch, constraint.references[1]);
+            if (constraint.kind == "CONCENTRIC") {
+                const auto& first = center(sketch, variables, first_entity);
+                const auto& second = center(sketch, variables, second_entity);
+                values.push_back(second.x_mm - first.x_mm);
+                values.push_back(second.y_mm - first.y_mm);
+            } else {
+                values.push_back(radius(sketch, variables, first_entity) -
+                                 radius(sketch, variables, second_entity));
+            }
+        } else if (constraint.kind == "MIDPOINT") {
+            const auto& candidate = point(sketch, variables, constraint.references[0]);
+            const auto& line = entity(sketch, constraint.references[1]);
+            const auto& start = point(sketch, variables, line.start);
+            const auto& end = point(sketch, variables, line.end);
+            values.push_back(candidate.x_mm - (start.x_mm + end.x_mm) * 0.5);
+            values.push_back(candidate.y_mm - (start.y_mm + end.y_mm) * 0.5);
+        } else if (constraint.kind == "SYMMETRIC") {
+            const auto& first = point(sketch, variables, constraint.references[0]);
+            const auto& second = point(sketch, variables, constraint.references[1]);
+            const auto& axis = entity(sketch, constraint.references[2]);
+            const auto& axis_start = point(sketch, variables, axis.start);
+            const Vector2 axis_vector = line_vector(sketch, variables, axis);
+            const double axis_length = length(axis_vector);
+            if (axis_length <= 1e-12) {
+                values.push_back(1e6);
+                values.push_back(1e6);
+                continue;
+            }
+            const Vector2 midpoint{(first.x_mm + second.x_mm) * 0.5 - axis_start.x_mm,
+                                   (first.y_mm + second.y_mm) * 0.5 - axis_start.y_mm};
+            const Vector2 pair{second.x_mm - first.x_mm, second.y_mm - first.y_mm};
+            values.push_back((axis_vector.x * midpoint.y - axis_vector.y * midpoint.x) /
+                             axis_length);
+            values.push_back((axis_vector.x * pair.x + axis_vector.y * pair.y) /
+                             axis_length);
+        } else if (constraint.kind == "TANGENT") {
+            const auto& first = entity(sketch, constraint.references[0]);
+            const auto& second = entity(sketch, constraint.references[1]);
+            const auto& line = first.kind == compiler::ir::ProfileSegmentKind::line
+                                   ? first
+                                   : second;
+            const auto& arc = first.kind == compiler::ir::ProfileSegmentKind::circular_arc
+                                  ? first
+                                  : second;
+            const Vector2 direction = line_vector(sketch, variables, line);
+            const auto& contact = point(sketch, variables, constraint.references[2]);
+            const auto& arc_center = center(sketch, variables, arc);
+            const Vector2 radial{contact.x_mm - arc_center.x_mm,
+                                 contact.y_mm - arc_center.y_mm};
+            const double denominator = length(direction) * length(radial);
+            if (denominator <= 1e-12) {
+                values.push_back(1e6);
+                continue;
+            }
+            values.push_back((direction.x * radial.x + direction.y * radial.y) * 10.0 /
+                             denominator);
         }
     }
     return values;

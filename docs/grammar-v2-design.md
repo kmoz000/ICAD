@@ -56,8 +56,12 @@ SKETCH plate_layout ON PLANE XY
 END
 ```
 
-Current support syntax is `ON PLANE XY|XZ|YZ` or `ON FACE feature selector`.
-Face support must refer to an earlier feature in the same body.
+Current support syntax is `ON PLANE XY|XZ|YZ`, legacy `ON FACE feature selector`,
+or—under `PERSISTENT_FACE_REFERENCES_V1`—direct
+`ON FACE feature.face.top|bottom` and named
+`FACE alias FROM feature.face.top|bottom`. Face support must refer to an earlier
+feature in the same body. Side-face lineage, selection queries, projection, and
+edge aliases remain capability-gated future slices.
 
 ## Named shape paths
 
@@ -89,15 +93,32 @@ SHAPE outer CLOSED ROLE STOCK
 END
 ```
 
-`LINE` and circular `ARC` entities are **current** in a single-contour sketch.
-The enclosing multi-shape block and qualified `sketch.shape` selector are
-**next**. Later curve types must lower to the same analytic path interface:
+`MULTI_SHAPE_SKETCH_V1` is **current** for `STOCK`, `ADDITIVE`, `HOLE`, and
+`CONSTRUCTION` roles; `OPEN|CLOSED` paths; named `POINT`, `LINE`, circular
+`ARC`, and `CIRCLE`; qualified `shape.point` constraints; and explicit
+`sketch.shape` PAD/POCKET inputs. Open paths are currently construction-only.
+Role selectors and later curve types must lower to the same analytic path
+interface before they can be advertised:
 
 - `CIRCLE name CENTER point RADIUS value`
 - `ELLIPSE name CENTER point RX value RY value ROTATION angle`
 - `SPLINE name THROUGH p0 p1 ... DEGREE n [CLOSED]`
 - `SLOT name FROM point TO point WIDTH value`
 - `POLYGON name CENTER point SIDES n RADIUS value ROTATION angle`
+
+`SKETCH_REGION_ARRANGEMENT_V1` is **current**. It groups already validated
+closed shapes into an explicit material arrangement:
+
+```icad
+REGION plate_with_bores
+OUTER outer
+HOLES bore_left bore_right
+END
+```
+
+The outer must be `STOCK` or `ADDITIVE`; every hole must be a contained `HOLE`
+shape. `PAD` and `POCKET` accept `sketch.region`, and inspection exposes the
+net area plus all contributing profiles.
 
 ## Constraints
 
@@ -112,17 +133,72 @@ Shape-level targets include:
 - distance, horizontal distance, vertical distance, radius, diameter, angle;
 - fixed, construction, projected/reference geometry.
 
+`ADVANCED_SKETCH_CONSTRAINTS_V1` is **current** for horizontal/vertical
+distance, parallel, perpendicular, equal length, concentric, equal radius,
+midpoint, and point-pair symmetry about a line entity.
+`SKETCH_LINE_ARC_TANGENCY_V1` is **current** for endpoint-specific line/arc
+tangency using `TANGENT line arc AT shared_point`. Full-circle, arc-arc,
+spline, projected-geometry, radius/diameter solver variables, and shape-level
+tangency remain future gates.
+
 Constraints use qualified names when ambiguity is possible:
 
 ```icad
 CONSTRAINT bore_pitch H_DISTANCE bore_left.center bore_right.center 90 mm
 CONSTRAINT bore_pair EQUAL_RADIUS bore_left.circle bore_right.circle
 CONSTRAINT centered SYMMETRIC bore_left.center bore_right.center ABOUT y_axis
+CONSTRAINT rounded TANGENT outline.bottom outline.end_arc AT outline.corner
 ```
 
 The solver must report status, degrees of freedom, residual, conflicting
 constraint names, and movable entities. “Compiled” is not equivalent to “fully
 constrained.”
+
+### Selection and applicability
+
+Selection is a typed query result, not an integer mesh index. The first
+production gate, `SEMANTIC_EDGE_LOOP_SELECTION_V1`, classifies a circular rim
+on the current annular solid by axial location (`TOP|BOTTOM`) and material side
+(`INNER|OUTER`). Agent feedback returns the selection kind, classification,
+and applicable operations. Today that list is exactly `FILLET` and `CHAMFER`.
+Shell, offset, split, project, draft, and arbitrary edge-chain operations stay
+unadvertised until their native geometry and failure diagnostics exist.
+
+The next complete slice, `TOPOLOGY_QUERY_V1`, gives that result a body-local
+name and makes its evidence explicit: `SELECTION name`, `FROM feature`, `EDGES
+WHERE`, `LOOP`, `CIRCULAR`, `CONCAVE|CONVEX`, and `ADJACENT_TO FACE
+top|bottom`. `SELECT EDGESET name` is permitted only for FILLET/CHAMFER and the
+source must be the immediately preceding annular REGION extrusion. This narrow
+rule is deliberate: ICAD rejects a stale query instead of pretending that a
+mesh edge index survived an intervening feature. `visual.json` returns the
+matched topology ID, a human-readable match reason, valid operations, and why
+shell/offset/split are not applicable.
+
+## Industrial capability ladder
+
+ICAD grows by complete vertical capabilities, not by accepting disconnected
+keywords. A capability may be advertised only when it has all of these pieces:
+formal grammar, typed AST and IR, semantic validation, native execution,
+persistent provenance, `visual.json` evidence, actionable diagnostics, focused
+unit tests, an acceptance model, and exchange read-back where the operation
+changes manufactured geometry.
+
+The planned layers are ordered by dependency:
+
+| Layer | Language and engine contract | Agent-visible result |
+|---|---|---|
+| Constrained profiles | Ellipse, conic, slot, polygon, B-spline, trim, extend, offset, project, construction entities, complete dimensional and geometric constraints | Entities, remaining DOF, conflicts, regions, winding, and manufacturability warnings |
+| Persistent topology | Face/edge/vertex identities; queries by geometry, ancestry, role, adjacency, loop, chain, convexity, and concavity; named selection sets | Stable selections and a computed applicable-operation list after every feature |
+| Native solid history | Typed holes, ribs, grooves, shell, thicken, draft, split, face/edge offset, robust fillet/chamfer chains, sweep frames, loft continuity, linear/circular/table patterns | Immutable feature results, source-to-result maps, failed-operation cause, and local repair suggestions |
+| Surface design | Analytic and NURBS curves/surfaces, boundary and fill patches, trim, extend, stitch, thicken, and explicit G0/G1/G2 continuity | Patch network, continuity residuals, gaps, curvature bounds, and watertightness |
+| Product structure | Parts, configurations, interfaces, subassemblies, flexible/rigid groups, joints, contacts, limits, motion envelopes, and kinematic goals | Solved occurrence graph, connection state, range of motion, collisions, and unreachable targets |
+| Industrial definition | Physical material separate from appearance, process intent, standard fasteners and holes, fits, tolerances, datum systems, GD&T, BOM, revision and drawing associations | Mass and process evidence, standards checks, tolerance stack, drawing references, and release readiness |
+
+Each selector is evaluated against the current immutable feature result. The
+engine returns what the selected entity is, why it matched, what operations are
+legal, and why a requested operation is rejected. This makes modeling legible
+to an agent before it edits source and prevents mesh tessellation from becoming
+the language's hidden topology model.
 
 ## Feature history
 

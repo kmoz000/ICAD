@@ -50,14 +50,13 @@ set(gltf "${OUTPUT_ROOT}/advanced.gltf")
 set(glb "${OUTPUT_ROOT}/advanced.glb")
 set(three_mf "${OUTPUT_ROOT}/advanced.3mf")
 set(scene "${OUTPUT_ROOT}/advanced.scene.json")
-set(viewer "${OUTPUT_ROOT}/advanced.html")
 set(bom "${OUTPUT_ROOT}/advanced.bom.json")
 set(manufacturing "${OUTPUT_ROOT}/advanced.manufacturing.json")
 set(drawing "${OUTPUT_ROOT}/advanced.drawing.svg")
 set(drawing_dxf "${OUTPUT_ROOT}/advanced.drawing.dxf")
 set(topology "${OUTPUT_ROOT}/advanced.topology.json")
 if(NOT EXISTS "${obj}" OR NOT EXISTS "${step}" OR NOT EXISTS "${assembly_step}" OR
-   NOT EXISTS "${stl}" OR NOT EXISTS "${scene}" OR NOT EXISTS "${viewer}" OR
+   NOT EXISTS "${stl}" OR NOT EXISTS "${scene}" OR
    NOT EXISTS "${gltf}" OR NOT EXISTS "${glb}" OR NOT EXISTS "${three_mf}" OR
    NOT EXISTS "${bom}" OR NOT EXISTS "${manufacturing}" OR NOT EXISTS "${drawing}" OR
    NOT EXISTS "${drawing_dxf}" OR NOT EXISTS "${topology}")

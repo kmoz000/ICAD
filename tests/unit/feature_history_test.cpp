@@ -177,6 +177,87 @@ auto main() -> int {
         "PAD rib_solid FROM rib_profile DEPTH 10 mm NEW\nEND\n");
     if (!xz.ok() || !yz.ok())
         return fail("XZ or YZ datum history did not compile");
+
+    constexpr std::string_view persistent_faces = R"ICAD(
+REQUIRES ICAD 1.0
+REQUIRES CAPABILITY PERSISTENT_FACE_REFERENCES_V1
+PROJECT persistent_faces
+UNITS mm
+BODY bracket
+SKETCH base ON PLANE XY
+CIRCLE 0 mm 0 mm 20 mm
+END
+PAD base_solid FROM base DEPTH 10 mm NEW
+FACE mounting_face FROM base_solid.face.top
+SKETCH boss ON FACE mounting_face
+CIRCLE 0 mm 0 mm 8 mm
+END
+PAD raised_boss FROM boss DEPTH 5 mm ADD
+END
+)ICAD";
+    const auto persistent = icad::compiler::compile(persistent_faces);
+    if (!persistent.ok() || persistent.program->bodies.front().face_references.size() != 1 ||
+        persistent.ir_project->bodies.front().face_references.size() != 1) {
+        return fail("persistent FACE alias history did not compile");
+    }
+    const auto& face_reference = persistent.ir_project->bodies.front().face_references.front();
+    const auto& attached_sketch = persistent.ir_project->sketches.back();
+    const auto& attached_feature = persistent.ir_project->bodies.front().features.back();
+    if (face_reference.name != "mounting_face" || face_reference.feature != "base_solid" ||
+        face_reference.role != "top" ||
+        face_reference.topology_id != "bracket/base_solid/face.top" ||
+        attached_sketch.support_reference != "mounting_face" ||
+        attached_sketch.support_topology_id != "bracket/base_solid/face.top" ||
+        attached_sketch.support_face != "Z_MAX" ||
+        attached_feature.support_topology_id != "bracket/base_solid/face.top") {
+        return fail("persistent FACE alias did not retain its semantic topology identity");
+    }
+    const auto persistent_visual =
+        icad::ai::visual_snapshot_json(*persistent.ir_project);
+    if (!persistent_visual.contains("\"faceReferences\":[{\"name\":\"mounting_face\"") ||
+        !persistent_visual.contains("\"supportTopologyId\":\"bracket/base_solid/face.top\"")) {
+        return fail("visual.json omitted persistent FACE reference provenance");
+    }
+    const auto persistent_dependencies =
+        icad::compiler::build_dependency_graph(*persistent.ir_project);
+    const auto persistent_sketch_node = std::ranges::find(
+        persistent_dependencies.nodes, "sketch:bracket::boss",
+        &icad::compiler::DependencyNode::id);
+    if (persistent_sketch_node == persistent_dependencies.nodes.end() ||
+        !has_dependency(*persistent_sketch_node,
+                        "face-reference:bracket/mounting_face")) {
+        return fail("persistent FACE alias was omitted from the dependency graph");
+    }
+
+    const auto direct_persistent = icad::compiler::compile(
+        "REQUIRES CAPABILITY PERSISTENT_FACE_REFERENCES_V1\n"
+        "PROJECT direct_face\nUNITS mm\nBODY part\n"
+        "SKETCH base ON PLANE XY\nCIRCLE 0 mm 0 mm 4 mm\nEND\n"
+        "PAD solid FROM base DEPTH 3 mm NEW\n"
+        "SKETCH top_cut ON FACE solid.face.top\nCIRCLE 0 mm 0 mm 1 mm\nEND\n"
+        "POCKET hole FROM top_cut DEPTH 3 mm\nEND\n");
+    if (!direct_persistent.ok() ||
+        direct_persistent.ir_project->sketches.back().support_topology_id !=
+            "part/solid/face.top") {
+        return fail("direct persistent FACE path did not resolve");
+    }
+    const auto future_face = icad::compiler::compile(
+        "PROJECT future_face\nUNITS mm\nBODY part\n"
+        "FACE top FROM missing.face.top\nEND\n");
+    const auto invalid_face_role = icad::compiler::compile(
+        "PROJECT invalid_role\nUNITS mm\nBODY part\n"
+        "SKETCH base ON PLANE XY\nCIRCLE 0 mm 0 mm 4 mm\nEND\n"
+        "PAD solid FROM base DEPTH 3 mm NEW\n"
+        "FACE side FROM solid.face.side\nEND\n");
+    const auto missing_alias = icad::compiler::compile(
+        "PROJECT missing_alias\nUNITS mm\nBODY part\n"
+        "SKETCH base ON PLANE XY\nCIRCLE 0 mm 0 mm 4 mm\nEND\n"
+        "PAD solid FROM base DEPTH 3 mm NEW\n"
+        "SKETCH boss ON FACE unknown_face\nCIRCLE 0 mm 0 mm 1 mm\nEND\n"
+        "PAD boss FROM boss DEPTH 1 mm ADD\nEND\n");
+    if (future_face.ok() || invalid_face_role.ok() || missing_alias.ok()) {
+        return fail("invalid persistent FACE references were accepted");
+    }
     const auto xz_bounds = icad::cad::analyze(*xz.ir_project).bounds;
     const auto yz_bounds = icad::cad::analyze(*yz.ir_project).bounds;
     if (xz_bounds.maximum[0] != 30.0 || xz_bounds.maximum[1] != 10.0 ||

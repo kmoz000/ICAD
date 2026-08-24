@@ -60,6 +60,51 @@ auto add_error(ParseResult& result, std::string code, std::string message, Sourc
     return token.kind == TokenKind::identifier;
 }
 
+[[nodiscard]] auto parse_qualified_name(const Line& line, std::size_t& cursor,
+                                        ParseResult& result) -> std::string {
+    if (cursor >= line.size() || !valid_identifier(line[cursor])) {
+        add_error(result, "ICAD-P0026", "expected an identifier or qualified name",
+                  cursor < line.size() ? line[cursor].location : line.front().location);
+        return {};
+    }
+    std::string name = line[cursor++].lexeme;
+    while (cursor < line.size() && line[cursor].kind == TokenKind::dot) {
+        if (cursor + 1 >= line.size() || !valid_identifier(line[cursor + 1])) {
+            add_error(result, "ICAD-P0026", "qualified name expects an identifier after '.'",
+                      line[cursor].location);
+            ++cursor;
+            return name;
+        }
+        name.push_back('.');
+        name += line[cursor + 1].lexeme;
+        cursor += 2;
+    }
+    return name;
+}
+
+[[nodiscard]] auto split_persistent_face_path(std::string_view path, std::string& feature,
+                                              std::string& role) -> bool {
+    const auto first = path.find('.');
+    const auto second = first == std::string_view::npos ? std::string_view::npos
+                                                        : path.find('.', first + 1);
+    if (first == std::string_view::npos || second == std::string_view::npos ||
+        path.find('.', second + 1) != std::string_view::npos ||
+        path.substr(first + 1, second - first - 1) != "face") {
+        return false;
+    }
+    const auto parsed_role = path.substr(second + 1);
+    if (parsed_role != "top" && parsed_role != "bottom") {
+        return false;
+    }
+    feature = std::string{path.substr(0, first)};
+    role = std::string{parsed_role};
+    return !feature.empty();
+}
+
+[[nodiscard]] auto face_role_selector(std::string_view role) -> std::string {
+    return role == "top" ? "Z_MAX" : "Z_MIN";
+}
+
 [[nodiscard]] auto parse_number(const Token& token, double& value) -> bool {
     if (token.kind != TokenKind::number) {
         return false;
@@ -245,14 +290,29 @@ auto retain_legacy_value(const ast::ScalarExpression& expression, ast::QuantityL
             continue;
         }
         if (keyword(line) == "SELECT") {
-            if (line.size() != 4 || line[1].lexeme != "EDGE" ||
-                line[2].lexeme != "NEAREST" || !valid_identifier(line[3]) ||
-                !feature.selected_edge_point.empty()) {
+            const bool nearest = line.size() == 4 && line[1].lexeme == "EDGE" &&
+                                 line[2].lexeme == "NEAREST" &&
+                                 valid_identifier(line[3]);
+            const bool semantic_loop = line.size() == 4 && line[1].lexeme == "EDGE" &&
+                                       (line[2].lexeme == "TOP" ||
+                                        line[2].lexeme == "BOTTOM") &&
+                                       (line[3].lexeme == "INNER" ||
+                                        line[3].lexeme == "OUTER");
+            const bool named_set = line.size() == 3 && line[1].lexeme == "EDGESET" &&
+                                   valid_identifier(line[2]);
+            if ((!nearest && !semantic_loop && !named_set) ||
+                !feature.selected_edge_point.empty() ||
+                !feature.selected_edge_location.empty() || !feature.selected_edge_set.empty()) {
                 add_error(result, "ICAD-P0024",
-                          "SELECT expects EDGE NEAREST POINT and may appear once",
+                          "SELECT expects EDGE NEAREST point, EDGE TOP|BOTTOM INNER|OUTER, or EDGESET name and may appear once",
                           line.front().location);
-            } else {
+            } else if (nearest) {
                 feature.selected_edge_point = line[3].lexeme;
+            } else if (semantic_loop) {
+                feature.selected_edge_location = line[2].lexeme;
+                feature.selected_edge_classification = line[3].lexeme;
+            } else {
+                feature.selected_edge_set = line[2].lexeme;
             }
             ++index;
             continue;
@@ -464,6 +524,249 @@ auto retain_legacy_value(const ast::ScalarExpression& expression, ast::QuantityL
     return profile;
 }
 
+[[nodiscard]] auto parse_sketch_shape(const Lines& lines, std::size_t& index,
+                                      ParseResult& result) -> ast::SketchShapeDecl {
+    const Line& declaration = lines[index];
+    ast::SketchShapeDecl shape;
+    shape.location = declaration.front().location;
+    constexpr std::string_view closures[]{"OPEN", "CLOSED"};
+    constexpr std::string_view roles[]{"STOCK", "ADDITIVE", "HOLE", "CONSTRUCTION"};
+    const bool valid = declaration.size() == 5 && valid_identifier(declaration[1]) &&
+                       std::ranges::find(closures, declaration[2].lexeme) != std::end(closures) &&
+                       declaration[3].lexeme == "ROLE" &&
+                       std::ranges::find(roles, declaration[4].lexeme) != std::end(roles);
+    if (!valid) {
+        add_error(result, "ICAD-P0028",
+                  "SHAPE expects NAME OPEN|CLOSED ROLE STOCK|ADDITIVE|HOLE|CONSTRUCTION",
+                  declaration.front().location);
+    } else {
+        shape.name = declaration[1].lexeme;
+        shape.closure = declaration[2].lexeme;
+        shape.role = declaration[4].lexeme;
+    }
+    ++index;
+
+    bool closed = false;
+    while (index < lines.size()) {
+        const Line& line = lines[index];
+        if (keyword(line) == "END") {
+            if (line.size() != 1) {
+                add_error(result, "ICAD-P0028", "END does not accept SHAPE arguments",
+                          line.front().location);
+            }
+            ++index;
+            closed = true;
+            break;
+        }
+        if (keyword(line) == "POINT") {
+            if (line.size() < 4 || !valid_identifier(line[1])) {
+                add_error(result, "ICAD-P0028", "SHAPE POINT expects NAME X Y [FIXED]",
+                          line.front().location);
+                ++index;
+                continue;
+            }
+            std::size_t cursor = 2;
+            ast::SketchPointDecl point;
+            point.name = line[1].lexeme;
+            point.x = parse_value(line, cursor, result);
+            point.y = parse_value(line, cursor, result);
+            point.location = line.front().location;
+            if (cursor < line.size() && line[cursor].lexeme == "FIXED") {
+                point.fixed = true;
+                ++cursor;
+            }
+            if (cursor != line.size()) {
+                add_error(result, "ICAD-P0028", "SHAPE POINT has unexpected trailing values",
+                          line[cursor].location);
+            }
+            if (std::ranges::any_of(shape.points, [&](const auto& existing) {
+                    return existing.name == point.name;
+                })) {
+                add_error(result, "ICAD-P0028", "duplicate SHAPE point name '" + point.name +
+                                                     "'",
+                          point.location);
+            }
+            shape.points.push_back(std::move(point));
+            ++index;
+            continue;
+        }
+        if (keyword(line) == "LINE" || keyword(line) == "ARC") {
+            const bool arc = keyword(line) == "ARC";
+            const bool line_shape = !arc && line.size() == 6 && valid_identifier(line[1]) &&
+                                    line[2].lexeme == "FROM" && valid_identifier(line[3]) &&
+                                    line[4].lexeme == "TO" && valid_identifier(line[5]);
+            const bool arc_shape = arc && line.size() == 9 && valid_identifier(line[1]) &&
+                                   line[2].lexeme == "FROM" && valid_identifier(line[3]) &&
+                                   line[4].lexeme == "TO" && valid_identifier(line[5]) &&
+                                   line[6].lexeme == "CENTER" && valid_identifier(line[7]) &&
+                                   (line[8].lexeme == "CW" || line[8].lexeme == "CCW");
+            if (!line_shape && !arc_shape) {
+                add_error(result, "ICAD-P0028",
+                          arc ? "SHAPE ARC expects NAME FROM POINT TO POINT CENTER POINT CW|CCW"
+                              : "SHAPE LINE expects NAME FROM POINT TO POINT",
+                          line.front().location);
+                ++index;
+                continue;
+            }
+            ast::SketchEntityDecl entity;
+            entity.name = line[1].lexeme;
+            entity.kind = arc ? ast::SketchEntityKind::circular_arc
+                              : ast::SketchEntityKind::line;
+            entity.start = line[3].lexeme;
+            entity.end = line[5].lexeme;
+            if (arc) {
+                entity.center = line[7].lexeme;
+                entity.counterclockwise = line[8].lexeme == "CCW";
+            }
+            entity.location = line.front().location;
+            const auto declared_point = [&](const std::string& name) {
+                return std::ranges::any_of(
+                    shape.points, [&](const auto& point) { return point.name == name; });
+            };
+            if (!declared_point(entity.start) || !declared_point(entity.end) ||
+                (arc && !declared_point(entity.center))) {
+                add_error(result, "ICAD-P0028",
+                          "SHAPE entities must reference points declared earlier in the SHAPE",
+                          entity.location);
+            }
+            if (entity.start == entity.end) {
+                add_error(result, "ICAD-P0028", "SHAPE entity endpoints must be different",
+                          entity.location);
+            }
+            if (std::ranges::any_of(shape.entities, [&](const auto& existing) {
+                    return existing.name == entity.name;
+                })) {
+                add_error(result, "ICAD-P0028", "duplicate SHAPE entity name '" + entity.name +
+                                                     "'",
+                          entity.location);
+            }
+            shape.entities.push_back(std::move(entity));
+            ++index;
+            continue;
+        }
+        if (keyword(line) == "CIRCLE") {
+            const bool prefix = line.size() >= 6 && valid_identifier(line[1]) &&
+                                line[2].lexeme == "CENTER" && valid_identifier(line[3]) &&
+                                line[4].lexeme == "RADIUS";
+            if (!prefix) {
+                add_error(result, "ICAD-P0028",
+                          "SHAPE CIRCLE expects NAME CENTER POINT RADIUS VALUE",
+                          line.front().location);
+                ++index;
+                continue;
+            }
+            ast::SketchEntityDecl entity;
+            entity.name = line[1].lexeme;
+            entity.kind = ast::SketchEntityKind::circle;
+            entity.center = line[3].lexeme;
+            entity.location = line.front().location;
+            std::size_t cursor = 5;
+            entity.radius = parse_value(line, cursor, result);
+            if (cursor != line.size()) {
+                add_error(result, "ICAD-P0028", "SHAPE CIRCLE has unexpected trailing values",
+                          line[cursor].location);
+            }
+            if (std::ranges::none_of(shape.points, [&](const auto& point) {
+                    return point.name == entity.center;
+                })) {
+                add_error(result, "ICAD-P0028",
+                          "SHAPE CIRCLE center must reference a point declared earlier",
+                          entity.location);
+            }
+            if (!shape.entities.empty()) {
+                add_error(result, "ICAD-P0028",
+                          "a CIRCLE SHAPE cannot contain other boundary entities",
+                          entity.location);
+            }
+            shape.entities.push_back(std::move(entity));
+            ++index;
+            continue;
+        }
+        add_error(result, "ICAD-P0028",
+                  "SHAPE accepts POINT, LINE, ARC, or CIRCLE statements",
+                  line.front().location);
+        ++index;
+    }
+    if (!closed)
+        add_error(result, "ICAD-P0028", "SHAPE block is missing END", shape.location);
+    return shape;
+}
+
+[[nodiscard]] auto parse_sketch_region(const Lines& lines, std::size_t& index,
+                                       ParseResult& result) -> ast::SketchRegionDecl {
+    const Line& declaration = lines[index];
+    ast::SketchRegionDecl region;
+    region.location = declaration.front().location;
+    if (declaration.size() != 2 || !valid_identifier(declaration[1])) {
+        add_error(result, "ICAD-P0029", "REGION expects exactly one name",
+                  declaration.front().location);
+    } else {
+        region.name = declaration[1].lexeme;
+    }
+    ++index;
+
+    bool closed = false;
+    bool holes_seen = false;
+    while (index < lines.size()) {
+        const Line& line = lines[index];
+        if (keyword(line) == "END") {
+            if (line.size() != 1)
+                add_error(result, "ICAD-P0029", "END does not accept REGION arguments",
+                          line.front().location);
+            ++index;
+            closed = true;
+            break;
+        }
+        if (keyword(line) == "OUTER") {
+            if (line.size() != 2 || !valid_identifier(line[1]) ||
+                !region.outer_shape.empty()) {
+                add_error(result, "ICAD-P0029",
+                          "REGION requires exactly one OUTER SHAPE name",
+                          line.front().location);
+            } else {
+                region.outer_shape = line[1].lexeme;
+            }
+            ++index;
+            continue;
+        }
+        if (keyword(line) == "HOLES") {
+            if (line.size() < 2 || holes_seen) {
+                add_error(result, "ICAD-P0029",
+                          "REGION accepts one HOLES line with one or more SHAPE names",
+                          line.front().location);
+            } else {
+                holes_seen = true;
+                for (std::size_t hole = 1; hole < line.size(); ++hole) {
+                    if (!valid_identifier(line[hole])) {
+                        add_error(result, "ICAD-P0029", "HOLES accepts only SHAPE names",
+                                  line[hole].location);
+                        continue;
+                    }
+                    if (std::ranges::contains(region.hole_shapes, line[hole].lexeme)) {
+                        add_error(result, "ICAD-P0029",
+                                  "duplicate REGION hole SHAPE '" + line[hole].lexeme + "'",
+                                  line[hole].location);
+                    } else {
+                        region.hole_shapes.push_back(line[hole].lexeme);
+                    }
+                }
+            }
+            ++index;
+            continue;
+        }
+        add_error(result, "ICAD-P0029", "REGION accepts OUTER and optional HOLES statements",
+                  line.front().location);
+        ++index;
+    }
+    if (!closed)
+        add_error(result, "ICAD-P0029", "REGION block is missing END", region.location);
+    if (region.outer_shape.empty())
+        add_error(result, "ICAD-P0029", "REGION requires one OUTER SHAPE", region.location);
+    if (std::ranges::contains(region.hole_shapes, region.outer_shape))
+        add_error(result, "ICAD-P0029", "REGION OUTER cannot also be a HOLE", region.location);
+    return region;
+}
+
 [[nodiscard]] auto parse_sketch(const Lines& lines, std::size_t& index, ParseResult& result)
     -> ast::SketchDecl {
     const Line& declaration = lines[index];
@@ -475,21 +778,46 @@ auto retain_legacy_value(const ast::ScalarExpression& expression, ast::QuantityL
     const bool on_plane = declaration.size() == 5 && valid_identifier(declaration[1]) &&
                           declaration[2].lexeme == "ON" && declaration[3].lexeme == "PLANE" &&
                           std::ranges::find(planes, declaration[4].lexeme) != std::end(planes);
-    const bool on_face = declaration.size() == 6 && valid_identifier(declaration[1]) &&
+    const bool on_legacy_face = declaration.size() == 6 && valid_identifier(declaration[1]) &&
                          declaration[2].lexeme == "ON" && declaration[3].lexeme == "FACE" &&
                          valid_identifier(declaration[4]) &&
                          std::ranges::find(faces, declaration[5].lexeme) != std::end(faces);
-    if (!plain && !on_plane && !on_face) {
+    const bool face_prefix = declaration.size() >= 5 && valid_identifier(declaration[1]) &&
+                             declaration[2].lexeme == "ON" &&
+                             declaration[3].lexeme == "FACE";
+    bool on_persistent_face = false;
+    bool on_face_alias = false;
+    std::string persistent_path;
+    std::string persistent_feature;
+    std::string persistent_role;
+    if (face_prefix && !on_legacy_face) {
+        std::size_t cursor = 4;
+        persistent_path = parse_qualified_name(declaration, cursor, result);
+        if (cursor == declaration.size()) {
+            on_persistent_face = split_persistent_face_path(
+                persistent_path, persistent_feature, persistent_role);
+            on_face_alias = !on_persistent_face && persistent_path.find('.') == std::string::npos;
+        }
+    }
+    if (!plain && !on_plane && !on_legacy_face && !on_persistent_face && !on_face_alias) {
         add_error(result, "ICAD-P0026",
-                  "SKETCH expects NAME, NAME ON PLANE XY|XZ|YZ, or NAME ON FACE FEATURE SELECTOR",
+                  "SKETCH expects NAME, NAME ON PLANE XY|XZ|YZ, NAME ON FACE FEATURE SELECTOR, "
+                  "or NAME ON FACE FEATURE.face.top|bottom",
                   declaration.front().location);
     } else {
         sketch.name = declaration[1].lexeme;
         if (on_plane)
             sketch.plane = declaration[4].lexeme;
-        if (on_face) {
+        if (on_legacy_face) {
             sketch.support_feature = declaration[4].lexeme;
             sketch.support_face = declaration[5].lexeme;
+        } else if (on_persistent_face) {
+            sketch.support_feature = persistent_feature;
+            sketch.support_face = face_role_selector(persistent_role);
+            sketch.support_reference = persistent_path;
+            sketch.support_topology_path = persistent_feature + "/face." + persistent_role;
+        } else if (on_face_alias) {
+            sketch.support_reference = persistent_path;
         }
     }
     ++index;
@@ -506,7 +834,75 @@ auto retain_legacy_value(const ast::ScalarExpression& expression, ast::QuantityL
             closed = true;
             break;
         }
+        if (keyword(line) == "SHAPE") {
+            if (sketch.circle || !sketch.points.empty() || !sketch.entities.empty()) {
+                add_error(result, "ICAD-P0028",
+                          "SKETCH cannot mix legacy boundary syntax with SHAPE blocks",
+                          line.front().location);
+            }
+            auto shape = parse_sketch_shape(lines, index, result);
+            if (std::ranges::any_of(sketch.shapes, [&](const auto& existing) {
+                    return existing.name == shape.name;
+                })) {
+                add_error(result, "ICAD-P0028", "duplicate SHAPE name '" + shape.name + "'",
+                          shape.location);
+            }
+            sketch.shapes.push_back(std::move(shape));
+            continue;
+        }
+        if (keyword(line) == "REGION") {
+            if (sketch.shapes.empty() || sketch.circle || !sketch.points.empty() ||
+                !sketch.entities.empty()) {
+                add_error(result, "ICAD-P0029",
+                          "REGION requires preceding SHAPE declarations in a multi-shape SKETCH",
+                          line.front().location);
+            }
+            auto region = parse_sketch_region(lines, index, result);
+            if (std::ranges::any_of(sketch.regions, [&](const auto& existing) {
+                    return existing.name == region.name;
+                })) {
+                add_error(result, "ICAD-P0029", "duplicate REGION name '" + region.name + "'",
+                          region.location);
+            }
+            const auto known_shape = [&](const std::string& name) {
+                return std::ranges::any_of(sketch.shapes,
+                                           [&](const auto& shape) { return shape.name == name; });
+            };
+            if (!region.outer_shape.empty() && !known_shape(region.outer_shape)) {
+                add_error(result, "ICAD-P0029",
+                          "REGION OUTER references unknown preceding SHAPE '" +
+                              region.outer_shape + "'",
+                          region.location);
+            }
+            for (const auto& hole : region.hole_shapes) {
+                if (!known_shape(hole))
+                    add_error(result, "ICAD-P0029",
+                              "REGION HOLES references unknown preceding SHAPE '" + hole + "'",
+                              region.location);
+            }
+            sketch.regions.push_back(std::move(region));
+            continue;
+        }
+        if (keyword(line) == "SOLVE") {
+            if (line.size() != 2 ||
+                (line[1].lexeme != "FULL" && line[1].lexeme != "ALLOW_UNDER")) {
+                add_error(result, "ICAD-P0028", "SOLVE expects FULL or ALLOW_UNDER",
+                          line.front().location);
+            } else if (!sketch.solve_requirement.empty()) {
+                add_error(result, "ICAD-P0028", "SKETCH accepts only one SOLVE requirement",
+                          line.front().location);
+            } else {
+                sketch.solve_requirement = line[1].lexeme;
+            }
+            ++index;
+            continue;
+        }
         if (keyword(line) == "POINT") {
+            if (!sketch.shapes.empty()) {
+                add_error(result, "ICAD-P0028",
+                          "SKETCH cannot mix legacy POINT syntax with SHAPE blocks",
+                          line.front().location);
+            }
             if (sketch.circle) {
                 add_error(result, "ICAD-P0026", "CIRCLE sketch cannot also contain POINT",
                           line.front().location);
@@ -536,6 +932,11 @@ auto retain_legacy_value(const ast::ScalarExpression& expression, ast::QuantityL
             continue;
         }
         if (keyword(line) == "CIRCLE") {
+            if (!sketch.shapes.empty()) {
+                add_error(result, "ICAD-P0028",
+                          "SKETCH cannot mix legacy CIRCLE syntax with SHAPE blocks",
+                          line.front().location);
+            }
             std::size_t cursor = 1;
             if (sketch.circle || !sketch.points.empty() || !sketch.entities.empty()) {
                 add_error(result, "ICAD-P0026", "SKETCH accepts one CIRCLE or a point boundary",
@@ -554,6 +955,11 @@ auto retain_legacy_value(const ast::ScalarExpression& expression, ast::QuantityL
             continue;
         }
         if (keyword(line) == "LINE" || keyword(line) == "ARC") {
+            if (!sketch.shapes.empty()) {
+                add_error(result, "ICAD-P0028",
+                          "SKETCH cannot mix legacy entity syntax with SHAPE blocks",
+                          line.front().location);
+            }
             if (sketch.circle) {
                 add_error(result, "ICAD-P0026", "CIRCLE sketch cannot also contain entities",
                           line.front().location);
@@ -622,8 +1028,7 @@ auto retain_legacy_value(const ast::ScalarExpression& expression, ast::QuantityL
                 continue;
             }
             const bool prefix = line.size() >= 5 && valid_identifier(line[1]) &&
-                                valid_identifier(line[2]) && valid_identifier(line[3]) &&
-                                valid_identifier(line[4]);
+                                valid_identifier(line[2]);
             if (!prefix) {
                 add_error(result, "ICAD-P0026",
                           "sketch CONSTRAINT expects NAME KIND and point references",
@@ -636,21 +1041,34 @@ auto retain_legacy_value(const ast::ScalarExpression& expression, ast::QuantityL
             constraint.kind = line[2].lexeme;
             constraint.location = line.front().location;
             std::size_t cursor = 3;
-            const std::size_t reference_count = constraint.kind == "ANGLE" ? 3 : 2;
-            for (std::size_t reference = 0;
-                 reference < reference_count && cursor < line.size(); ++reference, ++cursor) {
-                if (!valid_identifier(line[cursor])) {
-                    add_error(result, "ICAD-P0026", "sketch constraint expects point identifiers",
-                              line[cursor].location);
-                } else {
-                    constraint.references.push_back(line[cursor].lexeme);
+            const bool symmetric = constraint.kind == "SYMMETRIC";
+            const bool tangent = constraint.kind == "TANGENT";
+            const std::size_t reference_count =
+                constraint.kind == "ANGLE" || symmetric || tangent ? 3 : 2;
+            for (std::size_t reference = 0; reference < reference_count; ++reference) {
+                if ((symmetric || tangent) && reference == 2) {
+                    const std::string_view separator = symmetric ? "ABOUT" : "AT";
+                    if (cursor >= line.size() || line[cursor].lexeme != separator) {
+                        add_error(result, "ICAD-P0026",
+                                  std::string{symmetric ? "SYMMETRIC requires ABOUT before its axis"
+                                                        : "TANGENT requires AT before its contact point"},
+                                  line.front().location);
+                        break;
+                    }
+                    ++cursor;
                 }
+                if (cursor >= line.size())
+                    break;
+                auto name = parse_qualified_name(line, cursor, result);
+                if (!name.empty())
+                    constraint.references.push_back(std::move(name));
             }
             if (constraint.references.size() != reference_count) {
-                add_error(result, "ICAD-P0026", "sketch constraint has too few point references",
+                add_error(result, "ICAD-P0026", "sketch constraint has too few references",
                           line.front().location);
             }
-            if (constraint.kind == "DISTANCE" || constraint.kind == "ANGLE")
+            if (constraint.kind == "DISTANCE" || constraint.kind == "H_DISTANCE" ||
+                constraint.kind == "V_DISTANCE" || constraint.kind == "ANGLE")
                 constraint.target = parse_value(line, cursor, result);
             if (cursor != line.size()) {
                 add_error(result, "ICAD-P0026", "sketch constraint has unexpected trailing values",
@@ -661,13 +1079,126 @@ auto retain_legacy_value(const ast::ScalarExpression& expression, ast::QuantityL
             continue;
         }
         add_error(result, "ICAD-P0026",
-                  "SKETCH accepts CIRCLE, POINT, LINE, ARC, or CONSTRAINT statements",
+                  "SKETCH accepts SHAPE, REGION, CIRCLE, POINT, LINE, ARC, CONSTRAINT, or SOLVE statements",
                   line.front().location);
         ++index;
     }
     if (!closed)
         add_error(result, "ICAD-P0026", "sketch block is missing END", sketch.location);
     return sketch;
+}
+
+[[nodiscard]] auto parse_topology_selection(const Lines& lines, std::size_t& index,
+                                             ParseResult& result)
+    -> ast::TopologySelectionDecl {
+    const Line& declaration = lines[index];
+    ast::TopologySelectionDecl selection;
+    selection.location = declaration.front().location;
+    if (declaration.size() != 2 || !valid_identifier(declaration[1])) {
+        add_error(result, "ICAD-P0031", "SELECTION expects exactly one identifier",
+                  declaration.front().location);
+    } else {
+        selection.name = declaration[1].lexeme;
+    }
+    ++index;
+
+    bool source_seen = false;
+    bool query_seen = false;
+    bool loop_seen = false;
+    bool circular_seen = false;
+    bool convexity_seen = false;
+    bool adjacency_seen = false;
+    bool closed = false;
+    while (index < lines.size()) {
+        const Line& line = lines[index];
+        if (keyword(line) == "END") {
+            if (line.size() != 1)
+                add_error(result, "ICAD-P0031", "END does not accept arguments",
+                          line.front().location);
+            ++index;
+            closed = true;
+            break;
+        }
+        if (keyword(line) == "FROM") {
+            if (source_seen || line.size() != 2 || !valid_identifier(line[1])) {
+                add_error(result, "ICAD-P0031",
+                          "SELECTION FROM expects one source feature and may appear once",
+                          line.front().location);
+            } else {
+                selection.source_feature = line[1].lexeme;
+                source_seen = true;
+            }
+            ++index;
+            continue;
+        }
+        if (keyword(line) == "EDGES") {
+            if (query_seen || line.size() != 2 || line[1].lexeme != "WHERE") {
+                add_error(result, "ICAD-P0031",
+                          "SELECTION supports one EDGES WHERE query",
+                          line.front().location);
+            } else {
+                query_seen = true;
+            }
+            ++index;
+            continue;
+        }
+        if (keyword(line) == "LOOP") {
+            if (loop_seen || line.size() != 1)
+                add_error(result, "ICAD-P0031", "LOOP may appear once without arguments",
+                          line.front().location);
+            loop_seen = true;
+            ++index;
+            continue;
+        }
+        if (keyword(line) == "CIRCULAR") {
+            if (circular_seen || line.size() != 1)
+                add_error(result, "ICAD-P0031", "CIRCULAR may appear once without arguments",
+                          line.front().location);
+            circular_seen = true;
+            ++index;
+            continue;
+        }
+        if (keyword(line) == "CONCAVE" || keyword(line) == "CONVEX") {
+            if (convexity_seen || line.size() != 1) {
+                add_error(result, "ICAD-P0031",
+                          "edge-loop query expects exactly one CONCAVE or CONVEX predicate",
+                          line.front().location);
+            } else {
+                selection.convexity = std::string{keyword(line)};
+                convexity_seen = true;
+            }
+            ++index;
+            continue;
+        }
+        if (keyword(line) == "ADJACENT_TO") {
+            const bool valid = !adjacency_seen && line.size() == 3 &&
+                               line[1].lexeme == "FACE" &&
+                               (line[2].lexeme == "top" || line[2].lexeme == "bottom");
+            if (!valid) {
+                add_error(result, "ICAD-P0031",
+                          "ADJACENT_TO expects FACE top|bottom and may appear once",
+                          line.front().location);
+            } else {
+                selection.adjacent_face = line[2].lexeme == "top" ? "TOP" : "BOTTOM";
+                adjacency_seen = true;
+            }
+            ++index;
+            continue;
+        }
+        add_error(result, "ICAD-P0031",
+                  "SELECTION accepts FROM, EDGES WHERE, LOOP, CIRCULAR, CONCAVE|CONVEX, and ADJACENT_TO FACE top|bottom",
+                  line.front().location);
+        ++index;
+    }
+    if (!closed)
+        add_error(result, "ICAD-P0031", "SELECTION block is missing END", selection.location);
+    if (!source_seen || !query_seen || !loop_seen || !circular_seen || !convexity_seen ||
+        !adjacency_seen) {
+        add_error(result, "ICAD-P0031",
+                  "SELECTION requires FROM, EDGES WHERE, LOOP, CIRCULAR, convexity, and face adjacency",
+                  selection.location);
+    }
+    return selection;
 }
 
 [[nodiscard]] auto parse_body(const Lines& lines, std::size_t& index, ParseResult& result)
@@ -710,6 +1241,63 @@ auto retain_legacy_value(const ast::ScalarExpression& expression, ast::QuantityL
             body.features.push_back(parse_feature(lines, index, result));
             continue;
         }
+        if (keyword(line) == "SELECTION") {
+            auto selection = parse_topology_selection(lines, index, result);
+            if (std::ranges::any_of(body.topology_selections, [&](const auto& existing) {
+                    return existing.name == selection.name;
+                })) {
+                add_error(result, "ICAD-P0031",
+                          "duplicate SELECTION name '" + selection.name + "'",
+                          selection.location);
+            }
+            if (std::ranges::none_of(body.features, [&](const auto& feature) {
+                    return feature.name == selection.source_feature;
+                })) {
+                add_error(result, "ICAD-P0031",
+                          "SELECTION FROM must reference an earlier feature in the BODY",
+                          selection.location);
+            }
+            body.topology_selections.push_back(std::move(selection));
+            continue;
+        }
+        if (keyword(line) == "FACE") {
+            ast::FaceReferenceDecl reference;
+            reference.location = line.front().location;
+            const bool prefix = line.size() >= 6 && valid_identifier(line[1]) &&
+                                line[2].lexeme == "FROM";
+            std::size_t cursor = 3;
+            std::string path;
+            if (prefix)
+                path = parse_qualified_name(line, cursor, result);
+            if (!prefix || cursor != line.size() ||
+                !split_persistent_face_path(path, reference.feature, reference.role)) {
+                add_error(result, "ICAD-P0030",
+                          "FACE expects NAME FROM FEATURE.face.top|bottom",
+                          line.front().location);
+                ++index;
+                continue;
+            }
+            reference.name = line[1].lexeme;
+            reference.topology_path = body.name + "/" + reference.feature + "/face." +
+                                      reference.role;
+            if (std::ranges::any_of(body.face_references, [&](const auto& existing) {
+                    return existing.name == reference.name;
+                })) {
+                add_error(result, "ICAD-P0030",
+                          "duplicate FACE reference name '" + reference.name + "'",
+                          reference.location);
+            }
+            if (std::ranges::none_of(body.features, [&](const auto& feature) {
+                    return feature.name == reference.feature;
+                })) {
+                add_error(result, "ICAD-P0030",
+                          "FACE reference must select an earlier feature in the BODY",
+                          reference.location);
+            }
+            body.face_references.push_back(std::move(reference));
+            ++index;
+            continue;
+        }
         if (keyword(line) == "SKETCH") {
             const bool explicit_support = line.size() >= 5 && line[2].lexeme == "ON";
             auto sketch = parse_sketch(lines, index, result);
@@ -717,6 +1305,23 @@ auto retain_legacy_value(const ast::ScalarExpression& expression, ast::QuantityL
                 add_error(result, "ICAD-P0027",
                           "BODY SKETCH requires ON PLANE or ON FACE support",
                           sketch.location);
+            }
+            if (!sketch.support_reference.empty() && sketch.support_feature.empty()) {
+                const auto reference = std::ranges::find(
+                    body.face_references, sketch.support_reference,
+                    &ast::FaceReferenceDecl::name);
+                if (reference == body.face_references.end()) {
+                    add_error(result, "ICAD-P0030",
+                              "face-attached SKETCH references an unknown prior FACE alias '" +
+                                  sketch.support_reference + "'",
+                              sketch.location);
+                } else {
+                    sketch.support_feature = reference->feature;
+                    sketch.support_face = face_role_selector(reference->role);
+                    sketch.support_topology_path = reference->topology_path;
+                }
+            } else if (!sketch.support_topology_path.empty()) {
+                sketch.support_topology_path = body.name + "/" + sketch.support_topology_path;
             }
             if (sketch.support_feature.empty() == false &&
                 std::ranges::none_of(body.features, [&](const auto& feature) {
@@ -739,17 +1344,21 @@ auto retain_legacy_value(const ast::ScalarExpression& expression, ast::QuantityL
             const bool pad = keyword(line) == "PAD";
             const std::size_t minimum_tokens = pad ? 7 : 6;
             const bool prefix = line.size() >= minimum_tokens && valid_identifier(line[1]) &&
-                                line[2].lexeme == "FROM" && valid_identifier(line[3]) &&
-                                line[4].lexeme == "DEPTH";
-            std::size_t cursor = 5;
-            if (!prefix) {
+                                line[2].lexeme == "FROM";
+            std::size_t cursor = 3;
+            std::string profile;
+            if (prefix)
+                profile = parse_qualified_name(line, cursor, result);
+            if (!prefix || profile.empty() || cursor >= line.size() ||
+                line[cursor].lexeme != "DEPTH") {
                 add_error(result, "ICAD-P0027",
-                          pad ? "PAD expects NAME FROM SKETCH DEPTH VALUE NEW|ADD"
-                              : "POCKET expects NAME FROM SKETCH DEPTH VALUE",
+                          pad ? "PAD expects NAME FROM SKETCH[.SHAPE] DEPTH VALUE NEW|ADD"
+                              : "POCKET expects NAME FROM SKETCH[.SHAPE] DEPTH VALUE",
                           line.front().location);
                 ++index;
                 continue;
             }
+            ++cursor;
             auto depth = parse_value(line, cursor, result);
             std::string operation;
             if (pad && cursor < line.size())
@@ -759,17 +1368,47 @@ auto retain_legacy_value(const ast::ScalarExpression& expression, ast::QuantityL
                           pad ? "PAD must end with NEW or ADD" : "POCKET has trailing values",
                           line.front().location);
             }
-            const auto sketch = std::ranges::find(body.sketches, line[3].lexeme,
+            const auto separator = profile.find('.');
+            const std::string sketch_name = profile.substr(0, separator);
+            const auto sketch = std::ranges::find(body.sketches, sketch_name,
                                                   &ast::SketchDecl::name);
             if (sketch == body.sketches.end()) {
                 add_error(result, "ICAD-P0027", "history operation references unknown prior SKETCH",
+                          line.front().location);
+            } else if (separator != std::string::npos) {
+                const auto member_name = profile.substr(separator + 1);
+                const bool shape_member =
+                    std::ranges::any_of(sketch->shapes, [&](const auto& shape) {
+                        return shape.name == member_name;
+                    });
+                const bool region_member =
+                    std::ranges::any_of(sketch->regions, [&](const auto& region) {
+                        return region.name == member_name;
+                    });
+                if (!shape_member && !region_member) {
+                    add_error(result, "ICAD-P0027",
+                              "history operation references unknown SHAPE or REGION '" +
+                                  member_name + "'",
+                              line.front().location);
+                }
+            } else if (!sketch->shapes.empty()) {
+                add_error(result, "ICAD-P0027",
+                          "multi-shape SKETCH operations must select SKETCH.SHAPE explicitly",
                           line.front().location);
             }
             ast::FeatureDecl feature;
             feature.name = line[1].lexeme;
             feature.source_keyword = pad ? "PAD" : "POCKET";
             feature.type = "EXTRUDE";
-            feature.profile = line[3].lexeme;
+            feature.profile = profile;
+            if (sketch != body.sketches.end() && separator != std::string::npos) {
+                const auto member_name = profile.substr(separator + 1);
+                if (std::ranges::any_of(sketch->regions, [&](const auto& region) {
+                        return region.name == member_name;
+                    })) {
+                    feature.region = profile;
+                }
+            }
             feature.operation = pad ? (operation == "NEW" ? "NEW" : "UNION") : "CUT";
             feature.location = line.front().location;
             ast::PropertyDecl height;
@@ -782,13 +1421,15 @@ auto retain_legacy_value(const ast::ScalarExpression& expression, ast::QuantityL
                 feature.sketch_plane = sketch->plane;
                 feature.support_feature = sketch->support_feature;
                 feature.support_face = sketch->support_face;
+                feature.support_reference = sketch->support_reference;
+                feature.support_topology_path = sketch->support_topology_path;
             }
             body.features.push_back(std::move(feature));
             ++index;
             continue;
         }
         add_error(result, "ICAD-P0006",
-                  "BODY accepts MATERIAL, SKETCH, PAD, POCKET, and FEATURE statements only",
+                  "BODY accepts MATERIAL, FACE, SELECTION, SKETCH, PAD, POCKET, and FEATURE statements only",
                   line.front().location);
         ++index;
     }
@@ -798,13 +1439,45 @@ auto retain_legacy_value(const ast::ScalarExpression& expression, ast::QuantityL
     }
     for (const auto& sketch : body.sketches) {
         const bool consumed = std::ranges::any_of(body.features, [&](const auto& feature) {
+            const auto separator = feature.profile.find('.');
+            const auto source_sketch = feature.profile.substr(0, separator);
             return feature.location.line > sketch.location.line &&
-                   (feature.profile == sketch.name || feature.target_profile == sketch.name);
+                   (source_sketch == sketch.name || feature.target_profile == sketch.name);
         });
         if (!consumed) {
             add_error(result, "ICAD-P0027",
                       "BODY SKETCH '" + sketch.name + "' must feed a later operation",
                       sketch.location);
+        }
+        for (const auto& shape : sketch.shapes) {
+            if (shape.role == "CONSTRUCTION")
+                continue;
+            const auto reference = sketch.name + "." + shape.name;
+            const bool directly_consumed = std::ranges::any_of(
+                body.features, [&](const auto& feature) { return feature.profile == reference; });
+            const bool region_consumed = std::ranges::any_of(sketch.regions, [&](const auto& region) {
+                const bool contains = region.outer_shape == shape.name ||
+                                      std::ranges::contains(region.hole_shapes, shape.name);
+                const auto region_reference = sketch.name + "." + region.name;
+                return contains && std::ranges::any_of(body.features, [&](const auto& feature) {
+                           return feature.region == region_reference;
+                       });
+            });
+            if (!directly_consumed && !region_consumed) {
+                add_error(result, "ICAD-P0027",
+                          "SHAPE '" + reference + "' must feed a later operation",
+                          shape.location);
+            }
+        }
+        for (const auto& region : sketch.regions) {
+            const auto reference = sketch.name + "." + region.name;
+            if (std::ranges::none_of(body.features, [&](const auto& feature) {
+                    return feature.region == reference;
+                })) {
+                add_error(result, "ICAD-P0027",
+                          "REGION '" + reference + "' must feed a later operation",
+                          region.location);
+            }
         }
     }
     return body;

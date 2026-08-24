@@ -88,7 +88,7 @@ auto LiveSession::preview(std::string_view source) -> PreviewResult {
         result.message = "incremental preview did not produce a delivery model";
         return result;
     }
-    result.model_json = scene::web_model_json(*compilation.ir_project, *incremental.model);
+    result.model_json = scene::render_model_json(*compilation.ir_project, *incremental.model);
     if (result.model_json.empty()) {
         result.message = "live preview model serialization failed";
         return result;
@@ -122,7 +122,7 @@ auto LiveSession::preview(std::string_view source) -> PreviewResult {
             import_stamps_.emplace_back(dependency, timestamp);
     }
     last_preview_ = result;
-    // The webview already owns the mounted model. Retain only compact metadata
+    // The native viewport already owns the uploaded model. Retain only compact metadata
     // for unchanged-source responses instead of duplicating a potentially huge
     // mesh payload in the session cache.
     last_preview_.model_json.clear();

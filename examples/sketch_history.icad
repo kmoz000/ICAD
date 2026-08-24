@@ -1,10 +1,13 @@
 # A CAD-designer-style parametric history: sketch, pad, face sketch, pad, face sketch, pocket.
+REQUIRES ICAD 1.0
+REQUIRES CAPABILITY PARAMETER_EXPRESSIONS_V1
+REQUIRES CAPABILITY QUALIFIED_VALUE_REFERENCES_V1
 PROJECT sketch_history
 UNITS mm
 
-PARAMETER base_depth 12 mm
-PARAMETER boss_depth 20 mm
-PARAMETER bore_depth 20 mm
+PARAMETER base_depth 6 mm * 2
+PARAMETER boss_depth base_depth + 8 mm
+PARAMETER bore_depth sketch_history.boss_depth
 
 MATERIAL finish ALUMINUM
 

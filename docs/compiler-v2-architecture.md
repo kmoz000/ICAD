@@ -6,8 +6,27 @@ Status: **proposed architecture**. It explains how the
 current compiler continues to follow [grammar/icad.ebnf](../grammar/icad.ebnf)
 until individual capability gates land.
 
+The first expression slice is implemented and capability-gated as
+`PARAMETER_EXPRESSIONS_V1` and `QUALIFIED_VALUE_REFERENCES_V1`. It provides
+typed scalar arithmetic for parameters, angles, and feature properties with
+deterministic dependency and cycle diagnostics. General topology paths,
+selectors, derived dimensions, and the full v2 expression system remain
+proposals until separately advertised.
+
+The first sketch-workspace slice is also implemented and capability-gated as
+`MULTI_SHAPE_SKETCH_V1`. It lowers independently named line/arc/circle paths
+to explicit region profiles, validates closure/intersection/containment, applies
+qualified cross-shape constraints, enforces optional full constraint status,
+and preserves shape provenance through features and `visual.json`.
+`SKETCH_REGION_ARRANGEMENT_V1` now lowers explicit outer/hole arrangements into
+one feature dependency and one native boolean transaction.
+`ADVANCED_SKETCH_CONSTRAINTS_V1` adds point dimensions, line relationships,
+circular relationships, midpoint, and symmetry residuals to the owned numeric
+solver. General role selectors, richer curves, tangency, and persistent
+generated topology IDs remain proposed.
+
 ICAD v2 should be one native, repository-owned modeling engine with several
-thin clients. The CLI, MCP server, LSP, desktop viewer, web viewer, exporters,
+thin clients. The CLI, MCP server, LSP, native desktop viewer, exporters,
 and tests all call the same public engine API. None may reinterpret source or
 construct private geometry.
 

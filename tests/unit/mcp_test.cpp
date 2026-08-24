@@ -190,6 +190,16 @@ auto main() -> int {
         !serialized.contains("\"CAPABILITY_NEGOTIATION\"") ||
         !serialized.contains("\"PARAMETER_EXPRESSIONS_V1\"") ||
         !serialized.contains("\"QUALIFIED_VALUE_REFERENCES_V1\"") ||
+        !serialized.contains("\"MULTI_SHAPE_SKETCH_V1\"") ||
+        !serialized.contains("\"SKETCH_REGION_ARRANGEMENT_V1\"") ||
+        !serialized.contains("\"ADVANCED_SKETCH_CONSTRAINTS_V1\"") ||
+        !serialized.contains("\"SKETCH_LINE_ARC_TANGENCY_V1\"") ||
+        !serialized.contains("\"SEMANTIC_EDGE_LOOP_SELECTION_V1\"") ||
+        !serialized.contains("\"TOPOLOGY_QUERY_V1\"") ||
+        !serialized.contains("TANGENT line arc AT shared_point") ||
+        !serialized.contains("TOP|BOTTOM INNER|OUTER") ||
+        !serialized.contains("SELECT EDGESET name") ||
+        !serialized.contains("matched topology ID") ||
         !serialized.contains("\"BODY_HISTORY\"") ||
         !serialized.contains("\"name\":\"icad.distance\"") ||
         !serialized.contains("\"schema\":\"icad.distance.v1\"") ||
@@ -229,7 +239,7 @@ auto main() -> int {
     }
     for (const std::string_view suffix :
          {".step", ".assembly.step", ".obj", ".stl", ".gltf", ".glb", ".3mf",
-          ".scene.json", ".html", ".bom.json", ".manufacturing.json", ".drawing.svg",
+          ".scene.json", ".bom.json", ".manufacturing.json", ".drawing.svg",
           ".drawing.dxf", ".topology.json"}) {
         if (!std::filesystem::exists(workspace / "artifacts" /
                                      ("mcp_part" + std::string{suffix}))) {

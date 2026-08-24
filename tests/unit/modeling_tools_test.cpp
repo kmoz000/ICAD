@@ -4,8 +4,10 @@
 #include "icad/compiler/compiler.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <iostream>
+#include <string>
 #include <string_view>
 
 namespace {
@@ -120,5 +122,70 @@ auto main() -> int {
         "SELECT EDGE NEAREST missing\nRADIUS 1 mm\nEND\nEND\n");
     if (unknown_selector.ok() || !has_code(unknown_selector, "ICAD-S0035"))
         return fail("semantic analysis accepted an unknown edge selector point");
+    const auto invalid_loop_selector = icad::compiler::compile(
+        "PROJECT invalid\nUNITS mm\nBODY b\nFEATURE stock\nTYPE BOX\nWIDTH 2 mm\n"
+        "DEPTH 2 mm\nHEIGHT 2 mm\nEND\nFEATURE f\nTYPE FILLET\n"
+        "SELECT EDGE SIDE INNER\nRADIUS 1 mm\nEND\nEND\n");
+    if (invalid_loop_selector.ok() || !has_code(invalid_loop_selector, "ICAD-P0024"))
+        return fail("parser accepted an unsupported semantic edge-loop selector");
+
+    struct SemanticLoopCase {
+        std::string_view body;
+        std::string_view operation;
+        std::string_view location;
+        std::string_view classification;
+    };
+    constexpr std::array semantic_loop_cases{
+        SemanticLoopCase{"top_inner_fillet", "FILLET", "TOP", "INNER"},
+        SemanticLoopCase{"top_outer_fillet", "FILLET", "TOP", "OUTER"},
+        SemanticLoopCase{"bottom_inner_fillet", "FILLET", "BOTTOM", "INNER"},
+        SemanticLoopCase{"bottom_outer_fillet", "FILLET", "BOTTOM", "OUTER"},
+        SemanticLoopCase{"top_inner_chamfer", "CHAMFER", "TOP", "INNER"},
+        SemanticLoopCase{"top_outer_chamfer", "CHAMFER", "TOP", "OUTER"},
+        SemanticLoopCase{"bottom_inner_chamfer", "CHAMFER", "BOTTOM", "INNER"},
+        SemanticLoopCase{"bottom_outer_chamfer", "CHAMFER", "BOTTOM", "OUTER"},
+    };
+    std::string semantic_source =
+        "REQUIRES ICAD 1.0\n"
+        "REQUIRES CAPABILITY MULTI_SHAPE_SKETCH_V1\n"
+        "REQUIRES CAPABILITY SKETCH_REGION_ARRANGEMENT_V1\n"
+        "REQUIRES CAPABILITY SEMANTIC_EDGE_LOOP_SELECTION_V1\n"
+        "PROJECT semantic_loop_matrix\nUNITS mm\n";
+    for (const auto& test_case : semantic_loop_cases) {
+        semantic_source += "BODY " + std::string{test_case.body} +
+                           "\nSKETCH annulus ON PLANE XY\n"
+                           "SHAPE outside CLOSED ROLE STOCK\n"
+                           "POINT center 0 mm 0 mm FIXED\n"
+                           "CIRCLE rim CENTER center RADIUS 20 mm\nEND\n"
+                           "SHAPE inside CLOSED ROLE HOLE\n"
+                           "POINT center 0 mm 0 mm FIXED\n"
+                           "CIRCLE rim CENTER center RADIUS 15 mm\nEND\n"
+                           "REGION wall\nOUTER outside\nHOLES inside\nEND\n"
+                           "SOLVE FULL\nEND\n"
+                           "PAD wall_solid FROM annulus.wall DEPTH 30 mm NEW\n"
+                           "FEATURE edge_finish\nTYPE " + std::string{test_case.operation} +
+                           "\nSELECT EDGE " + std::string{test_case.location} + " " +
+                           std::string{test_case.classification} + "\n" +
+                           (test_case.operation == "FILLET" ? "RADIUS" : "DISTANCE") +
+                           " 2 mm\nEND\nEND\n";
+    }
+    const auto semantic_loops = icad::compiler::compile(semantic_source);
+    if (!semantic_loops.ok() || !semantic_loops.topology_model ||
+        semantic_loops.topology_model->solids.size() != semantic_loop_cases.size()) {
+        return fail("semantic edge-loop operation matrix did not compile eight solids");
+    }
+    const auto semantic_validation =
+        icad::cad::validate_topology(*semantic_loops.topology_model);
+    if (!semantic_validation.valid())
+        return fail("semantic edge-loop operation matrix produced invalid topology");
+    const auto semantic_inspection = icad::ai::project_json(*semantic_loops.ir_project);
+    for (const auto& test_case : semantic_loop_cases) {
+        const std::string provenance = "semantic " + std::string{test_case.location} + " " +
+                                       std::string{test_case.classification} +
+                                       " circular edge loop for native " +
+                                       std::string{test_case.operation};
+        if (!semantic_inspection.contains(provenance))
+            return fail("agent inspection omitted a semantic edge-loop operation");
+    }
     return 0;
 }

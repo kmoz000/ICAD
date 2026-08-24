@@ -62,9 +62,10 @@ auto main() -> int {
     if (!saved.success || persisted != changed)
         return fail("live editor save did not persist source atomically");
     const auto package = session.export_package(changed, root / "exported");
-    if (!package.success || package.artifacts != 16 || package.components != 1 ||
+    if (!package.success || package.artifacts != 13 || package.components != 1 ||
         package.solids != 1 || !std::filesystem::exists(root / "exported/live.step") ||
-        !std::filesystem::exists(root / "exported/live.html"))
+        !std::filesystem::exists(root / "exported/live.scene.json") ||
+        std::filesystem::exists(root / "exported/live.html"))
         return fail("live viewer did not export the complete artifact package");
     return 0;
 }

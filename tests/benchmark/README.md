@@ -24,6 +24,29 @@ The sketch-history case executes a datum-plane pad, a face-attached additive
 pad, and a face-attached circular pocket. It locks the complete 100 x 60 x 32 mm
 envelope, agent-readable feature history, manifold solid, and STEP/STL
 read-back so coplanar face operations cannot silently discard the base solid.
+The multi-shape plate case classifies one stock region and four contained hole
+regions from one sketch, consumes each through explicit `sketch.shape` history,
+batches the four compatible pocket cutters into one boolean transaction, and
+locks the 100 x 60 x 8 mm envelope, 45,502.8 mm3 volume, visual shape evidence,
+and STEP/STL read-back.
+The explicit-region plate case groups one stock outline and two hole shapes
+into one `REGION`, consumes it with one PAD, checks net analytic volume,
+requires the region dependency/visual contract, and structurally reads back
+the resulting STEP and STL solid.
+The persistent-face plate case names an earlier planar cap, reuses that alias
+for an additive feature, consumes a direct cap path for a pocket, and validates
+canonical topology provenance plus STEP/STL read-back.
+The rounded-tangent plate case locks four explicit shared-endpoint line/arc
+constraints, zero remaining sketch degrees of freedom, an 80 x 20 x 8 mm
+capsule envelope, agent-visible tangency references, and STEP/STL read-back.
+The selective-round vessel case creates two annular solids from explicit sketch
+regions, selects top concave and convex circular rims independently, applies
+native fillets, exposes FILLET/CHAMFER applicability, and reads both solids
+back from STEP and STL.
+The topology-query vessel promotes that same native operation into a named,
+typed `SELECTION`, verifies the stable matched topology ID, query reason,
+operation applicability and rejection reasons, dependency provenance, native
+topology, and one-solid STEP/STL read-back.
 The incremental case compiles a two-body dependency graph, proves full reuse on
 an unchanged source, and then changes one parameter while requiring exactly one
 dirty body recomputation and one cached topology reuse.

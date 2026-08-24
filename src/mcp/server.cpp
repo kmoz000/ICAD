@@ -327,7 +327,11 @@ auto send(std::ostream& output, const json::Value& message) -> void {
         "ICAD source is line-oriented. Optional REQUIRES ICAD 1.0 and REQUIRES CAPABILITY "
         "name declarations must appear before PROJECT; use the returned capabilities array "
         "and never emit an unadvertised construct. Start with PROJECT name and UNITS mm. "
-        "Declare PARAMETER name quantity and MATERIAL symbol PRESET. Spatial mechanism source "
+        "PARAMETER and ANGLE declarations accept scalar arithmetic with parentheses; + and - "
+        "require matching dimensions, while * and / support the advertised scalar-expression "
+        "rules. References may be local names or project-qualified names such as robot.width. "
+        "Feature scalar properties accept the same expressions. Declare MATERIAL symbol PRESET. "
+        "Spatial mechanism source "
         "uses ANGLE name quantity, POINT3 name X Y Z where coordinates may reference compatible "
         "parameters, normalized VECTOR name X Y Z, derived POINT3 name FROM point ALONG vector "
         "DISTANCE value, derived VECTOR name FROM point TO point, axis-angle VECTOR name ROTATE "
@@ -343,7 +347,20 @@ auto send(std::ostream& output, const json::Value& message) -> void {
         "PLANE XY|XZ|YZ, then PAD feature FROM sketch DEPTH value NEW; attach later sketches "
         "with SKETCH name ON FACE earlier-feature X_MIN|X_MAX|Y_MIN|Y_MAX|Z_MIN|Z_MAX, then "
         "PAD feature FROM sketch DEPTH value ADD or POCKET feature FROM sketch DEPTH value. "
-        "A sketch is either one CIRCLE or a named point boundary with optional constraints. "
+        "With MULTI_SHAPE_SKETCH_V1, a sketch may instead contain named SHAPE blocks declared "
+        "OPEN or CLOSED with STOCK, ADDITIVE, HOLE, or CONSTRUCTION roles. Each SHAPE contains "
+        "named POINT and LINE or ARC entities, or one named CIRCLE with CENTER and RADIUS. "
+        "PAD and POCKET select sketch.shape explicitly; SOLVE FULL requires zero remaining DOF. "
+        "HOLE regions must be contained by exactly one STOCK or ADDITIVE region. The v1 slice "
+        "does not support role selectors, ellipses, or splines. With "
+        "SKETCH_REGION_ARRANGEMENT_V1, declare REGION name with one OUTER shape and optional "
+        "HOLES shape names, then consume sketch.region with PAD or POCKET; the engine evaluates "
+        "its holes in one native boolean transaction. With ADVANCED_SKETCH_CONSTRAINTS_V1, "
+        "use H_DISTANCE, V_DISTANCE, PARALLEL, PERPENDICULAR, EQUAL_LENGTH, CONCENTRIC, "
+        "EQUAL_RADIUS, MIDPOINT, and SYMMETRIC point point ABOUT line in addition to the base "
+        "constraint family. With SKETCH_LINE_ARC_TANGENCY_V1, use TANGENT line arc AT "
+        "shared_point for a line and non-full-circle arc that share that endpoint. "
+        "A legacy sketch is either one CIRCLE or a named point boundary with constraints. "
         "Every BODY-local sketch requires an explicit ON support and a later consuming operation. "
         "Its canonical agent-visible identifier is body::sketch, so local sketch names may repeat "
         "across bodies. PAD and POCKET commands remain distinct in visual feature history. "
@@ -354,8 +371,16 @@ auto send(std::ostream& output, const json::Value& message) -> void {
         "REVOLVE, SWEEP, LOFT, or FREEFORM. SWEEP uses PROFILE and a PATH of at least two "
         "named POINT3 values. LOFT adds TARGET_PROFILE and HEIGHT. FREEFORM adds TWIST and "
         "COUNT sections. Ordered operands use OPERATION UNION, CUT, or INTERSECT. Modeling "
-        "modifiers are CHAMFER or FILLET with SELECT EDGE NEAREST point, LINEAR_PATTERN with "
-        "DIRECTION vector, COUNT integer, and SPACING, and MIRROR with PLANE point NORMAL vector. "
+        "modifiers are CHAMFER or FILLET with SELECT EDGE NEAREST point. With "
+        "SEMANTIC_EDGE_LOOP_SELECTION_V1, circular annular results also accept SELECT EDGE "
+        "TOP|BOTTOM INNER|OUTER; visual feedback reports that stable selection and its currently "
+        "applicable FILLET and CHAMFER operations. With TOPOLOGY_QUERY_V1, declare SELECTION "
+        "name, FROM source_feature, EDGES WHERE, LOOP, CIRCULAR, CONCAVE|CONVEX, and "
+        "ADJACENT_TO FACE top|bottom, then consume it with SELECT EDGESET name. The source must "
+        "be an annular REGION extrusion and its modifier must immediately follow it; visual "
+        "feedback includes the matched topology ID, match reason, allowed operations, and "
+        "rejection reasons. LINEAR_PATTERN uses DIRECTION vector, COUNT "
+        "integer, and SPACING; MIRROR uses PLANE point NORMAL vector. "
         "EXTRUDE preserves analytic path arcs and circles. Full REVOLVE accepts line, arc, or "
         "circle profiles; curved results use validated faceted topology. Profiles are referenced "
         "with PROFILE name. Every physical "
@@ -395,6 +420,9 @@ auto send(std::ostream& output, const json::Value& message) -> void {
                              "examples/robotic_arm.icad", "examples/boolean_showcase.icad",
                              "examples/modeling_tools.icad", "examples/advanced_surfaces.icad",
                              "examples/constrained_sketch.icad", "examples/sketch_history.icad",
+                             "examples/rounded_tangent_plate.icad",
+                             "examples/selective_round_vessel.icad",
+                             "examples/topology_query_vessel.icad",
                              "examples/assembly_instances.icad",
                              "examples/assembly_semantics.icad"})}}));
 }

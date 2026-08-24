@@ -55,11 +55,39 @@ namespace {
     return result;
 }
 
+auto write_topology_selection(std::ostringstream& output,
+                              const compiler::ir::TopologySelection& selection) -> void {
+    output << "{\"name\":" << quoted(selection.name)
+           << ",\"sourceFeature\":" << quoted(selection.source_feature)
+           << ",\"kind\":" << quoted(selection.entity_kind)
+           << ",\"geometry\":" << quoted(selection.geometry)
+           << ",\"predicates\":{\"loop\":true,\"convexity\":"
+           << quoted(selection.convexity) << ",\"adjacentFace\":"
+           << quoted(selection.adjacent_face) << "},\"matchedTopologyId\":"
+           << quoted(selection.topology_id)
+           << ",\"matchReason\":\"matched one circular "
+           << (selection.convexity == "CONCAVE" ? "concave" : "convex")
+           << " edge loop adjacent to the "
+           << (selection.adjacent_face == "TOP" ? "top" : "bottom")
+           << " face of the source feature\",\"applicability\":{\"allowed\":[\"FILLET\",\"CHAMFER\"],"
+              "\"rejected\":[{\"operation\":\"SHELL\",\"reason\":\"requires a body or face selection\"},"
+              "{\"operation\":\"OFFSET_FACE\",\"reason\":\"requires a face selection\"},"
+              "{\"operation\":\"SPLIT\",\"reason\":\"requires a plane or surface tool\"}]}}";
+}
+
 [[nodiscard]] auto feature_count(const compiler::ir::Project& project) -> std::size_t {
     std::size_t count = 0;
     for (const auto& body : project.bodies) {
         count += body.features.size();
     }
+    return count;
+}
+
+[[nodiscard]] auto topology_selection_count(const compiler::ir::Project& project)
+    -> std::size_t {
+    std::size_t count = 0;
+    for (const auto& body : project.bodies)
+        count += body.topology_selections.size();
     return count;
 }
 
@@ -965,6 +993,91 @@ auto visual_snapshot_json(const compiler::ir::Project& project) -> std::string {
             output << ',';
         write_snapshot_view(output, model, bodies, snapshot_views[index]);
     }
+    output << "],\"parameters\":[";
+    for (std::size_t index = 0; index < project.parameters.size(); ++index) {
+        if (index != 0)
+            output << ',';
+        const auto& parameter = project.parameters[index];
+        output << "{\"name\":" << quoted(parameter.name) << ",\"value\":"
+               << parameter.value.value << ",\"unit\":" << quoted(parameter.value.unit)
+               << ",\"expression\":" << quoted(parameter.expression)
+               << ",\"dependencies\":[";
+        for (std::size_t dependency = 0; dependency < parameter.dependencies.size();
+             ++dependency) {
+            if (dependency != 0)
+                output << ',';
+            output << quoted(parameter.dependencies[dependency]);
+        }
+        output << "]}";
+    }
+    output << "],\"sketches\":[";
+    for (std::size_t sketch_index = 0; sketch_index < project.sketches.size(); ++sketch_index) {
+        if (sketch_index != 0)
+            output << ',';
+        const auto& sketch = project.sketches[sketch_index];
+        output << "{\"name\":" << quoted(sketch.name) << ",\"status\":"
+               << quoted(sketch_status_name(sketch.status)) << ",\"degreesOfFreedom\":"
+               << sketch.degrees_of_freedom << ",\"solveRequirement\":"
+               << quoted(sketch.solve_requirement) << ",\"shapes\":[";
+        for (std::size_t shape_index = 0; shape_index < sketch.shapes.size(); ++shape_index) {
+            if (shape_index != 0)
+                output << ',';
+            const auto& shape = sketch.shapes[shape_index];
+            output << "{\"name\":" << quoted(shape.name) << ",\"role\":"
+                   << quoted(shape.role) << ",\"closed\":"
+                   << (shape.closed ? "true" : "false") << ",\"profile\":"
+                   << quoted(shape.profile) << ",\"areaMm2\":" << shape.area_mm2;
+            if (!shape.containing_shape.empty())
+                output << ",\"containedBy\":" << quoted(shape.containing_shape);
+            output << '}';
+        }
+        output << "],\"regions\":[";
+        for (std::size_t region_index = 0; region_index < sketch.regions.size(); ++region_index) {
+            if (region_index != 0)
+                output << ',';
+            const auto& region = sketch.regions[region_index];
+            output << "{\"name\":" << quoted(region.name) << ",\"outer\":"
+                   << quoted(region.outer_shape) << ",\"holes\":[";
+            for (std::size_t hole = 0; hole < region.hole_shapes.size(); ++hole) {
+                if (hole != 0)
+                    output << ',';
+                output << quoted(region.hole_shapes[hole]);
+            }
+            output << "],\"areaMm2\":" << region.area_mm2 << '}';
+        }
+        output << "],\"entities\":[";
+        for (std::size_t entity_index = 0; entity_index < sketch.entities.size();
+             ++entity_index) {
+            if (entity_index != 0)
+                output << ',';
+            const auto& entity = sketch.entities[entity_index];
+            output << "{\"name\":" << quoted(entity.name) << ",\"type\":"
+                   << quoted(entity.full_circle
+                                 ? "CIRCLE"
+                             : entity.kind == compiler::ir::ProfileSegmentKind::circular_arc
+                                 ? "ARC"
+                                 : "LINE")
+                   << '}';
+        }
+        output << "],\"constraints\":[";
+        for (std::size_t constraint_index = 0;
+             constraint_index < sketch.constraints.size(); ++constraint_index) {
+            if (constraint_index != 0)
+                output << ',';
+            const auto& constraint = sketch.constraints[constraint_index];
+            output << "{\"name\":" << quoted(constraint.name)
+                   << ",\"type\":" << quoted(constraint.kind)
+                   << ",\"references\":[";
+            for (std::size_t reference = 0;
+                 reference < constraint.references.size(); ++reference) {
+                if (reference != 0)
+                    output << ',';
+                output << quoted(constraint.references[reference]);
+            }
+            output << "]}";
+        }
+        output << "]}";
+    }
     output << "],\"featureHistory\":[";
     for (std::size_t body_index = 0; body_index < project.bodies.size(); ++body_index) {
         if (body_index != 0)
@@ -994,10 +1107,49 @@ auto visual_snapshot_json(const compiler::ir::Project& project) -> std::string {
                        << ",\"sketchId\":" << quoted(feature.profile)
                        << ",\"plane\":" << quoted(feature.sketch_plane);
             }
+            if (!feature.region.empty())
+                output << ",\"region\":" << quoted(feature.region)
+                       << ",\"regionHoleProfiles\":"
+                       << feature.region_hole_profiles.size();
             if (!feature.support_feature.empty())
                 output << ",\"supportFeature\":" << quoted(feature.support_feature)
                        << ",\"supportFace\":" << quoted(feature.support_face);
+            if (!feature.support_reference.empty())
+                output << ",\"supportReference\":" << quoted(feature.support_reference);
+            if (!feature.support_topology_id.empty())
+                output << ",\"supportTopologyId\":" << quoted(feature.support_topology_id);
+            if (!feature.selected_edge_location.empty())
+                output << ",\"selection\":{\"kind\":\"EDGE_LOOP\",\"location\":"
+                       << quoted(feature.selected_edge_location)
+                       << ",\"classification\":"
+                       << quoted(feature.selected_edge_classification)
+                       << ",\"applicableOperations\":[\"FILLET\",\"CHAMFER\"]";
+            if (!feature.selected_edge_location.empty()) {
+                if (!feature.selected_edge_set.empty())
+                    output << ",\"reference\":" << quoted(feature.selected_edge_set);
+                if (!feature.selected_topology_id.empty())
+                    output << ",\"topologyId\":" << quoted(feature.selected_topology_id);
+                output << '}';
+            }
             output << '}';
+        }
+        output << "],\"faceReferences\":[";
+        for (std::size_t reference_index = 0;
+             reference_index < body.face_references.size(); ++reference_index) {
+            if (reference_index != 0)
+                output << ',';
+            const auto& reference = body.face_references[reference_index];
+            output << "{\"name\":" << quoted(reference.name)
+                   << ",\"feature\":" << quoted(reference.feature)
+                   << ",\"role\":" << quoted(reference.role)
+                   << ",\"topologyId\":" << quoted(reference.topology_id) << '}';
+        }
+        output << "],\"topologySelections\":[";
+        for (std::size_t selection_index = 0;
+             selection_index < body.topology_selections.size(); ++selection_index) {
+            if (selection_index != 0)
+                output << ',';
+            write_topology_selection(output, body.topology_selections[selection_index]);
         }
         output << "]}";
     }
@@ -1251,6 +1403,7 @@ auto project_json(const compiler::ir::Project& project) -> std::string {
            << ",\"profileSegments\":" << profile_segment_count(project)
            << ",\"curvedProfileSegments\":" << curved_profile_segment_count(project)
            << ",\"bodies\":" << project.bodies.size() << ",\"features\":" << feature_count(project)
+           << ",\"topologySelections\":" << topology_selection_count(project)
            << ",\"booleanOperations\":" << boolean_operation_count(project)
            << ",\"modelingOperations\":" << modeling_operation_count(project)
            << ",\"surfaceOperations\":" << surface_operation_count(project)
@@ -1302,12 +1455,37 @@ auto project_json(const compiler::ir::Project& project) -> std::string {
                    << quoted(feature.name) << ",\"type\":" << quoted(feature.type);
             if (!feature.selected_edge_point.empty())
                 output << ",\"edgeNearestPoint\":" << quoted(feature.selected_edge_point);
+            if (!feature.selected_edge_location.empty())
+                output << ",\"selection\":{\"kind\":\"EDGE_LOOP\",\"location\":"
+                       << quoted(feature.selected_edge_location)
+                       << ",\"classification\":"
+                       << quoted(feature.selected_edge_classification)
+                       << ",\"applicableOperations\":[\"FILLET\",\"CHAMFER\"]";
+            if (!feature.selected_edge_location.empty()) {
+                if (!feature.selected_edge_set.empty())
+                    output << ",\"reference\":" << quoted(feature.selected_edge_set);
+                if (!feature.selected_topology_id.empty())
+                    output << ",\"topologyId\":" << quoted(feature.selected_topology_id);
+                output << '}';
+            }
             if (!feature.direction.empty())
                 output << ",\"direction\":" << quoted(feature.direction)
                        << ",\"count\":" << feature.count;
             if (!feature.plane_point.empty())
                 output << ",\"planePoint\":" << quoted(feature.plane_point)
                        << ",\"planeNormal\":" << quoted(feature.plane_normal);
+            output << '}';
+        }
+    }
+    output << "],\"topologySelections\":[";
+    bool first_selection = true;
+    for (const auto& body : project.bodies) {
+        for (const auto& selection : body.topology_selections) {
+            if (!first_selection)
+                output << ',';
+            first_selection = false;
+            output << "{\"body\":" << quoted(body.name) << ",\"query\":";
+            write_topology_selection(output, selection);
             output << '}';
         }
     }
@@ -1440,11 +1618,64 @@ auto project_json(const compiler::ir::Project& project) -> std::string {
         if (!sketch.support_feature.empty())
             output << ",\"supportFeature\":" << quoted(sketch.support_feature)
                    << ",\"supportFace\":" << quoted(sketch.support_face);
+        if (!sketch.support_reference.empty())
+            output << ",\"supportReference\":" << quoted(sketch.support_reference);
+        if (!sketch.support_topology_id.empty())
+            output << ",\"supportTopologyId\":" << quoted(sketch.support_topology_id);
         output
                << ",\"status\":" << quoted(sketch_status_name(sketch.status))
                << ",\"degreesOfFreedom\":" << sketch.degrees_of_freedom
                << ",\"iterations\":" << sketch.iterations
-               << ",\"maximumResidual\":" << sketch.maximum_residual << ",\"points\":[";
+               << ",\"maximumResidual\":" << sketch.maximum_residual
+               << ",\"solveRequirement\":" << quoted(sketch.solve_requirement)
+               << ",\"shapes\":[";
+        for (std::size_t shape_index = 0; shape_index < sketch.shapes.size(); ++shape_index) {
+            if (shape_index != 0)
+                output << ',';
+            const auto& shape = sketch.shapes[shape_index];
+            output << "{\"name\":" << quoted(shape.name) << ",\"role\":"
+                   << quoted(shape.role) << ",\"closed\":"
+                   << (shape.closed ? "true" : "false") << ",\"profile\":"
+                   << quoted(shape.profile) << ",\"areaMm2\":" << shape.area_mm2
+                   << ",\"points\":[";
+            for (std::size_t point = 0; point < shape.points.size(); ++point) {
+                if (point != 0)
+                    output << ',';
+                output << quoted(shape.points[point]);
+            }
+            output << "],\"entities\":[";
+            for (std::size_t entity = 0; entity < shape.entities.size(); ++entity) {
+                if (entity != 0)
+                    output << ',';
+                output << quoted(shape.entities[entity]);
+            }
+            output << ']';
+            if (!shape.containing_shape.empty())
+                output << ",\"containedBy\":" << quoted(shape.containing_shape);
+            output << '}';
+        }
+        output << "],\"regions\":[";
+        for (std::size_t region_index = 0; region_index < sketch.regions.size(); ++region_index) {
+            if (region_index != 0)
+                output << ',';
+            const auto& region = sketch.regions[region_index];
+            output << "{\"name\":" << quoted(region.name) << ",\"outerShape\":"
+                   << quoted(region.outer_shape) << ",\"holeShapes\":[";
+            for (std::size_t hole = 0; hole < region.hole_shapes.size(); ++hole) {
+                if (hole != 0)
+                    output << ',';
+                output << quoted(region.hole_shapes[hole]);
+            }
+            output << "],\"outerProfile\":" << quoted(region.outer_profile)
+                   << ",\"holeProfiles\":[";
+            for (std::size_t hole = 0; hole < region.hole_profiles.size(); ++hole) {
+                if (hole != 0)
+                    output << ',';
+                output << quoted(region.hole_profiles[hole]);
+            }
+            output << "],\"areaMm2\":" << region.area_mm2 << '}';
+        }
+        output << "],\"points\":[";
         for (std::size_t point_index = 0; point_index < sketch.points.size(); ++point_index) {
             if (point_index != 0)
                 output << ',';
@@ -1463,15 +1694,21 @@ auto project_json(const compiler::ir::Project& project) -> std::string {
             const auto& entity = sketch.entities[entity_index];
             output << "{\"name\":" << quoted(entity.name)
                    << ",\"type\":"
-                   << quoted(entity.kind == compiler::ir::ProfileSegmentKind::circular_arc
+                   << quoted(entity.full_circle
+                                 ? "CIRCLE"
+                             : entity.kind == compiler::ir::ProfileSegmentKind::circular_arc
                                  ? "ARC"
-                                 : "LINE")
-                   << ",\"from\":" << quoted(entity.start)
-                   << ",\"to\":" << quoted(entity.end);
-            if (entity.kind == compiler::ir::ProfileSegmentKind::circular_arc)
+                                 : "LINE");
+            if (!entity.full_circle)
+                output << ",\"from\":" << quoted(entity.start)
+                       << ",\"to\":" << quoted(entity.end);
+            if (entity.kind == compiler::ir::ProfileSegmentKind::circular_arc) {
                 output << ",\"center\":" << quoted(entity.center)
                        << ",\"direction\":"
                        << quoted(entity.counterclockwise ? "CCW" : "CW");
+                if (entity.full_circle)
+                    output << ",\"radiusMm\":" << entity.radius_mm;
+            }
             output << '}';
         }
         output << "],\"constraints\":[";
@@ -1726,6 +1963,8 @@ auto topology_json(const compiler::ir::Project& project) -> std::string {
             if (index != 0)
                 output << ',';
             output << "{\"id\":" << quoted(face.id)
+                   << ",\"semanticPath\":" << quoted(face.id)
+                   << ",\"generatedByFeature\":" << quoted(solid.feature)
                    << ",\"surface\":" << quoted(cad::surface_kind_name(face.surface.kind))
                    << ",\"originMm\":[" << face.surface.origin.x << ',' << face.surface.origin.y
                    << ',' << face.surface.origin.z << "],\"axis\":[" << face.surface.axis.x << ','

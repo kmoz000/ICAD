@@ -48,12 +48,17 @@ arc_segment      = "ARC", quantity, quantity, "CENTER", quantity, quantity,
 circle_profile   = "CIRCLE", quantity, quantity, quantity, newline ;
 
 sketch           = "SKETCH", identifier, newline,
-                   ( sketch_circle | { sketch_point | sketch_entity | sketch_constraint } ),
+                   sketch_contents,
                    "END", newline ;
 body_sketch      = "SKETCH", identifier, "ON",
-                   ( "PLANE", sketch_plane | "FACE", identifier, face_selector ), newline,
-                   ( sketch_circle | { sketch_point | sketch_entity | sketch_constraint } ),
+                   ( "PLANE", sketch_plane |
+                     "FACE", ( identifier, [ face_selector ] |
+                               persistent_face_reference ) ), newline,
+                   sketch_contents,
                    "END", newline ;
+sketch_contents  = sketch_circle |
+                   { sketch_point | sketch_entity | sketch_constraint } |
+                   shape, { shape | region | sketch_constraint }, [ solve_requirement ] ;
 sketch_plane     = "XY" | "XZ" | "YZ" ;
 sketch_circle    = "CIRCLE", scalar_value, scalar_value, scalar_value, newline ;
 sketch_point     = "POINT", identifier, scalar_value, scalar_value,
@@ -62,25 +67,63 @@ sketch_entity    = sketch_line | sketch_arc ;
 sketch_line      = "LINE", identifier, "FROM", identifier, "TO", identifier, newline ;
 sketch_arc       = "ARC", identifier, "FROM", identifier, "TO", identifier,
                    "CENTER", identifier, ( "CW" | "CCW" ), newline ;
+shape            = "SHAPE", identifier, ( "OPEN" | "CLOSED" ), "ROLE", shape_role,
+                   newline, { shape_point | shape_entity }, "END", newline ;
+shape_role       = "STOCK" | "ADDITIVE" | "HOLE" | "CONSTRUCTION" ;
+shape_point      = sketch_point ;
+shape_entity     = sketch_line | sketch_arc | shape_circle ;
+shape_circle     = "CIRCLE", identifier, "CENTER", identifier, "RADIUS",
+                   scalar_value, newline ;
+region           = "REGION", identifier, newline,
+                   "OUTER", identifier, newline,
+                   [ "HOLES", identifier, { identifier }, newline ],
+                   "END", newline ;
+solve_requirement = "SOLVE", ( "FULL" | "ALLOW_UNDER" ), newline ;
 sketch_constraint = "CONSTRAINT", identifier,
                     ( ( "HORIZONTAL" | "VERTICAL" | "COINCIDENT" ),
-                      identifier, identifier |
-                      "DISTANCE", identifier, identifier, scalar_value |
-                      "ANGLE", identifier, identifier, identifier, scalar_value ), newline ;
+                      qualified_name, qualified_name |
+                      ( "DISTANCE" | "H_DISTANCE" | "V_DISTANCE" ),
+                      qualified_name, qualified_name, scalar_value |
+                      "ANGLE", qualified_name, qualified_name, qualified_name,
+                      scalar_value |
+                      ( "PARALLEL" | "PERPENDICULAR" | "EQUAL_LENGTH" |
+                        "CONCENTRIC" | "EQUAL_RADIUS" ),
+                      qualified_name, qualified_name |
+                      "MIDPOINT", qualified_name, qualified_name |
+                      "SYMMETRIC", qualified_name, qualified_name, "ABOUT",
+                      qualified_name |
+                      "TANGENT", qualified_name, qualified_name, "AT",
+                      qualified_name ), newline ;
 
 body             = "BODY", identifier, newline,
                    [ "MATERIAL", identifier, newline ],
-                   { body_sketch | pad | pocket | feature }, "END", newline ;
-pad              = "PAD", identifier, "FROM", identifier, "DEPTH", scalar_value,
+                   { face_reference | topology_selection | body_sketch | pad | pocket | feature },
+                   "END", newline ;
+face_reference   = "FACE", identifier, "FROM", persistent_face_reference, newline ;
+persistent_face_reference = identifier, ".", "face", ".", ( "top" | "bottom" ) ;
+topology_selection = "SELECTION", identifier, newline,
+                   "FROM", identifier, newline,
+                   "EDGES", "WHERE", newline,
+                   "LOOP", newline,
+                   "CIRCULAR", newline,
+                   ( "CONCAVE" | "CONVEX" ), newline,
+                   "ADJACENT_TO", "FACE", ( "top" | "bottom" ), newline,
+                   "END", newline ;
+pad              = "PAD", identifier, "FROM", region_reference, "DEPTH", scalar_value,
                    ( "NEW" | "ADD" ), newline ;
-pocket           = "POCKET", identifier, "FROM", identifier, "DEPTH", scalar_value, newline ;
+pocket           = "POCKET", identifier, "FROM", region_reference, "DEPTH",
+                   scalar_value, newline ;
+region_reference = identifier, [ ".", identifier ] ;
 feature          = "FEATURE", identifier, newline,
                    "TYPE", identifier, newline,
                    [ "PROFILE", identifier, newline ],
                    [ "TARGET_PROFILE", identifier, newline ],
                    [ "PATH", identifier, identifier, { identifier }, newline ],
                    [ "OPERATION", ( "NEW" | "UNION" | "CUT" | "INTERSECT" ), newline ],
-                   [ "SELECT", "EDGE", "NEAREST", identifier, newline ],
+                   [ "SELECT",
+                     ( "EDGE", ( "NEAREST", identifier |
+                                 ( "TOP" | "BOTTOM" ), ( "INNER" | "OUTER" ) ) |
+                       "EDGESET", identifier ), newline ],
                    [ "DIRECTION", identifier, newline ],
                    [ "COUNT", number, newline ],
                    [ "PLANE", identifier, "NORMAL", identifier, newline ],

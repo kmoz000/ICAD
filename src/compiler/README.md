@@ -13,7 +13,9 @@ exclusive end locations. The current parser filters retained comments and
 continues to consume the production grammar unchanged. Signed literals such as
 `-12.5` deliberately remains one number token for source compatibility and is
 handled by the typed-expression parser. Recognizing a proposed token does not
-enable any unadvertised v2 declaration or capability.
+enable any unadvertised v2 declaration or capability. Implemented syntax is
+advertised only after its parser, semantic, IR, engine, inspection, and test
+vertical are complete.
 
 Language requirements are preflighted before normal parsing. `REQUIRES ICAD
 MAJOR.MINOR` is checked against production language version `1.0`, while
@@ -46,12 +48,48 @@ frontend never depends on geometry code. Low-level `FEATURE` remains available
 for advanced operations and compatibility, but is not the primary authoring
 path.
 
+The bounded `PERSISTENT_FACE_REFERENCES_V1` layer names planar cap results as
+`FACE alias FROM feature.face.top|bottom`. Parser source-order validation
+resolves aliases before lowering; canonical IR carries both the readable alias
+and `body/feature/face.role` ID. Dependency analysis connects the alias to its
+producer and every consuming sketch, while geometry receives the resolved
+orientation without guessing from mesh indices.
+
 Body-local sketches always declare `ON PLANE` or `ON FACE`, must be consumed by
 a later operation, and resolve to `body::sketch` in canonical IR. This permits
 clear local names without collisions between parts. `PAD` and `POCKET` remain
 distinct source commands through AST, IR, CLI inspection, dependency analysis,
 incremental fingerprints, and agent-facing feature history rather than being
 flattened into anonymous extrusion records.
+
+With `MULTI_SHAPE_SKETCH_V1`, one sketch may contain multiple named shapes.
+Every shape declares closure and material intent, and every closed shape lowers
+to a stable `body::sketch.shape` profile. The frontend validates local entity
+references, ordered closure, simple boundaries, disjoint region boundaries,
+and unique stock/additive containment for holes. Qualified `shape.point`
+references let constraints span paths, and `SOLVE FULL` makes residual degrees
+of freedom a compile error. PAD/POCKET must name the exact region, keeping the
+agent's intent explicit through AST, IR, dependency graph, feature history, and
+`visual.json`. `SKETCH_REGION_ARRANGEMENT_V1` additionally groups one outer and
+its holes into a named `body::sketch.region`, so one PAD/POCKET maps to one
+native boolean transaction. `ADVANCED_SKETCH_CONSTRAINTS_V1` adds dimensional,
+line, circle, midpoint, and symmetry residuals over qualified point/entity
+references. `SKETCH_LINE_ARC_TANGENCY_V1` adds the endpoint-specific
+`TANGENT line arc AT shared_point` residual, validates the shared endpoint
+before solving, and retains its references in `visual.json`.
+
+`SEMANTIC_EDGE_LOOP_SELECTION_V1` is the first selection/applicability gate.
+`SELECT EDGE TOP|BOTTOM INNER|OUTER` addresses a circular annular rim on the
+current solid without mesh indices. Native FILLET/CHAMFER rebuild the selected
+cross-section, and agent feedback lists only those operations as applicable.
+
+`TOPOLOGY_QUERY_V1` adds body-local `SELECTION` declarations over that proven
+native subset. A query states its source feature and the predicates `EDGES
+WHERE`, `LOOP`, `CIRCULAR`, `CONCAVE|CONVEX`, and `ADJACENT_TO FACE
+top|bottom`; `SELECT EDGESET name` consumes the result. Lowering records a
+stable topology ID and dependency node. The bounded resolver rejects
+non-annular sources and selections separated from their source by later
+features, because general topology remapping is not yet implemented.
 
 Canonical IR also produces a stable project dependency DAG for agent
 inspection. The public `IncrementalCompiler` performs frontend lowering, hashes

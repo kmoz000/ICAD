@@ -31,6 +31,44 @@ END
 END
 )";
 
+constexpr std::string_view shape_source = R"(PROJECT shape_incremental
+UNITS mm
+PARAMETER hole_radius 3 mm
+BODY plate
+SKETCH layout ON PLANE XY
+SHAPE outer CLOSED ROLE STOCK
+POINT p0 0 mm 0 mm FIXED
+POINT p1 30 mm 0 mm FIXED
+POINT p2 30 mm 20 mm FIXED
+POINT p3 0 mm 20 mm FIXED
+LINE e0 FROM p0 TO p1
+LINE e1 FROM p1 TO p2
+LINE e2 FROM p2 TO p3
+LINE e3 FROM p3 TO p0
+END
+SHAPE hole CLOSED ROLE HOLE
+POINT center 15 mm 10 mm FIXED
+CIRCLE rim CENTER center RADIUS hole_radius
+END
+REGION perforated
+OUTER outer
+HOLES hole
+END
+SOLVE FULL
+END
+PAD stock FROM layout.perforated DEPTH 4 mm NEW
+END
+BODY stable
+FEATURE block
+TYPE BOX
+WIDTH 5 mm
+DEPTH 5 mm
+HEIGHT 5 mm
+ORIGIN_X 40 mm
+END
+END
+)";
+
 } // namespace
 
 int main() {
@@ -92,6 +130,25 @@ int main() {
         caller.join();
     if (!std::ranges::all_of(concurrent_ok, [](bool value) { return value; })) {
         std::cerr << "shared incremental compiler was not thread safe\n";
+        return 1;
+    }
+
+    icad::compiler::IncrementalCompiler shape_compiler;
+    const auto initial_shape = shape_compiler.compile(shape_source);
+    if (!initial_shape.compilation.ok() ||
+        initial_shape.incremental.recomputed_bodies.size() != 2) {
+        std::cerr << "initial multi-shape incremental compile failed\n";
+        return 1;
+    }
+    std::string changed_shape{shape_source};
+    changed_shape.replace(changed_shape.find("PARAMETER hole_radius 3 mm"),
+                          std::string_view{"PARAMETER hole_radius 3 mm"}.size(),
+                          "PARAMETER hole_radius 4 mm");
+    const auto updated_shape = shape_compiler.compile(changed_shape);
+    if (!updated_shape.compilation.ok() ||
+        updated_shape.incremental.recomputed_bodies != std::vector<std::string>{"plate"} ||
+        updated_shape.incremental.reused_bodies != std::vector<std::string>{"stable"}) {
+        std::cerr << "shape-profile edit did not invalidate only its dependent body\n";
         return 1;
     }
     return 0;

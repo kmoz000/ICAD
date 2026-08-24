@@ -1,0 +1,49 @@
+# Multi-shape sketch acceptance model: one stock region and four classified holes.
+REQUIRES ICAD 1.0
+REQUIRES CAPABILITY PARAMETER_EXPRESSIONS_V1
+REQUIRES CAPABILITY MULTI_SHAPE_SKETCH_V1
+PROJECT multi_shape_plate
+UNITS mm
+
+PARAMETER plate_thickness 8 mm
+PARAMETER hole_radius 5 mm
+
+MATERIAL plate_material ALUMINUM
+
+BODY mounting_plate
+MATERIAL plate_material
+SKETCH layout ON PLANE XY
+SHAPE outer CLOSED ROLE STOCK
+POINT p0 0 mm 0 mm FIXED
+POINT p1 100 mm 0 mm FIXED
+POINT p2 100 mm 60 mm FIXED
+POINT p3 0 mm 60 mm FIXED
+LINE bottom FROM p0 TO p1
+LINE right FROM p1 TO p2
+LINE top FROM p2 TO p3
+LINE left FROM p3 TO p0
+END
+SHAPE hole_nw CLOSED ROLE HOLE
+POINT center 15 mm 45 mm FIXED
+CIRCLE rim CENTER center RADIUS hole_radius
+END
+SHAPE hole_ne CLOSED ROLE HOLE
+POINT center 85 mm 45 mm FIXED
+CIRCLE rim CENTER center RADIUS hole_radius
+END
+SHAPE hole_se CLOSED ROLE HOLE
+POINT center 85 mm 15 mm FIXED
+CIRCLE rim CENTER center RADIUS hole_radius
+END
+SHAPE hole_sw CLOSED ROLE HOLE
+POINT center 15 mm 15 mm FIXED
+CIRCLE rim CENTER center RADIUS hole_radius
+END
+SOLVE FULL
+END
+PAD plate_solid FROM layout.outer DEPTH plate_thickness NEW
+POCKET bore_nw FROM layout.hole_nw DEPTH plate_thickness
+POCKET bore_ne FROM layout.hole_ne DEPTH plate_thickness
+POCKET bore_se FROM layout.hole_se DEPTH plate_thickness
+POCKET bore_sw FROM layout.hole_sw DEPTH plate_thickness
+END

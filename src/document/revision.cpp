@@ -159,6 +159,29 @@ auto fingerprint(const compiler::ir::Project& project) -> std::uint64_t {
         hash.add(sketch.plane);
         hash.add(sketch.support_feature);
         hash.add(sketch.support_face);
+        hash.add(sketch.solve_requirement);
+        for (const auto& shape : sketch.shapes) {
+            hash.add(shape.name);
+            hash.add(shape.role);
+            hash.add(static_cast<double>(shape.closed));
+            for (const auto& point : shape.points)
+                hash.add(point);
+            for (const auto& entity : shape.entities)
+                hash.add(entity);
+            hash.add(shape.profile);
+            hash.add(shape.area_mm2);
+            hash.add(shape.containing_shape);
+        }
+        for (const auto& region : sketch.regions) {
+            hash.add(region.name);
+            hash.add(region.outer_shape);
+            for (const auto& hole : region.hole_shapes)
+                hash.add(hole);
+            hash.add(region.outer_profile);
+            for (const auto& hole_profile : region.hole_profiles)
+                hash.add(hole_profile);
+            hash.add(region.area_mm2);
+        }
         for (const auto& point : sketch.points) {
             hash.add(point.name);
             hash.add(point.initial.x_mm);
@@ -175,6 +198,9 @@ auto fingerprint(const compiler::ir::Project& project) -> std::uint64_t {
             hash.add(entity.end);
             hash.add(entity.center);
             hash.add(static_cast<double>(entity.counterclockwise));
+            hash.add(static_cast<double>(entity.full_circle));
+            hash.add(entity.radius_mm);
+            hash.add(entity.radius_reference);
         }
         for (const auto& constraint : sketch.constraints) {
             hash.add(constraint.name);
@@ -197,11 +223,23 @@ auto fingerprint(const compiler::ir::Project& project) -> std::uint64_t {
     for (const auto& body : project.bodies) {
         hash.add(body.name);
         hash.add(body.material);
+        for (const auto& selection : body.topology_selections) {
+            hash.add(selection.name);
+            hash.add(selection.source_feature);
+            hash.add(selection.entity_kind);
+            hash.add(selection.geometry);
+            hash.add(selection.convexity);
+            hash.add(selection.adjacent_face);
+            hash.add(selection.topology_id);
+        }
         for (const auto& feature : body.features) {
             hash.add(feature.name);
             hash.add(feature.source_keyword);
             hash.add(feature.type);
             hash.add(feature.profile);
+            hash.add(feature.region);
+            for (const auto& hole_profile : feature.region_hole_profiles)
+                hash.add(hole_profile);
             hash.add(feature.target_profile);
             hash.add(static_cast<double>(feature.operation == compiler::ir::FeatureOperation::unite
                                              ? 1
@@ -212,6 +250,10 @@ auto fingerprint(const compiler::ir::Project& project) -> std::uint64_t {
                                              ? 3
                                              : 0));
             hash.add(feature.selected_edge_point);
+            hash.add(feature.selected_edge_location);
+            hash.add(feature.selected_edge_classification);
+            hash.add(feature.selected_edge_set);
+            hash.add(feature.selected_topology_id);
             hash.add(feature.direction);
             hash.add(feature.plane_point);
             hash.add(feature.plane_normal);

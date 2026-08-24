@@ -81,18 +81,15 @@ auto main() -> int {
         return 1;
     }
     const auto base = std::filesystem::current_path() / "scene-test-output" / "turntable";
-    const auto exported = icad::scene::export_web_bundle(*result.ir_project, base);
+    const auto exported = icad::scene::export_scene(*result.ir_project, base);
     if (!exported.success || exported.materials != 1 || exported.scenes != 1 ||
         exported.tracks != 2 || exported.keyframes != 4) {
-        std::cerr << "web scene bundle export failed\n";
+        std::cerr << "native scene export failed\n";
         return 1;
     }
     std::ifstream scene{base.string() + ".scene.json", std::ios::binary};
     const std::string content{std::istreambuf_iterator<char>{scene},
                               std::istreambuf_iterator<char>{}};
-    std::ifstream library{base.parent_path() / "icad-viewer.js", std::ios::binary};
-    const std::string library_content{std::istreambuf_iterator<char>{library},
-                                      std::istreambuf_iterator<char>{}};
     if (!contains(content, "\"preset\":\"CARBON_FIBER\"") ||
         !contains(content, "data:image/bmp;base64,") ||
         !contains(content, "\"textureScaleMm\":12") ||
@@ -102,15 +99,10 @@ auto main() -> int {
         !contains(content, "\"visible\":false") ||
         !contains(content, "\"name\":\"midpoint\"") ||
         !contains(content, "\"name\":\"turntable\"") ||
-        !contains(library_content, "let playing = false") ||
-        !contains(library_content, "icad-view-cube") ||
-        !contains(library_content, "icad-component-menu") ||
-        !contains(library_content, "pointInTriangle") ||
-        !contains(library_content, "value - partCenter") ||
-        !std::filesystem::exists(base.string() + ".html") ||
-        !std::filesystem::exists(base.string() + ".viewer.js") ||
-        !std::filesystem::exists(base.parent_path() / "icad-viewer.js")) {
-        std::cerr << "scene bundle is missing embedded texture, animation, or viewer files\n";
+        !contains(content, "\"parts\":[") ||
+        std::filesystem::exists(base.string() + ".html") ||
+        std::filesystem::exists(base.string() + ".viewer.js")) {
+        std::cerr << "native scene is missing geometry, texture, or animation data\n";
         return 1;
     }
 

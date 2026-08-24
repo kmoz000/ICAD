@@ -1,8 +1,6 @@
 #include "icad/scene/exporter.hpp"
 
 #include "icad/cad/model.hpp"
-#include "icad/viewer_source.hpp"
-
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -443,71 +441,39 @@ auto write_model(std::ostream& output, const compiler::ir::Project& project,
 
 } // namespace
 
-auto export_web_bundle(const compiler::ir::Project& project,
-                       const std::filesystem::path& output_base) -> ExportResult {
+auto export_scene(const compiler::ir::Project& project,
+                  const std::filesystem::path& output_base) -> ExportResult {
     const auto model = cad::build_model(project);
-    return export_web_bundle(project, model, output_base);
+    return export_scene(project, model, output_base);
 }
 
-auto export_web_bundle(const compiler::ir::Project& project, const cad::Model& model,
-                       const std::filesystem::path& output_base) -> ExportResult {
+auto export_scene(const compiler::ir::Project& project, const cad::Model& model,
+                  const std::filesystem::path& output_base) -> ExportResult {
     if (!cad::is_valid(model)) {
-        return {false, "ICAD geometry validation failed before web-scene export"};
+        return {false, "ICAD geometry validation failed before native-scene export"};
     }
     if (!output_base.parent_path().empty()) {
         std::error_code error;
         std::filesystem::create_directories(output_base.parent_path(), error);
         if (error) {
-            return {false, "cannot create web output directory: " + error.message()};
+            return {false, "cannot create scene output directory: " + error.message()};
         }
     }
     const std::string basename = output_base.filename().string();
+    std::error_code ignored;
+    std::filesystem::remove(output_base.string() + ".html", ignored);
+    ignored.clear();
+    std::filesystem::remove(output_base.string() + ".viewer.js", ignored);
+    ignored.clear();
+    std::filesystem::remove(output_base.parent_path() / "icad-viewer.js", ignored);
     const auto scene_path = output_base.string() + ".scene.json";
-    const auto data_path = output_base.string() + ".viewer.js";
-    const auto html_path = output_base.string() + ".html";
-    const auto library_path = output_base.parent_path() / "icad-viewer.js";
-
     std::ofstream scene{scene_path, std::ios::binary};
-    std::ofstream data{data_path, std::ios::binary};
-    std::ofstream html{html_path, std::ios::binary};
-    std::ofstream library{library_path, std::ios::binary};
-    if (!scene || !data || !html || !library) {
-        return {false, "cannot open one or more web-scene output files"};
+    if (!scene) {
+        return {false, "cannot open native scene output file"};
     }
-    write_model(scene, project, nullptr, basename);
-    data << "window.ICAD_MODEL=";
-    write_model(data, project, &model, basename);
-    data << ";\n";
-    library << viewer::library_source;
-    html
-        << "<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">"
-           "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-           "<title>"
-        << project.name
-        << " · ICAD Viewer</title><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;"
-           "background:#111827;font-family:system-ui}#viewer{width:100%;height:100%;display:block}"
-           ".icad-viewer-controls{position:fixed;z-index:2;top:12px;left:12px;display:flex;gap:8px;"
-           "align-items:center;padding:8px;background:#ffffffdd;border-radius:9px}"
-           ".icad-semantic-tree{position:fixed;z-index:2;right:12px;top:12px;max-height:calc(100% - 24px);"
-           "overflow:auto;display:flex;flex-direction:column;gap:5px;padding:10px;min-width:190px;"
-           "background:#ffffffea;border:1px solid #94a3b8;border-radius:9px;color:#102030}"
-           ".icad-semantic-tree button[aria-pressed=true]{background:#fbbf24}"
-           ".icad-measurement{font-size:12px;max-width:240px;margin-bottom:4px}"
-           ".icad-drop-menu{position:fixed;z-index:3;right:12px;color:#e2e8f0;font:13px system-ui}"
-           ".icad-component-menu{top:58px}.icad-scene-menu{top:12px}"
-           ".icad-drop-menu summary{cursor:pointer;list-style:none;padding:8px 12px;border:1px solid #475569;border-radius:9px;background:#111827e8;box-shadow:0 8px 24px #0005}"
-           ".icad-drop-content{display:none;min-width:210px;max-height:52vh;overflow:auto;margin-top:6px;padding:8px;gap:5px;flex-direction:column;border:1px solid #475569;border-radius:10px;background:#0f172af2;box-shadow:0 16px 36px #0008}.icad-drop-menu[open] .icad-drop-content{display:flex}"
-           ".icad-drop-content button{width:100%;text-align:left}.icad-drop-content button[aria-pressed=true]{border-color:#fbbf24;background:#fef3c7}.icad-view-cube{position:fixed;z-index:3;right:14px;bottom:14px;display:grid;grid-template-columns:repeat(3,32px);gap:3px;padding:7px;border:1px solid #475569;border-radius:12px;background:#0f172ae8;box-shadow:0 12px 30px #0008}.icad-view-cube button{width:32px;height:32px;padding:0;font-size:10px}.icad-view-cube button:first-child{grid-column:2}.icad-view-cube button:nth-child(6){font-weight:800;background:#dbeafe}"
-           "button,select{border:1px solid #64748b;border-radius:7px;background:#fff;padding:7px "
-           "11px}button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #2563eb}"
-           "@media(max-width:700px){.icad-semantic-tree{top:auto;bottom:10px;max-height:32%;}.icad-viewer-controls{right:10px;flex-wrap:wrap}}"
-           "</style></head><body><canvas id=\"viewer\"></canvas>"
-           "<script src=\"icad-viewer.js\"></script><script src=\""
-        << basename
-        << ".viewer.js\"></script><script>ICADViewer.mount(document.getElementById('viewer'),"
-           "window.ICAD_MODEL);</script></body></html>\n";
-    if (!scene || !data || !html || !library) {
-        return {false, "failed while writing web-scene output"};
+    write_model(scene, project, &model, basename);
+    if (!scene) {
+        return {false, "failed while writing native scene output"};
     }
 
     std::size_t tracks = 0;
@@ -519,15 +485,15 @@ auto export_web_bundle(const compiler::ir::Project& project, const cad::Model& m
         }
     }
     return {true,
-            "self-contained ICAD web viewer bundle complete",
+            "native ICAD render scene complete",
             project.materials.size(),
             project.scenes.size(),
             tracks,
             keyframes};
 }
 
-auto web_model_json(const compiler::ir::Project& project, const cad::Model& model,
-                    std::string_view basename) -> std::string {
+auto render_model_json(const compiler::ir::Project& project, const cad::Model& model,
+                       std::string_view basename) -> std::string {
     if (!cad::is_valid(model))
         return {};
     std::ostringstream output;

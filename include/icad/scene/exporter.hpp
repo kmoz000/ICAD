@@ -22,13 +22,11 @@ struct ExportResult {
     std::size_t keyframes{};
 };
 
-[[nodiscard]] auto export_web_bundle(const compiler::ir::Project& project,
-                                     const std::filesystem::path& output_base) -> ExportResult;
-[[nodiscard]] auto export_web_bundle(const compiler::ir::Project& project,
-                                     const cad::Model& model,
-                                     const std::filesystem::path& output_base) -> ExportResult;
-[[nodiscard]] auto web_model_json(const compiler::ir::Project& project,
-                                  const cad::Model& model,
-                                  std::string_view basename = "preview") -> std::string;
+[[nodiscard]] auto export_scene(const compiler::ir::Project& project,
+                                const std::filesystem::path& output_base) -> ExportResult;
+[[nodiscard]] auto export_scene(const compiler::ir::Project& project, const cad::Model& model,
+                                const std::filesystem::path& output_base) -> ExportResult;
+[[nodiscard]] auto render_model_json(const compiler::ir::Project& project, const cad::Model& model,
+                                     std::string_view basename = "preview") -> std::string;
 
 } // namespace icad::scene
