@@ -37,6 +37,34 @@ You need the [Codex CLI](https://developers.openai.com/codex/cli) on `PATH` to
 register the plugin. The native toolchain does not require Codex when installed
 separately.
 
+### Install only the plugin with Codex CLI
+
+Codex can install the ICAD marketplace directly from GitHub using the
+[official marketplace workflow](https://developers.openai.com/plugins/build/plugins#add-a-marketplace-from-the-cli):
+
+```sh
+codex plugin marketplace add kmoz000/ICAD --ref main
+codex plugin add icad-agentic-cad@icad
+```
+
+Use `--ref vX.Y.Z` instead of `--ref main` to pin the plugin source to a tagged
+release. To refresh an installation that tracks `main`, run:
+
+```sh
+codex plugin marketplace upgrade icad
+codex plugin add icad-agentic-cad@icad
+```
+
+Use this Git marketplace path when installing the plugin separately. If you use
+the all-in-one release installer below, rerun that installer to update its
+release snapshot instead of adding a second marketplace with the same name.
+
+When a design task begins, the plugin checks for both `icad` and
+`icad-viewer`. If either is missing and Codex has permission to use the network
+and run the installer, the plugin downloads the matching checksum-verified
+GitHub Release automatically. If automatic downloads are disabled, use the
+dependencies-only or fully manual instructions below.
+
 ### Install the plugin and native dependencies
 
 On macOS or Linux:
@@ -65,30 +93,6 @@ The default install does all of the following:
    `~/.local/bin` is not already present.
 
 Start a new Codex conversation after installation so the new skill is loaded.
-
-### Install only the plugin
-
-Use this mode when ICAD is already installed or when Codex should download the
-native dependencies on first use:
-
-```sh
-# macOS or Linux
-curl -fsSL https://github.com/kmoz000/ICAD/releases/latest/download/install.sh | \
-  sh -s -- --plugin-only
-```
-
-```powershell
-# Windows PowerShell
-$installer = Join-Path $env:TEMP "icad-install.ps1"
-Invoke-WebRequest https://github.com/kmoz000/ICAD/releases/latest/download/install.ps1 -OutFile $installer
-& $installer -PluginOnly
-```
-
-When a design task begins, the plugin checks for both `icad` and
-`icad-viewer`. If either is missing and Codex has permission to use the network
-and run the installer, the plugin downloads the matching checksum-verified
-GitHub Release automatically. If automatic downloads are disabled, install the
-dependencies separately with the next command.
 
 ### Install the compiler and viewer separately
 

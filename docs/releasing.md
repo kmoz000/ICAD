@@ -8,6 +8,12 @@ package. `integration.release_metadata` enforces that contract.
    `editors/vscode/package.json` match the intended tag.
 3. Push an exact semantic-version tag such as `v0.21.0`.
 
+The four-platform native packaging matrix runs the release suite with the
+`benchmark` CTest label excluded. Model-corpus and agent benchmarks remain in
+normal branch/pull-request CI and `make benchmark`; unit, integration, release
+metadata, sandbox, viewer, install, and archive verification still gate every
+release package.
+
 The `Release ICAD` workflow builds and tests the CLI plus native Qt/OpenGL
 desktop viewer on Linux x86-64, Windows x86-64, Intel macOS, and
 Apple Silicon macOS. It packages the bundled VS Code extension, verifies the tag
@@ -23,6 +29,11 @@ command-line setup. The plugin archive and both installers have companion
 archives before installing them. Keep these asset names stable because the
 README and the plugin's automatic dependency bootstrap use the GitHub
 `releases/latest/download` endpoints.
+
+The repository-root `.agents/plugins/marketplace.json` is the canonical source
+for `codex plugin marketplace add kmoz000/ICAD`. It points to the plugin bundled
+under `editors/vscode/codex-marketplace`; keep its marketplace and plugin names
+aligned with the release ZIP's marketplace metadata.
 
 The dedicated `Release ICAD Studio Viewer` workflow independently builds the
 `Viewer` install component in `MinSizeRel`, deploys only its required Qt runtime,

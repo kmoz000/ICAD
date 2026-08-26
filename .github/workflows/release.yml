@@ -43,8 +43,11 @@ jobs:
           -DICAD_BUILD_DESKTOP_VIEWER=ON
       - name: Build
         run: cmake --build build --config Release --parallel
-      - name: Test
-        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Test release suite
+        # Model-corpus benchmarks stay in normal CI and `make benchmark`. They
+        # are intentionally excluded from the four-platform packaging matrix,
+        # where fixture/performance variance must not block release artifacts.
+        run: ctest --test-dir build -C Release --output-on-failure -LE benchmark
       - name: Install
         run: cmake --install build --config Release --prefix build/stage
       - name: Verify installed programs
@@ -117,6 +120,8 @@ jobs:
         run: |
           jq -e '.name == "icad-agentic-cad" and (.version | length > 0) and .skills == "./skills/"' \
             editors/vscode/codex-marketplace/plugins/icad-agentic-cad/.codex-plugin/plugin.json
+          jq -e '.name == "icad" and any(.plugins[]; .name == "icad-agentic-cad" and .source.path == "./editors/vscode/codex-marketplace/plugins/icad-agentic-cad")' \
+            .agents/plugins/marketplace.json
           jq -e '.name == "icad" and any(.plugins[]; .name == "icad-agentic-cad")' \
             editors/vscode/codex-marketplace/.agents/plugins/marketplace.json
           sh -n editors/vscode/codex-marketplace/plugins/icad-agentic-cad/scripts/install.sh
