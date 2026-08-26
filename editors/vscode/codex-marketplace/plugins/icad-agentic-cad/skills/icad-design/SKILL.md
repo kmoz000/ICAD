@@ -9,6 +9,27 @@ Keep declarative `.icad` source as the design authority. Use the `icad` compiler
 installed by the ICAD VS Code extension or available on `PATH`. Do not introduce
 OpenCASCADE and do not disguise text or mesh data with another extension.
 
+## Runtime bootstrap
+
+Resolve both `icad` and `icad-viewer` before beginning a design workflow. If
+either program is unavailable and network downloads are permitted, run the
+plugin's checksum-verifying dependency installer from the plugin root:
+
+```sh
+# macOS or Linux
+scripts/install.sh --dependencies-only
+
+# Windows PowerShell
+scripts/install.ps1 -DependenciesOnly
+```
+
+The installer selects the matching GitHub Release, verifies its published
+SHA-256 file, and installs the compiler and native Qt viewer under the user's
+application-data directory. Never download an unverified executable or place a
+toolchain inside the design workspace. If automatic download is disabled or the
+platform has no published package, stop and give the manual dependency steps
+from the project README instead of pretending compilation succeeded.
+
 ## Dependency order
 
 Declare parameters and typed angles, datums, sketch workspaces, named path
