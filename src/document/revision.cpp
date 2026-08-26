@@ -122,6 +122,29 @@ auto fingerprint(const compiler::ir::Project& project) -> std::uint64_t {
         hash.add(joint.lower_limit_reference);
         hash.add(joint.upper_limit_reference);
     }
+    for (const auto& interface : project.interfaces) {
+        hash.add(interface.name);
+        hash.add(interface.occurrence);
+        hash.add(interface.point);
+        hash.add(interface.axis);
+        hash.add(interface.kind);
+        hash.add(interface.size_mm);
+        hash.add(static_cast<double>(interface.has_size));
+    }
+    for (const auto& connection : project.connections) {
+        hash.add(connection.name);
+        hash.add(connection.first_interface);
+        hash.add(connection.second_interface);
+        hash.add(connection.method);
+        hash.add(connection.standard);
+        hash.add(connection.fastener);
+        hash.add(connection.fit);
+        hash.add(connection.clearance_mm);
+        hash.add(connection.interface_gap_mm);
+        hash.add(connection.axis_alignment);
+        hash.add(static_cast<double>(connection.automatic));
+        hash.add(static_cast<double>(connection.aligned));
+    }
     for (const auto& material : project.materials) {
         hash.add(material.name);
         hash.add(material.preset);

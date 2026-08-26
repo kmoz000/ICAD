@@ -220,12 +220,20 @@ auto send(std::ostream& output, const json::Value& message) -> void {
                                 {"containedPartPairs",
                                  static_cast<double>(contact.contained_part_pairs)},
                                 {"surfaceContactOnlyPartPairs",
-                                 static_cast<double>(contact.surface_contact_only_part_pairs)}}));
+                                 static_cast<double>(contact.surface_contact_only_part_pairs)},
+                                {"declaredConnection", contact.declared_connection},
+                                {"connection", contact.connection_name},
+                                {"method", contact.connection_method},
+                                {"standard", contact.connection_standard}}));
     }
     return tool_result(object({
         {"schema", "icad.interference.v1"},
         {"representation", "polyhedralSolidClassification"},
         {"penetratingPartPairs", static_cast<double>(analysis.penetrating_part_pairs)},
+        {"declaredEngagementPartPairs",
+         static_cast<double>(analysis.declared_engagement_part_pairs)},
+        {"unintendedPenetratingPartPairs",
+         static_cast<double>(analysis.unintended_penetrating_part_pairs)},
         {"containedPartPairs", static_cast<double>(analysis.contained_part_pairs)},
         {"surfaceContactOnlyPartPairs",
          static_cast<double>(analysis.surface_contact_only_part_pairs)},
@@ -394,7 +402,18 @@ auto send(std::ostream& output, const json::Value& message) -> void {
         "vectors. Constraint distances, "
         "tolerances, and angles may use compatible named parameters or ANGLE values. "
         "MATE supports FACE occurrence X_MIN|X_MAX|Y_MIN|Y_MAX|Z_MIN|Z_MAX pairs with OFFSET, "
-        "or axis-aligned semantic EDGE selectors with TOLERANCE. SCENE blocks contain duration, "
+        "or axis-aligned semantic EDGE selectors with TOLERANCE. "
+        "For manufacturable assembly intent, declare INTERFACE name BODY occurrence AT point "
+        "AXIS vector TYPE MOUNT|FLANGE|SHAFT|BORE|PIN|HOLE|BEARING_SEAT|WELD_SEAM|BOND_FACE|DATUM "
+        "and optional SIZE. CONNECT name interface interface METHOD "
+        "BOLTED|SCREWED|PINNED|PRESS_FIT|SLIP_FIT|BEARING|WELDED|BRAZED|BONDED requires STANDARD; "
+        "use FASTENER for bolted, screwed, or pinned joints and FIT for press, slip, or bearing "
+        "connections. CLEARANCE is nonnegative. AUTO requests magnetic seating validation and "
+        "never silently relocates geometry. The two interface types must be compatible with the "
+        "chosen manufacturing method. visual.json reports axis alignment, gap, snapState, and "
+        "stable connection identity. Interference feedback separates declared engagement pairs "
+        "from unintended penetrating pairs; agent review is not ready until the latter is zero. "
+        "SCENE blocks contain duration, "
         "FPS, background, BODY/CAMERA transform tracks, or JOINT tracks whose keyframes use "
         "VALUE within the joint limits. "
         "Close every block with END. For a new raw request, call icad.agent.conceptualize exactly "
@@ -424,7 +443,8 @@ auto send(std::ostream& output, const json::Value& message) -> void {
                              "examples/selective_round_vessel.icad",
                              "examples/topology_query_vessel.icad",
                              "examples/assembly_instances.icad",
-                             "examples/assembly_semantics.icad"})}}));
+                             "examples/assembly_semantics.icad",
+                             "examples/manufacturing_connections.icad"})}}));
 }
 
 [[nodiscard]] auto safe_relative_directory(const std::filesystem::path& workspace,

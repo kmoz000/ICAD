@@ -1,6 +1,7 @@
 #include "cad_viewport.hpp"
 
 #include <QMouseEvent>
+#include <QLineF>
 #include <QPainter>
 #include <QPainterPath>
 #include <QWheelEvent>
@@ -39,7 +40,7 @@ void main() {
     vec3 n = normalize(gl_FrontFacing ? eye_normal : -eye_normal);
     vec3 key = normalize(vec3(0.35, 0.55, 0.75));
     vec3 fill = normalize(vec3(-0.7, 0.1, 0.4));
-    float diffuse = 0.22 + 0.62 * max(dot(n, key), 0.0) + 0.16 * max(dot(n, fill), 0.0);
+    float diffuse = 0.24 + 0.60 * max(dot(n, key), 0.0) + 0.16 * max(dot(n, fill), 0.0);
     vec3 color = base_color.rgb * diffuse;
     color = mix(color, vec3(0.12, 0.72, 1.0), selected * 0.48);
     fragment = vec4(color, max(base_color.a, 0.18));
@@ -73,9 +74,44 @@ void main() { fragment = line_color; }
     return !(negative && positive);
 }
 
+[[nodiscard]] auto rounded_hexagon(const QRectF& bounds, qreal corner_radius) -> QPainterPath {
+    const qreal center_x = bounds.center().x();
+    const std::array<QPointF, 6> vertices{
+        QPointF{center_x, bounds.top()},
+        QPointF{bounds.right(), bounds.top() + bounds.height() * 0.24},
+        QPointF{bounds.right(), bounds.bottom() - bounds.height() * 0.24},
+        QPointF{center_x, bounds.bottom()},
+        QPointF{bounds.left(), bounds.bottom() - bounds.height() * 0.24},
+        QPointF{bounds.left(), bounds.top() + bounds.height() * 0.24},
+    };
+    const auto toward = [corner_radius](const QPointF& from, const QPointF& to) {
+        QLineF line{from, to};
+        line.setLength(std::min(corner_radius, line.length() * 0.35));
+        return line.p2();
+    };
+    QPainterPath path;
+    path.moveTo(toward(vertices.front(), vertices.back()));
+    for (std::size_t index = 0; index < vertices.size(); ++index) {
+        const auto next = (index + 1U) % vertices.size();
+        path.quadTo(vertices[index], toward(vertices[index], vertices[next]));
+        path.lineTo(toward(vertices[next], vertices[index]));
+    }
+    path.closeSubpath();
+    return path;
+}
+
 } // namespace
 
 CadViewport::CadViewport(QWidget* parent) : QOpenGLWidget{parent} {
+    // QOpenGLWidget renders into its own framebuffer. Request depth storage on
+    // the widget itself as well as on the application default format; without
+    // it, later triangles overwrite nearer surfaces and appear as radial
+    // saw-tooth bands even though the CAD mesh is watertight.
+    auto viewport_format = format();
+    viewport_format.setDepthBufferSize(24);
+    viewport_format.setStencilBufferSize(8);
+    viewport_format.setSamples(4);
+    setFormat(viewport_format);
     setFocusPolicy(Qt::StrongFocus);
     setMouseTracking(true);
     setMinimumSize(480, 360);
@@ -88,6 +124,7 @@ CadViewport::~CadViewport() {
     vertex_array_.destroy();
     vertex_buffer_.destroy();
     index_buffer_.destroy();
+    wire_index_buffer_.destroy();
     doneCurrent();
 }
 
@@ -164,25 +201,24 @@ auto CadViewport::set_debug_overlay(bool enabled) -> void {
 }
 
 auto CadViewport::orientation_cube_rect() const -> QRect {
-    return QRect{width() - 116, 22, 88, 88};
+    return QRect{width() - 132, 20, 104, 104};
 }
 
 auto CadViewport::draw_hud(QPainter& painter) const -> void {
     painter.setRenderHint(QPainter::Antialiasing);
     const QRect cube = orientation_cube_rect();
     const QPoint center = cube.center();
-    QPainterPath tile;
-    tile.addRoundedRect(QRectF{cube}, 14.0, 14.0);
-    painter.fillPath(tile, QColor{18, 26, 39, 224});
-    painter.setPen(QPen{QColor{"#52637c"}, 1.0});
+    const auto tile = rounded_hexagon(QRectF{cube}.adjusted(1.0, 1.0, -1.0, -1.0), 8.0);
+    painter.fillPath(tile, QColor{13, 24, 38, 232});
+    painter.setPen(QPen{QColor{"#48627f"}, 1.0});
     painter.drawPath(tile);
 
-    const QPolygon top{{center.x(), cube.top() + 14}, {cube.right() - 14, cube.top() + 31},
-                       {center.x(), cube.top() + 48}, {cube.left() + 14, cube.top() + 31}};
-    const QPolygon front{{cube.left() + 14, cube.top() + 31}, {center.x(), cube.top() + 48},
-                         {center.x(), cube.bottom() - 13}, {cube.left() + 14, cube.bottom() - 30}};
-    const QPolygon right{{center.x(), cube.top() + 48}, {cube.right() - 14, cube.top() + 31},
-                         {cube.right() - 14, cube.bottom() - 30}, {center.x(), cube.bottom() - 13}};
+    const QPolygon top{{center.x(), cube.top() + 16}, {cube.right() - 17, cube.top() + 36},
+                       {center.x(), cube.top() + 55}, {cube.left() + 17, cube.top() + 36}};
+    const QPolygon front{{cube.left() + 17, cube.top() + 36}, {center.x(), cube.top() + 55},
+                         {center.x(), cube.bottom() - 16}, {cube.left() + 17, cube.bottom() - 36}};
+    const QPolygon right{{center.x(), cube.top() + 55}, {cube.right() - 17, cube.top() + 36},
+                         {cube.right() - 17, cube.bottom() - 36}, {center.x(), cube.bottom() - 16}};
     painter.setPen(QPen{QColor{"#75849b"}, 1.0});
     painter.setBrush(QColor{"#354154"});
     painter.drawPolygon(top);
@@ -233,9 +269,6 @@ auto CadViewport::save_screenshot(const QString& path) -> bool {
 auto CadViewport::initializeGL() -> void {
     initializeOpenGLFunctions();
     glEnable(GL_DEPTH_TEST);
-    // ICAD can preview work-in-progress and imported meshes before winding has
-    // been normalized. Two-sided rendering prevents orbiting the camera from
-    // visually opening holes in otherwise usable geometry.
     glDisable(GL_CULL_FACE);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -248,6 +281,7 @@ auto CadViewport::initializeGL() -> void {
     vertex_array_.create();
     vertex_buffer_.create();
     index_buffer_.create();
+    wire_index_buffer_.create();
     initialized_ = true;
     scene_dirty_ = true;
 }
@@ -289,6 +323,11 @@ auto CadViewport::upload_scene() -> void {
     index_buffer_.setUsagePattern(QOpenGLBuffer::StaticDraw);
     index_buffer_.allocate(scene_.indices.data(),
                            static_cast<int>(scene_.indices.size() * sizeof(std::uint32_t)));
+    wire_index_buffer_.bind();
+    wire_index_buffer_.setUsagePattern(QOpenGLBuffer::StaticDraw);
+    wire_index_buffer_.allocate(
+        scene_.wire_indices.data(),
+        static_cast<int>(scene_.wire_indices.size() * sizeof(std::uint32_t)));
     mesh_program_.bind();
     mesh_program_.enableAttributeArray(0);
     mesh_program_.setAttributeBuffer(0, GL_FLOAT, offsetof(RenderVertex, position), 3,
@@ -300,6 +339,7 @@ auto CadViewport::upload_scene() -> void {
     mesh_program_.setAttributeBuffer(2, GL_FLOAT, offsetof(RenderVertex, color), 4,
                                      sizeof(RenderVertex));
     mesh_program_.release();
+    wire_index_buffer_.release();
     index_buffer_.release();
     vertex_buffer_.release();
     vertex_array_.release();
@@ -330,6 +370,14 @@ auto CadViewport::draw_grid(const QMatrix4x4& view_projection) -> void {
 }
 
 auto CadViewport::paintGL() -> void {
+    // QPainter draws the native HUD after the OpenGL pass and may change fixed
+    // function state. Restore depth state on every frame; relying on the state
+    // set once in initializeGL lets later triangles overwrite nearer geometry,
+    // which is visible as radial bands on revolved CAD solids.
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+    glDepthMask(GL_TRUE);
+    glDisable(GL_CULL_FACE);
     glClearColor(0.035F, 0.047F, 0.063F, 1.0F);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     update_matrices();
@@ -338,26 +386,44 @@ auto CadViewport::paintGL() -> void {
         QPainter painter{this};
         painter.setPen(QColor{148, 163, 184});
         painter.drawText(rect(), Qt::AlignCenter, QStringLiteral("Compile an ICAD model to preview it"));
+        draw_hud(painter);
         return;
     }
     if (scene_dirty_)
         upload_scene();
     vertex_array_.bind();
-    index_buffer_.bind();
-    mesh_program_.bind();
-    mesh_program_.setUniformValue("mvp", projection_ * view_);
-    mesh_program_.setUniformValue("model_view", view_);
-    glPolygonMode(GL_FRONT_AND_BACK, wireframe_ ? GL_LINE : GL_FILL);
-    for (std::size_t index = 0; index < scene_.parts.size(); ++index) {
-        const auto& part = scene_.parts[index];
-        mesh_program_.setUniformValue("selected", selected_part_ == index ? 1.0F : 0.0F);
-        const auto offset = reinterpret_cast<const void*>(
-            static_cast<std::uintptr_t>(part.first_index) * sizeof(std::uint32_t));
-        glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(part.index_count), GL_UNSIGNED_INT, offset);
+    if (wireframe_) {
+        wire_index_buffer_.bind();
+        line_program_.bind();
+        line_program_.setUniformValue("mvp", projection_ * view_);
+        for (std::size_t index = 0; index < scene_.parts.size(); ++index) {
+            const auto& part = scene_.parts[index];
+            line_program_.setUniformValue(
+                "line_color", selected_part_ == index ? QVector4D{0.0F, 0.75F, 1.0F, 1.0F}
+                                                       : QVector4D{0.68F, 0.76F, 0.88F, 0.92F});
+            const auto offset = reinterpret_cast<const void*>(
+                static_cast<std::uintptr_t>(part.first_wire_index) * sizeof(std::uint32_t));
+            glDrawElements(GL_LINES, static_cast<GLsizei>(part.wire_index_count),
+                           GL_UNSIGNED_INT, offset);
+        }
+        line_program_.release();
+        wire_index_buffer_.release();
+    } else {
+        index_buffer_.bind();
+        mesh_program_.bind();
+        mesh_program_.setUniformValue("mvp", projection_ * view_);
+        mesh_program_.setUniformValue("model_view", view_);
+        for (std::size_t index = 0; index < scene_.parts.size(); ++index) {
+            const auto& part = scene_.parts[index];
+            mesh_program_.setUniformValue("selected", selected_part_ == index ? 1.0F : 0.0F);
+            const auto offset = reinterpret_cast<const void*>(
+                static_cast<std::uintptr_t>(part.first_index) * sizeof(std::uint32_t));
+            glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(part.index_count), GL_UNSIGNED_INT,
+                           offset);
+        }
+        mesh_program_.release();
+        index_buffer_.release();
     }
-    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-    mesh_program_.release();
-    index_buffer_.release();
     vertex_array_.release();
 
     QPainter painter{this};

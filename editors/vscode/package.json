@@ -83,6 +83,21 @@
           "scope": "machine-overridable",
           "description": "Optional path to icad-viewer. Empty uses the workspace build, then the extension-managed toolchain."
         },
+        "icad.viewer.initialView": {
+          "type": "string",
+          "default": "isometric",
+          "enum": ["isometric", "front", "back", "left", "right", "top", "bottom"],
+          "enumDescriptions": [
+            "Three-axis isometric overview.",
+            "Look along the front axis.",
+            "Look along the back axis.",
+            "Look from the left side.",
+            "Look from the right side.",
+            "Look down from above.",
+            "Look upward from below."
+          ],
+          "description": "Autocompleteable standard side used when opening the native 3D viewer."
+        },
         "icad.toolchain.autoDownload": {
           "type": "boolean",
           "default": true,

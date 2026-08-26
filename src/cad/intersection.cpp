@@ -457,7 +457,11 @@ auto intersect(const Triangle3& first, const Triangle3& second, double tolerance
 
 auto analyze_intersections(const compiler::ir::Project& project, double tolerance_mm)
     -> IntersectionAnalysis {
-    const auto model = build_model(project);
+    return analyze_intersections(project, build_model(project), tolerance_mm);
+}
+
+auto analyze_intersections(const compiler::ir::Project& project, const Model& model,
+                           double tolerance_mm) -> IntersectionAnalysis {
     IntersectionAnalysis analysis;
     std::vector<Bounds> model_part_bounds;
     model_part_bounds.reserve(model.parts.size());
@@ -551,7 +555,36 @@ auto analyze_intersections(const compiler::ir::Project& project, double toleranc
         }
     }
     for (auto& [key, contact] : body_contacts) {
-        static_cast<void>(key);
+        for (const auto& connection : project.connections) {
+            const auto first_interface = std::ranges::find_if(
+                project.interfaces, [&](const auto& candidate) {
+                    return candidate.name == connection.first_interface;
+                });
+            const auto second_interface = std::ranges::find_if(
+                project.interfaces, [&](const auto& candidate) {
+                    return candidate.name == connection.second_interface;
+                });
+            if (first_interface == project.interfaces.end() ||
+                second_interface == project.interfaces.end()) {
+                continue;
+            }
+            const BodyPair connection_pair{std::min(first_interface->occurrence,
+                                                    second_interface->occurrence),
+                                           std::max(first_interface->occurrence,
+                                                    second_interface->occurrence)};
+            if (connection_pair != key)
+                continue;
+            contact.declared_connection = true;
+            contact.connection_name = connection.name;
+            contact.connection_method = connection.method;
+            contact.connection_standard = connection.standard;
+            break;
+        }
+        if (contact.declared_connection) {
+            analysis.declared_engagement_part_pairs += contact.penetrating_part_pairs;
+        } else {
+            analysis.unintended_penetrating_part_pairs += contact.penetrating_part_pairs;
+        }
         analysis.body_contacts.push_back(std::move(contact));
     }
     return analysis;

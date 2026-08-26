@@ -4,7 +4,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <map>
 #include <numbers>
 #include <ranges>
 #include <string_view>
@@ -16,6 +15,15 @@ namespace icad::cad {
 namespace {
 
 constexpr double tolerance = 1e-9;
+
+struct EdgeKeyHash {
+    [[nodiscard]] auto operator()(const std::pair<std::size_t, std::size_t>& edge) const noexcept
+        -> std::size_t {
+        const auto first = std::hash<std::size_t>{}(edge.first);
+        const auto second = std::hash<std::size_t>{}(edge.second);
+        return first ^ (second + 0x9e3779b9U + (first << 6U) + (first >> 2U));
+    }
+};
 
 [[nodiscard]] auto property(const compiler::ir::Feature& feature, std::string_view name,
                             double fallback = 0.0) -> double {
@@ -179,12 +187,17 @@ auto apply_transform(SolidTopology& solid, const Transform& transform) -> void {
     solid.feature = part.name;
     solid.feature_type = part.feature_type.empty() ? "FACETED" : part.feature_type;
     solid.shell.id = solid.id + "/shell.outer";
+    solid.vertices.reserve(part.vertices.size());
+    solid.edges.reserve(part.triangles.size() * 2U);
+    solid.faces.reserve(part.triangles.size());
+    solid.shell.faces.reserve(part.triangles.size());
     std::vector<std::string> vertex_ids;
     vertex_ids.reserve(part.vertices.size());
     for (std::size_t index = 0; index < part.vertices.size(); ++index)
         vertex_ids.push_back(add_vertex(solid, std::to_string(index), part.vertices[index]));
 
-    std::map<std::pair<std::size_t, std::size_t>, std::string> edge_ids;
+    std::unordered_map<std::pair<std::size_t, std::size_t>, std::string, EdgeKeyHash> edge_ids;
+    edge_ids.reserve(part.triangles.size() * 2U);
     for (std::size_t triangle_index = 0; triangle_index < part.triangles.size();
          ++triangle_index) {
         const auto& triangle = part.triangles[triangle_index];
@@ -664,6 +677,7 @@ auto validate_topology(const TopologyModel& model) -> TopologyValidation {
         return validation;
     }
     std::unordered_set<std::string> solid_ids;
+    solid_ids.reserve(model.solids.size());
     for (const auto& solid : model.solids) {
         if (solid.id.empty() || !solid_ids.insert(solid.id).second) {
             issue(validation, "ICAD-G0002", solid.id, "solid ID is empty or duplicated");
@@ -674,6 +688,7 @@ auto validate_topology(const TopologyModel& model) -> TopologyValidation {
             continue;
         }
         std::unordered_map<std::string, const TopologyVertex*> vertices;
+        vertices.reserve(solid.vertices.size());
         for (const auto& vertex : solid.vertices) {
             if (vertex.id.empty() || !vertices.emplace(vertex.id, &vertex).second) {
                 issue(validation, "ICAD-G0004", vertex.id, "vertex ID is empty or duplicated");
@@ -682,6 +697,7 @@ auto validate_topology(const TopologyModel& model) -> TopologyValidation {
             }
         }
         std::unordered_map<std::string, const TopologyEdge*> edges;
+        edges.reserve(solid.edges.size());
         for (const auto& edge : solid.edges) {
             if (edge.id.empty() || !edges.emplace(edge.id, &edge).second) {
                 issue(validation, "ICAD-G0006", edge.id, "edge ID is empty or duplicated");
@@ -728,6 +744,9 @@ auto validate_topology(const TopologyModel& model) -> TopologyValidation {
         std::unordered_map<std::string, Uses> uses;
         std::unordered_set<std::string> face_ids;
         std::unordered_set<std::string> wire_ids;
+        uses.reserve(solid.edges.size());
+        face_ids.reserve(solid.faces.size());
+        wire_ids.reserve(solid.faces.size());
         for (const auto& face : solid.faces) {
             if (face.id.empty() || !face_ids.insert(face.id).second) {
                 issue(validation, "ICAD-G0012", face.id, "face ID is empty or duplicated");

@@ -900,6 +900,12 @@ auto write_optimization_matrix(std::ostringstream& output,
 
 auto visual_snapshot_json(const compiler::ir::Project& project) -> std::string {
     const auto model = cad::build_model(project);
+    const auto analysis = cad::analyze(project, model);
+    const auto constraint_results = constraints::validate(project, analysis);
+    const auto intersections =
+        cad::analyze_intersections(project, model, project.tolerance.linear_mm);
+    const auto manufacturing_report =
+        manufacturing::validate(project, analysis, intersections);
     const auto bodies = body_names(model);
     struct BodySummary {
         std::size_t parts{};
@@ -1195,7 +1201,81 @@ auto visual_snapshot_json(const compiler::ir::Project& project) -> std::string {
         }
         output << "}}";
     }
-    output << "],\"sceneSamples\":[";
+    output << "],\"interfaces\":[";
+    for (std::size_t index = 0; index < project.interfaces.size(); ++index) {
+        if (index != 0)
+            output << ',';
+        const auto& interface = project.interfaces[index];
+        const bool attachment_valid = std::ranges::none_of(
+            manufacturing_report.issues, [&](const auto& issue) {
+                return issue.subject == interface.name &&
+                       issue.severity == manufacturing::Severity::error;
+            });
+        output << "{\"name\":" << quoted(interface.name)
+               << ",\"occurrence\":" << quoted(interface.occurrence)
+               << ",\"point\":" << quoted(interface.point)
+               << ",\"axis\":" << quoted(interface.axis)
+               << ",\"type\":" << quoted(interface.kind)
+               << ",\"attachmentValid\":" << (attachment_valid ? "true" : "false");
+        if (interface.has_size)
+            output << ",\"sizeMm\":" << interface.size_mm;
+        output << '}';
+    }
+    output << "],\"connections\":[";
+    for (std::size_t index = 0; index < project.connections.size(); ++index) {
+        if (index != 0)
+            output << ',';
+        const auto& connection = project.connections[index];
+        const auto first_interface = std::ranges::find(
+            project.interfaces, connection.first_interface,
+            &compiler::ir::ComponentInterface::name);
+        const auto second_interface = std::ranges::find(
+            project.interfaces, connection.second_interface,
+            &compiler::ir::ComponentInterface::name);
+        const bool engineering_valid = std::ranges::none_of(
+            manufacturing_report.issues, [&](const auto& issue) {
+                if (issue.severity != manufacturing::Severity::error)
+                    return false;
+                return issue.subject == connection.name ||
+                       (first_interface != project.interfaces.end() &&
+                        issue.subject == first_interface->name) ||
+                       (second_interface != project.interfaces.end() &&
+                        issue.subject == second_interface->name);
+            });
+        const auto snap_state = !connection.aligned
+                                    ? (connection.automatic ? "SNAP_REQUIRED" : "MISALIGNED")
+                                : engineering_valid ? "SEATED"
+                                                    : "INVALID_GEOMETRY";
+        output << "{\"name\":" << quoted(connection.name)
+               << ",\"interfaces\":[" << quoted(connection.first_interface) << ','
+               << quoted(connection.second_interface) << ']'
+               << ",\"method\":" << quoted(connection.method)
+               << ",\"standard\":" << quoted(connection.standard)
+               << ",\"fastener\":" << quoted(connection.fastener)
+               << ",\"fit\":" << quoted(connection.fit)
+               << ",\"clearanceMm\":" << connection.clearance_mm
+               << ",\"gapMm\":" << connection.interface_gap_mm
+               << ",\"axisAlignment\":" << connection.axis_alignment
+               << ",\"automatic\":" << (connection.automatic ? "true" : "false")
+               << ",\"aligned\":" << (connection.aligned ? "true" : "false")
+               << ",\"engineeringValid\":" << (engineering_valid ? "true" : "false")
+               << ",\"snapState\":" << quoted(snap_state)
+               << '}';
+    }
+    output << "],\"engineering\":{\"constraintsPassed\":"
+           << (constraints::all_passed(constraint_results) ? "true" : "false")
+           << ",\"manufacturingPassed\":" << (manufacturing_report.passed ? "true" : "false")
+           << ",\"penetratingPartPairs\":" << intersections.penetrating_part_pairs
+           << ",\"issues\":[";
+    for (std::size_t index = 0; index < manufacturing_report.issues.size(); ++index) {
+        if (index != 0)
+            output << ',';
+        const auto& issue = manufacturing_report.issues[index];
+        output << "{\"code\":" << quoted(issue.code)
+               << ",\"subject\":" << quoted(issue.subject)
+               << ",\"message\":" << quoted(issue.message) << '}';
+    }
+    output << "]},\"sceneSamples\":[";
     bool first_sample = true;
     for (const auto& scene_value : project.scenes) {
         const std::array sample_times{0.0, scene_value.duration_seconds * 0.5,
@@ -1376,14 +1456,15 @@ auto comparison_json(const compiler::ir::Project& first,
 }
 
 auto project_json(const compiler::ir::Project& project) -> std::string {
-    const auto metrics = cad::analyze(project);
     const auto delivery_model = cad::build_model(project);
+    const auto metrics = cad::analyze(project, delivery_model);
     const auto intersections =
-        cad::analyze_intersections(project, project.tolerance.linear_mm);
+        cad::analyze_intersections(project, delivery_model, project.tolerance.linear_mm);
     const auto topology = cad::build_topology(project);
     const auto topology_validation = cad::validate_topology(topology);
-    const auto constraint_results = constraints::validate(project);
-    const auto manufacturing_report = manufacturing::validate(project);
+    const auto constraint_results = constraints::validate(project, metrics);
+    const auto manufacturing_report =
+        manufacturing::validate(project, metrics, intersections);
     const auto dependencies = compiler::build_dependency_graph(project);
     std::ostringstream output;
     output << std::setprecision(17)
@@ -1397,6 +1478,8 @@ auto project_json(const compiler::ir::Project& project) -> std::string {
            << ",\"vectors\":" << project.vectors.size() << ",\"poses\":" << project.poses.size()
            << ",\"instances\":" << project.instances.size()
            << ",\"joints\":" << project.joints.size()
+           << ",\"interfaces\":" << project.interfaces.size()
+           << ",\"connections\":" << project.connections.size()
            << ",\"materials\":" << project.materials.size()
            << ",\"profiles\":" << project.profiles.size()
            << ",\"sketches\":" << project.sketches.size()
@@ -1541,6 +1624,10 @@ auto project_json(const compiler::ir::Project& project) -> std::string {
            << ",\"intersectingPartPairs\":" << intersections.intersecting_part_pairs
            << ",\"intersectingTrianglePairs\":" << intersections.intersecting_triangle_pairs
            << ",\"penetratingPartPairs\":" << intersections.penetrating_part_pairs
+           << ",\"declaredEngagementPartPairs\":"
+           << intersections.declared_engagement_part_pairs
+           << ",\"unintendedPenetratingPartPairs\":"
+           << intersections.unintended_penetrating_part_pairs
            << ",\"containedPartPairs\":" << intersections.contained_part_pairs
            << ",\"surfaceContactOnlyPartPairs\":"
            << intersections.surface_contact_only_part_pairs
@@ -1559,7 +1646,14 @@ auto project_json(const compiler::ir::Project& project) -> std::string {
                << ",\"containedPartPairs\":" << contact.contained_part_pairs
                << ",\"surfaceContactOnlyPartPairs\":"
                << contact.surface_contact_only_part_pairs
-               << '}';
+               << ",\"declaredConnection\":"
+               << (contact.declared_connection ? "true" : "false");
+        if (contact.declared_connection) {
+            output << ",\"connection\":" << quoted(contact.connection_name)
+                   << ",\"method\":" << quoted(contact.connection_method)
+                   << ",\"standard\":" << quoted(contact.connection_standard);
+        }
+        output << '}';
     }
     output << "]},\"spatial\":{\"angles\":[";
     for (std::size_t index = 0; index < project.angles.size(); ++index) {
@@ -1803,6 +1897,54 @@ auto project_json(const compiler::ir::Project& project) -> std::string {
         if (!joint.upper_limit_reference.empty())
             output << ",\"upperLimitReference\":" << quoted(joint.upper_limit_reference);
         output << '}';
+    }
+    output << "],\"interfaces\":[";
+    for (std::size_t index = 0; index < project.interfaces.size(); ++index) {
+        if (index != 0)
+            output << ',';
+        const auto& interface = project.interfaces[index];
+        output << "{\"name\":" << quoted(interface.name)
+               << ",\"occurrence\":" << quoted(interface.occurrence)
+               << ",\"point\":" << quoted(interface.point)
+               << ",\"axis\":" << quoted(interface.axis)
+               << ",\"type\":" << quoted(interface.kind);
+        if (interface.has_size)
+            output << ",\"sizeMm\":" << interface.size_mm;
+        const auto point = std::ranges::find(project.points, interface.point,
+                                             &compiler::ir::SpatialPoint::name);
+        if (point != project.points.end()) {
+            output << ",\"positionMm\":[" << point->position_mm[0] << ','
+                   << point->position_mm[1] << ',' << point->position_mm[2] << ']';
+        }
+        const auto axis = std::ranges::find(project.vectors, interface.axis,
+                                            &compiler::ir::Direction::name);
+        if (axis != project.vectors.end()) {
+            output << ",\"axisVector\":[" << axis->unit[0] << ',' << axis->unit[1]
+                   << ',' << axis->unit[2] << ']';
+        }
+        output << '}';
+    }
+    output << "],\"connections\":[";
+    for (std::size_t index = 0; index < project.connections.size(); ++index) {
+        if (index != 0)
+            output << ',';
+        const auto& connection = project.connections[index];
+        output << "{\"name\":" << quoted(connection.name)
+               << ",\"interfaces\":[" << quoted(connection.first_interface) << ','
+               << quoted(connection.second_interface) << ']'
+               << ",\"method\":" << quoted(connection.method)
+               << ",\"standard\":" << quoted(connection.standard)
+               << ",\"fastener\":" << quoted(connection.fastener)
+               << ",\"fit\":" << quoted(connection.fit)
+               << ",\"clearanceMm\":" << connection.clearance_mm
+               << ",\"interfaceGapMm\":" << connection.interface_gap_mm
+               << ",\"axisAlignment\":" << connection.axis_alignment
+               << ",\"automatic\":" << (connection.automatic ? "true" : "false")
+               << ",\"aligned\":" << (connection.aligned ? "true" : "false")
+               << ",\"snapState\":"
+               << quoted(connection.aligned ? "SEATED" :
+                         (connection.automatic ? "SNAP_REQUIRED" : "MISALIGNED"))
+               << '}';
     }
     output << "]},\"bodies\":[";
     for (std::size_t index = 0; index < project.bodies.size(); ++index) {

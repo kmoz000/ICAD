@@ -9,18 +9,23 @@
 #include <QTimer>
 
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <optional>
+#include <cstdint>
 #include <vector>
 
 class QAction;
 class QCheckBox;
 class QDockWidget;
+class QFileSystemModel;
 class QLabel;
 class QListWidget;
 class QMenu;
 class QPlainTextEdit;
 class QSlider;
+class QTabBar;
+class QTreeView;
 class QTreeWidget;
 
 namespace icad::desktop {
@@ -30,21 +35,53 @@ class MainWindow final : public QMainWindow {
     explicit MainWindow(std::filesystem::path source_path, QWidget* parent = nullptr);
     ~MainWindow() override;
 
-    [[nodiscard]] auto ready() const noexcept -> bool { return session_ != nullptr; }
+    [[nodiscard]] auto ready() const noexcept -> bool { return !documents_.empty(); }
     [[nodiscard]] auto error() const -> QString { return error_; }
+    [[nodiscard]] auto document_count() const noexcept -> std::size_t { return documents_.size(); }
+    auto open_document(const std::filesystem::path& path) -> bool;
+    auto open_workspace(const std::filesystem::path& path) -> bool;
+    auto set_standard_view(StandardView view) -> void;
+    auto request_snapshot(QString path, std::function<void(bool)> completion) -> void;
 
   protected:
     auto closeEvent(QCloseEvent* event) -> void override;
 
   private:
+    struct OpenDocument {
+        std::uint64_t id{};
+        std::filesystem::path path;
+        std::shared_ptr<engine::Session> session;
+        QString source;
+        QString saved_source;
+        std::vector<QString> edit_history;
+        int history_index{-1};
+        bool modified{false};
+    };
+
+    struct CompileTaskResult {
+        std::uint64_t document_id{};
+        QString source;
+        engine::PreviewResult preview;
+    };
+
     auto build_ui() -> void;
     auto build_actions() -> void;
     auto apply_theme() -> void;
     auto open_source_dialog() -> void;
+    auto open_folder_dialog() -> void;
+    auto open_folder(const std::filesystem::path& path) -> bool;
     auto open_source(const std::filesystem::path& path) -> bool;
+    auto switch_document(int index) -> void;
+    auto close_document(int index) -> void;
+    [[nodiscard]] auto confirm_close_document(int index) -> bool;
+    [[nodiscard]] auto save_document(int index) -> bool;
+    [[nodiscard]] auto active_document() -> OpenDocument*;
+    [[nodiscard]] auto active_document() const -> const OpenDocument*;
+    [[nodiscard]] auto active_source_path() const -> std::filesystem::path;
+    auto update_document_chrome() -> void;
     auto update_recent_files(const std::filesystem::path& path) -> void;
     auto rebuild_recent_menu() -> void;
-    [[nodiscard]] auto confirm_abandon_changes() -> bool;
+    [[nodiscard]] auto confirm_all_changes() -> bool;
     auto schedule_compile() -> void;
     auto begin_compile() -> void;
     auto finish_compile() -> void;
@@ -62,11 +99,16 @@ class MainWindow final : public QMainWindow {
     auto update_history_actions() -> void;
     auto set_scene_playing(bool enabled) -> void;
 
-    std::unique_ptr<engine::Session> session_;
+    std::vector<OpenDocument> documents_;
+    std::uint64_t next_document_id_{1};
+    int active_document_index_{-1};
     QString error_;
-    std::filesystem::path source_path_;
+    std::filesystem::path workspace_root_;
     QPlainTextEdit* editor_{};
     CadViewport* viewport_{};
+    QTabBar* document_tabs_{};
+    QFileSystemModel* workspace_model_{};
+    QTreeView* workspace_tree_{};
     QListWidget* diagnostics_{};
     QTreeWidget* model_tree_{};
     QListWidget* scenes_{};
@@ -75,6 +117,7 @@ class MainWindow final : public QMainWindow {
     QLabel* compile_state_{};
     QLabel* metrics_{};
     QDockWidget* diagnostics_dock_{};
+    QDockWidget* workspace_dock_{};
     QMenu* recent_menu_{};
     QAction* history_back_action_{};
     QAction* history_next_action_{};
@@ -82,13 +125,11 @@ class MainWindow final : public QMainWindow {
     QTimer compile_timer_;
     QTimer scene_timer_;
     QTimer history_timer_;
-    QFutureWatcher<engine::PreviewResult> compile_watcher_;
+    QFutureWatcher<CompileTaskResult> compile_watcher_;
     QString pending_source_;
-    QString saved_source_;
-    std::vector<QString> edit_history_;
-    int history_index_{-1};
+    QString pending_snapshot_path_;
+    std::function<void(bool)> snapshot_completion_;
     bool compile_pending_{false};
-    bool modified_{false};
     bool scene_playing_{false};
     bool restoring_history_{false};
 };

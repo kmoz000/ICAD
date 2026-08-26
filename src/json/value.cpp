@@ -4,6 +4,8 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <locale>
+#include <sstream>
 #include <utility>
 
 namespace icad::json {
@@ -260,8 +262,10 @@ class Parser {
         }
         double value = 0.0;
         const auto text = source_.substr(start, position_ - start);
-        const auto conversion = std::from_chars(text.data(), text.data() + text.size(), value);
-        if (conversion.ec != std::errc{} || !std::isfinite(value)) {
+        std::istringstream stream{std::string{text}};
+        stream.imbue(std::locale::classic());
+        char trailing{};
+        if (!(stream >> value) || (stream >> trailing) || !std::isfinite(value)) {
             fail("JSON number is out of range");
             return std::nullopt;
         }

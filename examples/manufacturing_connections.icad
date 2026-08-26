@@ -1,0 +1,39 @@
+# Standards-aware two-part assembly with an explicit magnetic seating contract.
+REQUIRES ICAD 1.0
+REQUIRES CAPABILITY MANUFACTURING_CONNECTIONS_V1
+REQUIRES CAPABILITY MAGNETIC_INTERFACE_SNAP_V1
+PROJECT manufacturing_connections
+UNITS mm
+TOLERANCE LINEAR 0.01 mm ANGULAR 0.1 deg
+
+PARAMETER block_width 10 mm
+PARAMETER block_depth 10 mm
+PARAMETER block_height 10 mm
+PARAMETER half_width block_width / 2
+PARAMETER half_depth block_depth / 2
+PARAMETER flange_size 10 mm
+
+# These datums are driven by the stock dimensions. Editing block_height moves
+# both the instance origin and connection plane instead of leaving stale geometry.
+POINT3 upper_origin 0 mm 0 mm block_height
+POINT3 shared_mount_plane half_width half_depth block_height
+VECTOR base_normal 0 0 1
+VECTOR cover_normal 0 0 -1
+
+MATERIAL alloy ALUMINUM
+BODY base_block
+MATERIAL alloy
+FEATURE base_stock
+TYPE BOX
+WIDTH block_width
+DEPTH block_depth
+HEIGHT block_height
+END
+END
+
+INSTANCE cover_block OF base_block AT upper_origin ROTATION 0 deg 0 deg 0 deg
+MATE seated FACE base_block Z_MAX cover_block Z_MIN OFFSET 0 mm
+
+INTERFACE base_flange BODY base_block AT shared_mount_plane AXIS base_normal TYPE FLANGE SIZE flange_size
+INTERFACE cover_flange BODY cover_block AT shared_mount_plane AXIS cover_normal TYPE FLANGE SIZE flange_size
+CONNECT cover_mount base_flange cover_flange METHOD BOLTED STANDARD ISO_4762 FASTENER M6 CLEARANCE 0.01 mm AUTO

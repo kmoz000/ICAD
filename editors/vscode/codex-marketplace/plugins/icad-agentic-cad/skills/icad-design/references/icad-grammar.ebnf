@@ -3,7 +3,8 @@ requirement      = "REQUIRES", ( "ICAD", language_version |
                                   "CAPABILITY", identifier ), newline ;
 language_version = digit, { digit }, ".", digit, { digit } ;
 statement        = project | units | parameter | angle | point3 | vector | pose | instance | joint |
-                   tolerance | material | profile | sketch | body | constraint | mate | scene ;
+                   interface | connection | tolerance | material | profile | sketch | body |
+                   constraint | mate | scene ;
 
 project          = "PROJECT", identifier, newline ;
 units            = "UNITS", identifier, newline ;
@@ -26,6 +27,17 @@ joint            = "JOINT", identifier, joint_kind, identifier, identifier,
                    "AT", identifier, "AXIS", identifier, [ joint_drive ], newline ;
 joint_kind       = "FIXED" | "REVOLUTE" | "PRISMATIC" ;
 joint_drive      = "VALUE", scalar_value, "LIMIT", scalar_value, scalar_value ;
+interface        = "INTERFACE", identifier, "BODY", identifier, "AT", identifier,
+                   "AXIS", identifier, "TYPE", interface_kind,
+                   [ "SIZE", scalar_value ], newline ;
+interface_kind   = "MOUNT" | "FLANGE" | "SHAFT" | "BORE" | "PIN" | "HOLE" |
+                   "BEARING_SEAT" | "WELD_SEAM" | "BOND_FACE" | "DATUM" ;
+connection       = "CONNECT", identifier, identifier, identifier, "METHOD",
+                   connection_method,
+                   { "STANDARD", identifier | "FASTENER", identifier |
+                     "FIT", identifier | "CLEARANCE", scalar_value | "AUTO" }, newline ;
+connection_method = "BOLTED" | "SCREWED" | "PINNED" | "PRESS_FIT" |
+                    "SLIP_FIT" | "BEARING" | "WELDED" | "BRAZED" | "BONDED" ;
 material         = "MATERIAL", identifier,
                    ( identifier, newline |
                      newline, "PRESET", identifier, newline,

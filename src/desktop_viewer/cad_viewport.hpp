@@ -63,6 +63,7 @@ class CadViewport final : public QOpenGLWidget, protected QOpenGLFunctions {
     QOpenGLShaderProgram line_program_;
     QOpenGLBuffer vertex_buffer_{QOpenGLBuffer::VertexBuffer};
     QOpenGLBuffer index_buffer_{QOpenGLBuffer::IndexBuffer};
+    QOpenGLBuffer wire_index_buffer_{QOpenGLBuffer::IndexBuffer};
     QOpenGLVertexArrayObject vertex_array_;
     QMatrix4x4 projection_;
     QMatrix4x4 view_;

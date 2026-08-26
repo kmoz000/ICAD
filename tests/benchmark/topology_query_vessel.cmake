@@ -54,7 +54,7 @@ execute_process(
     TIMEOUT 45
 )
 if(NOT build_result EQUAL 0 OR NOT build_output MATCHES "BUILD components=1 solids=1" OR
-   NOT build_output MATCHES "triangles=768")
+   NOT build_output MATCHES "triangles=2304")
     message(FATAL_ERROR "topology-query build failed: ${build_error}${build_output}")
 endif()
 
@@ -71,7 +71,7 @@ execute_process(
     RESULT_VARIABLE stl_result OUTPUT_VARIABLE stl_output ERROR_VARIABLE stl_error
 )
 if(NOT stl_result EQUAL 0 OR NOT stl_output MATCHES "STL_SOLIDS 1" OR
-   NOT stl_output MATCHES "STL_FACETS 768")
+   NOT stl_output MATCHES "STL_FACETS 2304")
     message(FATAL_ERROR "topology-query STL read-back mismatch: ${stl_error}${stl_output}")
 endif()
 

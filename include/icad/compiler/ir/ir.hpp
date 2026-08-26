@@ -96,6 +96,31 @@ struct Joint {
     bool driven{};
 };
 
+struct ComponentInterface {
+    std::string name;
+    std::string occurrence;
+    std::string point;
+    std::string axis;
+    std::string kind;
+    double size_mm{};
+    bool has_size{};
+};
+
+struct AssemblyConnection {
+    std::string name;
+    std::string first_interface;
+    std::string second_interface;
+    std::string method;
+    std::string standard;
+    std::string fastener;
+    std::string fit;
+    double clearance_mm{};
+    double interface_gap_mm{};
+    double axis_alignment{};
+    bool automatic{};
+    bool aligned{};
+};
+
 struct Property {
     std::string name;
     Quantity value;
@@ -335,6 +360,8 @@ struct Project {
     std::vector<BodyPose> poses;
     std::vector<ComponentInstance> instances;
     std::vector<Joint> joints;
+    std::vector<ComponentInterface> interfaces;
+    std::vector<AssemblyConnection> connections;
     std::vector<Material> materials;
     std::vector<Profile> profiles;
     std::vector<Sketch> sketches;

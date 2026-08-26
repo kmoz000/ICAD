@@ -7,6 +7,11 @@
 #include <string>
 #include <vector>
 
+namespace icad::cad {
+struct IntersectionAnalysis;
+struct ProjectAnalysis;
+}
+
 namespace icad::manufacturing {
 
 enum class Severity { information, warning, error };
@@ -40,6 +45,10 @@ struct Report {
 
 [[nodiscard]] auto validate(const compiler::ir::Project& project, const Rules& rules = {})
     -> Report;
+[[nodiscard]] auto validate(const compiler::ir::Project& project,
+                            const cad::ProjectAnalysis& analysis,
+                            const cad::IntersectionAnalysis& intersections,
+                            const Rules& rules = {}) -> Report;
 [[nodiscard]] auto write_report(const compiler::ir::Project& project,
                                 const std::filesystem::path& output,
                                 const Rules& rules = {}) -> bool;

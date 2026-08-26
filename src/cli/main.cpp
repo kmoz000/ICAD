@@ -17,13 +17,14 @@
 #include "icad/project/builder.hpp"
 
 #include <algorithm>
-#include <charconv>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <iomanip>
 #include <iterator>
+#include <locale>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <string_view>
 
@@ -215,8 +216,12 @@ auto print_ir(const icad::compiler::ir::Project& project) -> void {
 
 [[nodiscard]] auto parse_double(std::string_view source) -> std::optional<double> {
     double value{};
-    const auto converted = std::from_chars(source.data(), source.data() + source.size(), value);
-    if (converted.ec != std::errc{} || converted.ptr != source.data() + source.size())
+    std::istringstream stream{std::string{source}};
+    stream.imbue(std::locale::classic());
+    if (!(stream >> value))
+        return std::nullopt;
+    char trailing{};
+    if (stream >> trailing)
         return std::nullopt;
     return value;
 }
@@ -527,7 +532,11 @@ auto main(int argc, char** argv) -> int {
                      "\"polyhedralSolidClassification\",\"penetratingPartPairs\":"
                   << analysis.penetrating_part_pairs << ",\"containedPartPairs\":"
                   << analysis.contained_part_pairs << ",\"surfaceContactOnlyPartPairs\":"
-                  << analysis.surface_contact_only_part_pairs << ",\"bodyPairs\":[";
+                  << analysis.surface_contact_only_part_pairs
+                  << ",\"declaredEngagementPartPairs\":"
+                  << analysis.declared_engagement_part_pairs
+                  << ",\"unintendedPenetratingPartPairs\":"
+                  << analysis.unintended_penetrating_part_pairs << ",\"bodyPairs\":[";
         for (std::size_t index = 0; index < analysis.body_contacts.size(); ++index) {
             if (index != 0)
                 std::cout << ',';
@@ -537,7 +546,15 @@ auto main(int argc, char** argv) -> int {
                       << "\",\"penetratingPartPairs\":" << contact.penetrating_part_pairs
                       << ",\"containedPartPairs\":" << contact.contained_part_pairs
                       << ",\"surfaceContactOnlyPartPairs\":"
-                      << contact.surface_contact_only_part_pairs << '}';
+                      << contact.surface_contact_only_part_pairs
+                      << ",\"declaredConnection\":"
+                      << (contact.declared_connection ? "true" : "false");
+            if (contact.declared_connection) {
+                std::cout << ",\"connection\":\"" << contact.connection_name
+                          << "\",\"method\":\"" << contact.connection_method
+                          << "\",\"standard\":\"" << contact.connection_standard << '"';
+            }
+            std::cout << '}';
         }
         std::cout << "]}\n";
         return 0;

@@ -203,8 +203,8 @@ auto add_triangle(Part& part, std::size_t first, std::size_t second, std::size_t
     return part;
 }
 
-[[nodiscard]] auto make_revolve(const compiler::ir::Profile& profile) -> Part {
-    constexpr std::size_t segments = 32;
+[[nodiscard]] auto make_revolve(const compiler::ir::Profile& profile,
+                                std::size_t segments = 32) -> Part {
     const std::size_t points = profile.points.size();
     Part part;
     part.vertices.reserve(segments * points);
@@ -866,7 +866,11 @@ enum class PrincipalAxis { x, y, z };
 
     compiler::ir::Profile profile;
     profile.points = std::move(section);
-    auto result = make_revolve(profile);
+    // Edge finishing is part of the delivered surface, not a coarse preview.
+    // Use a denser angular tessellation than the legacy generic revolution so
+    // the selected circular loop stays visually and dimensionally smooth.
+    constexpr std::size_t finish_segments = 96;
+    auto result = make_revolve(profile, finish_segments);
     for (auto& vertex : result.vertices) {
         vertex.x += center_x;
         vertex.y += center_y;

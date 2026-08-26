@@ -3,6 +3,7 @@
 #include "icad/json/value.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <map>
@@ -104,8 +105,10 @@ auto parse_render_scene(std::string_view source) -> SceneParseResult {
             source_triangles == nullptr || source_triangles->array() == nullptr) {
             continue;
         }
-        const auto base = result.scene.vertices.size();
-        if (base > std::numeric_limits<std::uint32_t>::max()) {
+        const auto source_triangle_count = source_triangles->array()->size();
+        const auto available_indices = std::numeric_limits<std::uint32_t>::max() -
+                                       result.scene.vertices.size();
+        if (source_triangle_count > available_indices / 3U) {
             result.error = QStringLiteral("Scene exceeds the 32-bit native mesh index limit");
             return result;
         }
@@ -118,18 +121,19 @@ auto parse_render_scene(std::string_view source) -> SceneParseResult {
         part.body = QString::fromStdString(text(source_part.find("body")));
         part.material = QString::fromStdString(material_name);
         part.first_index = static_cast<std::uint32_t>(result.scene.indices.size());
+        part.first_wire_index = static_cast<std::uint32_t>(result.scene.wire_indices.size());
         part.minimum = QVector3D{limit, limit, limit};
         part.maximum = QVector3D{-limit, -limit, -limit};
 
-        result.scene.vertices.reserve(result.scene.vertices.size() + source_vertices->array()->size());
+        std::vector<QVector3D> positions;
+        positions.reserve(source_vertices->array()->size());
         for (const auto& source_vertex : *source_vertices->array()) {
             QVector3D position;
             if (!vector3(source_vertex, position)) {
                 result.error = QStringLiteral("Part '%1' has an invalid vertex").arg(part.name);
                 return result;
             }
-            result.scene.vertices.push_back(
-                {position, {}, QVector4D{color.redF(), color.greenF(), color.blueF(), color.alphaF()}});
+            positions.push_back(position);
             part.minimum.setX(std::min(part.minimum.x(), position.x()));
             part.minimum.setY(std::min(part.minimum.y(), position.y()));
             part.minimum.setZ(std::min(part.minimum.z(), position.z()));
@@ -138,6 +142,15 @@ auto parse_render_scene(std::string_view source) -> SceneParseResult {
             part.maximum.setZ(std::max(part.maximum.z(), position.z()));
         }
 
+        struct SourceTriangle {
+            std::array<std::uint32_t, 3> vertices{};
+            QVector3D normal;
+            std::array<float, 3> corner_angles{};
+        };
+        std::vector<SourceTriangle> triangles;
+        triangles.reserve(source_triangle_count);
+        std::vector<std::vector<std::size_t>> vertex_faces(positions.size());
+        std::map<std::pair<std::uint32_t, std::uint32_t>, std::vector<QVector3D>> edge_normals;
         for (const auto& source_triangle : *source_triangles->array()) {
             const auto* corners = source_triangle.array();
             if (corners == nullptr || corners->size() != 3 || (*corners)[0].number() == nullptr ||
@@ -156,18 +169,93 @@ auto parse_render_scene(std::string_view source) -> SceneParseResult {
                 }
                 local[corner] = static_cast<std::uint32_t>(raw);
             }
-            const auto first = static_cast<std::uint32_t>(base) + local[0];
-            const auto second = static_cast<std::uint32_t>(base) + local[1];
-            const auto third = static_cast<std::uint32_t>(base) + local[2];
-            const QVector3D normal = QVector3D::normal(result.scene.vertices[first].position,
-                                                       result.scene.vertices[second].position,
-                                                       result.scene.vertices[third].position);
-            result.scene.vertices[first].normal += normal;
-            result.scene.vertices[second].normal += normal;
-            result.scene.vertices[third].normal += normal;
-            result.scene.indices.insert(result.scene.indices.end(), {first, second, third});
+            const QVector3D first_edge = positions[local[1]] - positions[local[0]];
+            const QVector3D second_edge = positions[local[2]] - positions[local[0]];
+            QVector3D normal = QVector3D::crossProduct(first_edge, second_edge);
+            if (qFuzzyIsNull(normal.lengthSquared())) {
+                result.error = QStringLiteral("Part '%1' has a degenerate triangle").arg(part.name);
+                return result;
+            }
+            normal.normalize();
+            SourceTriangle triangle{{local[0], local[1], local[2]}, normal, {}};
+            for (std::size_t corner = 0; corner < 3; ++corner) {
+                const QVector3D first =
+                    positions[local[(corner + 1U) % 3U]] - positions[local[corner]];
+                const QVector3D second =
+                    positions[local[(corner + 2U) % 3U]] - positions[local[corner]];
+                const float divisor = first.length() * second.length();
+                const float cosine = divisor <= 1.0e-12F
+                                         ? 1.0F
+                                         : std::clamp(QVector3D::dotProduct(first, second) /
+                                                          divisor,
+                                                      -1.0F, 1.0F);
+                triangle.corner_angles[corner] = std::acos(cosine);
+                vertex_faces[local[corner]].push_back(triangles.size());
+            }
+            triangles.push_back(triangle);
+            for (std::size_t edge = 0; edge < 3; ++edge) {
+                auto edge_first = local[edge];
+                auto edge_second = local[(edge + 1U) % 3U];
+                if (edge_first > edge_second)
+                    std::swap(edge_first, edge_second);
+                edge_normals[{edge_first, edge_second}].push_back(normal);
+            }
+        }
+
+        // One source point may belong to both a smooth cylindrical surface and
+        // a sharp end face. A single averaged normal produces long triangular
+        // lighting streaks across that boundary. Emit a render corner for each
+        // triangle and average only angle-weighted faces inside the same smooth
+        // (30 degree) group. Geometry stays indexed and watertight; shading gets
+        // the split normals expected from a CAD viewer.
+        constexpr float crease_cosine = 0.8660254F; // 30 degrees
+        constexpr auto missing_index = std::numeric_limits<std::uint32_t>::max();
+        std::vector<std::uint32_t> first_render_index(positions.size(), missing_index);
+        const QVector4D render_color{color.redF(), color.greenF(), color.blueF(), color.alphaF()};
+        result.scene.vertices.reserve(result.scene.vertices.size() + triangles.size() * 3U);
+        result.scene.indices.reserve(result.scene.indices.size() + triangles.size() * 3U);
+        for (const auto& triangle : triangles) {
+            for (std::size_t corner = 0; corner < 3; ++corner) {
+                const auto local_vertex = triangle.vertices[corner];
+                QVector3D smooth_normal;
+                for (const auto adjacent_index : vertex_faces[local_vertex]) {
+                    const auto& adjacent = triangles[adjacent_index];
+                    if (QVector3D::dotProduct(triangle.normal, adjacent.normal) < crease_cosine)
+                        continue;
+                    const auto adjacent_corner = std::find(adjacent.vertices.begin(),
+                                                           adjacent.vertices.end(), local_vertex);
+                    const auto angle_index = static_cast<std::size_t>(
+                        std::distance(adjacent.vertices.begin(), adjacent_corner));
+                    smooth_normal += adjacent.normal * adjacent.corner_angles[angle_index];
+                }
+                if (qFuzzyIsNull(smooth_normal.lengthSquared()))
+                    smooth_normal = triangle.normal;
+                else
+                    smooth_normal.normalize();
+                const auto render_index =
+                    static_cast<std::uint32_t>(result.scene.vertices.size());
+                result.scene.vertices.push_back(
+                    {positions[local_vertex], smooth_normal, render_color});
+                result.scene.indices.push_back(render_index);
+                if (first_render_index[local_vertex] == missing_index)
+                    first_render_index[local_vertex] = render_index;
+            }
         }
         part.index_count = static_cast<std::uint32_t>(result.scene.indices.size()) - part.first_index;
+        // A CAD wireframe shows boundaries and creases, not triangulation used
+        // internally for the GPU. Coplanar diagonals and smooth circular facet
+        // seams are deliberately suppressed.
+        for (const auto& [edge, normals] : edge_normals) {
+            const bool boundary = normals.size() != 2;
+            const bool crease = !boundary && QVector3D::dotProduct(normals[0], normals[1]) <
+                                                  crease_cosine;
+            if (!boundary && !crease)
+                continue;
+            result.scene.wire_indices.push_back(first_render_index[edge.first]);
+            result.scene.wire_indices.push_back(first_render_index[edge.second]);
+        }
+        part.wire_index_count =
+            static_cast<std::uint32_t>(result.scene.wire_indices.size()) - part.first_wire_index;
         if (part.index_count != 0) {
             result.scene.minimum.setX(std::min(result.scene.minimum.x(), part.minimum.x()));
             result.scene.minimum.setY(std::min(result.scene.minimum.y(), part.minimum.y()));
@@ -178,13 +266,6 @@ auto parse_render_scene(std::string_view source) -> SceneParseResult {
             result.scene.parts.push_back(std::move(part));
         }
     }
-    for (auto& vertex : result.scene.vertices) {
-        if (!qFuzzyIsNull(vertex.normal.lengthSquared()))
-            vertex.normal.normalize();
-        else
-            vertex.normal = QVector3D{0.0F, 0.0F, 1.0F};
-    }
-
     if (const auto* scenes = root.find("scenes"); scenes != nullptr && scenes->array() != nullptr) {
         for (const auto& scene : *scenes->array()) {
             result.scene.scenes.push_back(

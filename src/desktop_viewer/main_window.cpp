@@ -4,9 +4,12 @@
 #include "scene_model.hpp"
 
 #include <QAction>
+#include <QApplication>
 #include <QCloseEvent>
+#include <QDir>
 #include <QDockWidget>
 #include <QFileDialog>
+#include <QFileSystemModel>
 #include <QFileInfo>
 #include <QFontDatabase>
 #include <QFuture>
@@ -20,15 +23,21 @@
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QSettings>
+#include <QSignalBlocker>
 #include <QSlider>
 #include <QSplitter>
 #include <QStatusBar>
+#include <QStyleFactory>
+#include <QTabBar>
+#include <QTreeView>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 #include <QtConcurrent/QtConcurrentRun>
 
+#include <algorithm>
 #include <chrono>
 #include <string>
+#include <utility>
 
 namespace icad::desktop {
 namespace {
@@ -51,25 +60,24 @@ namespace {
 
 } // namespace
 
-MainWindow::MainWindow(std::filesystem::path source_path, QWidget* parent)
-    : QMainWindow{parent}, source_path_{std::filesystem::absolute(std::move(source_path))} {
-    session_ = std::make_unique<engine::Session>(source_path_);
-    if (!session_->ready()) {
-        error_ = QString::fromStdString(session_->error());
-        session_.reset();
+MainWindow::MainWindow(std::filesystem::path source_path, QWidget* parent) : QMainWindow{parent} {
+    const auto absolute_path = std::filesystem::absolute(std::move(source_path)).lexically_normal();
+    auto session = std::make_shared<engine::Session>(absolute_path);
+    if (!session->ready()) {
+        error_ = QString::fromStdString(session->error());
         return;
     }
     build_ui();
     build_actions();
     apply_theme();
-    setWindowTitle(QStringLiteral("ICAD Studio — %1").arg(QFileInfo{to_qstring(source_path_)}.fileName()));
     setWindowIcon(QIcon{QStringLiteral(":/icad/icons/icad-256.png")});
+    setUnifiedTitleAndToolBarOnMac(true);
     resize(1540, 960);
 
     compile_timer_.setSingleShot(true);
     compile_timer_.setInterval(110);
     connect(&compile_timer_, &QTimer::timeout, this, [this] { begin_compile(); });
-    connect(&compile_watcher_, &QFutureWatcher<engine::PreviewResult>::finished, this,
+    connect(&compile_watcher_, &QFutureWatcher<CompileTaskResult>::finished, this,
             [this] { finish_compile(); });
     history_timer_.setSingleShot(true);
     history_timer_.setInterval(420);
@@ -77,9 +85,22 @@ MainWindow::MainWindow(std::filesystem::path source_path, QWidget* parent)
     connect(editor_, &QPlainTextEdit::textChanged, this, [this] {
         if (restoring_history_)
             return;
-        set_modified(editor_->toPlainText() != saved_source_);
+        auto* document = active_document();
+        if (document == nullptr)
+            return;
+        document->source = editor_->toPlainText();
+        set_modified(document->source != document->saved_source);
         history_timer_.start();
         schedule_compile();
+    });
+    connect(document_tabs_, &QTabBar::currentChanged, this,
+            [this](int index) { switch_document(index); });
+    connect(document_tabs_, &QTabBar::tabCloseRequested, this,
+            [this](int index) { close_document(index); });
+    connect(workspace_tree_, &QTreeView::doubleClicked, this, [this](const QModelIndex& index) {
+        const QFileInfo entry = workspace_model_->fileInfo(index);
+        if (entry.isFile() && entry.suffix().compare(QStringLiteral("icad"), Qt::CaseInsensitive) == 0)
+            open_source(std::filesystem::path{entry.absoluteFilePath().toStdString()});
     });
     connect(diagnostics_, &QListWidget::itemActivated, this, [this](QListWidgetItem* item) {
         const int line = item->data(Qt::UserRole).toInt();
@@ -118,12 +139,35 @@ MainWindow::MainWindow(std::filesystem::path source_path, QWidget* parent)
         }
     });
 
-    saved_source_ = QString::fromStdString(session_->source());
-    editor_->setPlainText(saved_source_);
-    reset_history(saved_source_);
-    update_recent_files(source_path_);
-    set_modified(false);
-    begin_compile();
+    OpenDocument initial;
+    initial.id = next_document_id_++;
+    initial.path = absolute_path;
+    initial.session = std::move(session);
+    initial.source = QString::fromStdString(initial.session->source());
+    initial.saved_source = initial.source;
+    initial.edit_history.push_back(initial.source);
+    initial.history_index = 0;
+    documents_.push_back(std::move(initial));
+    {
+        const QSignalBlocker blocker{document_tabs_};
+        document_tabs_->addTab(QFileInfo{to_qstring(absolute_path)}.fileName());
+    }
+    switch_document(0);
+    open_folder(absolute_path.parent_path());
+    update_recent_files(absolute_path);
+}
+
+auto MainWindow::set_standard_view(StandardView view) -> void {
+    viewport_->set_standard_view(view);
+    viewport_->fit_all();
+}
+
+auto MainWindow::open_document(const std::filesystem::path& path) -> bool {
+    return open_source(path);
+}
+
+auto MainWindow::open_workspace(const std::filesystem::path& path) -> bool {
+    return open_folder(path);
 }
 
 MainWindow::~MainWindow() {
@@ -133,7 +177,21 @@ MainWindow::~MainWindow() {
 }
 
 auto MainWindow::build_ui() -> void {
-    auto* splitter = new QSplitter{Qt::Horizontal, this};
+    auto* central = new QWidget{this};
+    auto* central_layout = new QVBoxLayout{central};
+    central_layout->setContentsMargins(0, 0, 0, 0);
+    central_layout->setSpacing(0);
+    document_tabs_ = new QTabBar{central};
+    document_tabs_->setObjectName(QStringLiteral("documentTabs"));
+    document_tabs_->setDocumentMode(true);
+    document_tabs_->setDrawBase(false);
+    document_tabs_->setExpanding(false);
+    document_tabs_->setMovable(false);
+    document_tabs_->setTabsClosable(true);
+    document_tabs_->setElideMode(Qt::ElideMiddle);
+    central_layout->addWidget(document_tabs_);
+
+    auto* splitter = new QSplitter{Qt::Horizontal, central};
     editor_ = new QPlainTextEdit{splitter};
     editor_->setObjectName(QStringLiteral("sourceEditor"));
     editor_->setLineWrapMode(QPlainTextEdit::NoWrap);
@@ -146,7 +204,28 @@ auto MainWindow::build_ui() -> void {
     splitter->setStretchFactor(0, 2);
     splitter->setStretchFactor(1, 5);
     splitter->setSizes({520, 1020});
-    setCentralWidget(splitter);
+    central_layout->addWidget(splitter, 1);
+    setCentralWidget(central);
+
+    workspace_model_ = new QFileSystemModel{this};
+    workspace_model_->setFilter(QDir::AllDirs | QDir::Files | QDir::NoDotAndDotDot);
+    workspace_model_->setNameFilters({QStringLiteral("*.icad")});
+    workspace_model_->setNameFilterDisables(false);
+    workspace_tree_ = new QTreeView{this};
+    workspace_tree_->setObjectName(QStringLiteral("workspaceTree"));
+    workspace_tree_->setModel(workspace_model_);
+    workspace_tree_->setHeaderHidden(true);
+    workspace_tree_->setAnimated(true);
+    workspace_tree_->setIndentation(16);
+    workspace_tree_->setUniformRowHeights(true);
+    workspace_tree_->setTextElideMode(Qt::ElideMiddle);
+    for (int column = 1; column < workspace_model_->columnCount(); ++column)
+        workspace_tree_->hideColumn(column);
+    workspace_dock_ = new QDockWidget{QStringLiteral("Workspace"), this};
+    workspace_dock_->setObjectName(QStringLiteral("workspaceDock"));
+    workspace_dock_->setWidget(workspace_tree_);
+    workspace_dock_->setMinimumWidth(210);
+    addDockWidget(Qt::LeftDockWidgetArea, workspace_dock_);
 
     diagnostics_ = new QListWidget{this};
     diagnostics_->setAlternatingRowColors(true);
@@ -200,6 +279,9 @@ auto MainWindow::build_actions() -> void {
     auto* open = file_menu->addAction(QStringLiteral("&Open ICAD File…"));
     open->setShortcut(QKeySequence::Open);
     connect(open, &QAction::triggered, this, [this] { open_source_dialog(); });
+    auto* open_folder_action = file_menu->addAction(QStringLiteral("Open &Folder…"));
+    open_folder_action->setShortcut(QKeySequence{QStringLiteral("Ctrl+Shift+O")});
+    connect(open_folder_action, &QAction::triggered, this, [this] { open_folder_dialog(); });
     recent_menu_ = file_menu->addMenu(QStringLiteral("Open &Recent"));
     rebuild_recent_menu();
     file_menu->addSeparator();
@@ -213,8 +295,9 @@ auto MainWindow::build_actions() -> void {
     auto* screenshot = file_menu->addAction(QStringLiteral("Export viewport image…"));
     connect(screenshot, &QAction::triggered, this, [this] { export_screenshot(); });
     file_menu->addSeparator();
-    auto* close = file_menu->addAction(QStringLiteral("Close Project"), QKeySequence::Close,
-                                       this, &QWidget::close);
+    auto* close = file_menu->addAction(QStringLiteral("Close Tab"), QKeySequence::Close);
+    connect(close, &QAction::triggered, this,
+            [this] { close_document(active_document_index_); });
     close->setMenuRole(QAction::NoRole);
     auto* quit = file_menu->addAction(QStringLiteral("Quit ICAD Studio"), QKeySequence::Quit,
                                       this, &QWidget::close);
@@ -257,6 +340,7 @@ auto MainWindow::build_actions() -> void {
     debug->setCheckable(true);
     connect(debug, &QAction::toggled, viewport_, &CadViewport::set_debug_overlay);
     view_menu->addSeparator();
+    view_menu->addAction(workspace_dock_->toggleViewAction());
     view_menu->addAction(diagnostics_dock_->toggleViewAction());
     auto* standard_views = view_menu->addMenu(QStringLiteral("Standard View"));
     const auto add_view = [this, standard_views](QString label, StandardView view) {
@@ -277,78 +361,249 @@ auto MainWindow::build_actions() -> void {
 }
 
 auto MainWindow::apply_theme() -> void {
+    if (auto* fusion = QStyleFactory::create(QStringLiteral("Fusion")); fusion != nullptr)
+        QApplication::setStyle(fusion);
+    editor_->setAttribute(Qt::WA_MacShowFocusRect, false);
+    workspace_tree_->setAttribute(Qt::WA_MacShowFocusRect, false);
     setStyleSheet(QStringLiteral(R"css(
-        QMainWindow, QMenuBar, QMenu, QStatusBar, QDockWidget { background:#0b1220; color:#dbeafe; }
-        QMenuBar { border:0; padding:2px 6px; spacing:3px; }
-        QMenuBar::item { border:0; border-radius:7px; padding:6px 10px; background:transparent; }
-        QMenuBar::item:selected, QMenuBar::item:pressed { background:#1b2a42; }
-        QMenu { background:#101827; border:1px solid #2a3952; border-radius:10px; padding:7px; }
-        QMenu::item { border:0; border-radius:6px; padding:7px 28px 7px 12px; }
-        QMenu::item:selected { background:#233653; color:#f8fafc; }
-        QMenu::separator { height:1px; background:#293750; margin:6px 8px; }
-        QToolButton, QPushButton { background:#162237; color:#e2e8f0; border:0; outline:0; border-radius:7px; padding:6px 9px; }
-        QToolButton:hover, QPushButton:hover { background:#21334f; }
-        QToolButton:pressed, QToolButton:checked, QPushButton:pressed { background:#164e63; }
-        QDockWidget::title { background:#111c2e; padding:7px; font-weight:600; }
-        QPlainTextEdit#sourceEditor { background:#08101f; color:#dbeafe; border:0; selection-background-color:#164e63; padding:8px; }
-        QListWidget, QTreeWidget, QLabel { background:#0d1728; color:#cbd5e1; border:0; }
-        QListWidget::item:selected, QTreeWidget::item:selected { background:#164e63; color:#f8fafc; }
-        QHeaderView::section { background:#152238; color:#cbd5e1; border:0; padding:5px; }
-        QStatusBar { border-top:1px solid #26354d; }
-        QSlider::groove:horizontal { background:#26354d; height:5px; border-radius:2px; }
-        QSlider::handle:horizontal { background:#38bdf8; width:13px; margin:-5px 0; border-radius:6px; }
-        QScrollBar:vertical { background:transparent; width:8px; margin:2px; }
-        QScrollBar::handle:vertical { background:#41516a; min-height:28px; border-radius:4px; }
-        QScrollBar::handle:vertical:hover { background:#60728e; }
+        QMainWindow, QMenuBar, QMenu, QStatusBar, QDockWidget { background:#17181a; color:#f2f2f7; }
+        QMenuBar { border:0; padding:3px 7px; spacing:3px; }
+        QMenuBar::item { border:0; border-radius:8px; padding:6px 10px; background:transparent; }
+        QMenuBar::item:selected, QMenuBar::item:pressed { background:#333438; }
+        QMenu { background:#28292d; border:1px solid #45464b; border-radius:12px; padding:7px; }
+        QMenu::item { border:0; border-radius:7px; padding:7px 30px 7px 12px; }
+        QMenu::item:selected { background:#0a84ff; color:#ffffff; }
+        QMenu::separator { height:1px; background:#45464b; margin:6px 8px; }
+        QToolButton, QPushButton { background:#34353a; color:#f2f2f7; border:0; outline:0; border-radius:9px; padding:6px 10px; }
+        QToolButton:hover, QPushButton:hover { background:#45464b; }
+        QToolButton:pressed, QToolButton:checked, QPushButton:pressed { background:#0a84ff; }
+        QDockWidget { border:0; }
+        QDockWidget::title { background:#202124; padding:8px 10px; font-weight:600; }
+        QPlainTextEdit#sourceEditor { background:#07101f; color:#dbeafe; border:0; selection-background-color:#185fa8; padding:9px; }
+        QListWidget, QTreeWidget, QTreeView, QLabel { background:#1c1d20; color:#e5e5ea; border:0; outline:0; }
+        QListWidget::item, QTreeWidget::item, QTreeView::item { border:0; border-radius:6px; padding:3px; }
+        QListWidget::item:hover, QTreeWidget::item:hover, QTreeView::item:hover { background:#2d2e32; }
+        QListWidget::item:selected, QTreeWidget::item:selected, QTreeView::item:selected { background:#0a84ff; color:#ffffff; }
+        QTreeView#workspaceTree { background:#202124; padding:5px; }
+        QHeaderView::section { background:#25262a; color:#d1d1d6; border:0; padding:6px; }
+        QTabBar#documentTabs { background:#202124; border:0; padding:4px 6px 0 6px; }
+        QTabBar#documentTabs::tab { background:#292a2e; color:#aeb0b6; border:0; border-radius:9px; min-width:128px; padding:7px 13px; margin-right:4px; }
+        QTabBar#documentTabs::tab:hover { background:#35363b; color:#f2f2f7; }
+        QTabBar#documentTabs::tab:selected { background:#3a3b40; color:#ffffff; }
+        QTabBar#documentTabs QToolButton { background:transparent; border:0; padding:2px; }
+        QStatusBar { background:#202124; border-top:1px solid #36373b; }
+        QSlider::groove:horizontal { background:#45464b; height:5px; border-radius:3px; }
+        QSlider::handle:horizontal { background:#0a84ff; width:14px; margin:-5px 0; border-radius:7px; }
+        QScrollBar:vertical { background:transparent; width:7px; margin:2px; }
+        QScrollBar::handle:vertical { background:#55565c; min-height:30px; border-radius:3px; }
+        QScrollBar::handle:vertical:hover { background:#74757c; }
         QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,
         QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { height:0; background:transparent; }
-        QScrollBar:horizontal { background:transparent; height:8px; margin:2px; }
-        QScrollBar::handle:horizontal { background:#41516a; min-width:28px; border-radius:4px; }
-        QScrollBar::handle:horizontal:hover { background:#60728e; }
+        QScrollBar:horizontal { background:transparent; height:7px; margin:2px; }
+        QScrollBar::handle:horizontal { background:#55565c; min-width:30px; border-radius:3px; }
+        QScrollBar::handle:horizontal:hover { background:#74757c; }
         QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal,
         QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { width:0; background:transparent; }
-        QSplitter::handle { background:#162237; width:1px; height:1px; }
+        QSplitter::handle { background:#34353a; width:1px; height:1px; }
     )css"));
 }
 
 auto MainWindow::open_source_dialog() -> void {
+    const auto current_path = active_source_path();
+    const auto start_directory = current_path.empty() ? workspace_root_ : current_path.parent_path();
     const QString selected = QFileDialog::getOpenFileName(
-        this, QStringLiteral("Open ICAD source"), to_qstring(source_path_.parent_path()),
+        this, QStringLiteral("Open ICAD source"), to_qstring(start_directory),
         QStringLiteral("ICAD source (*.icad)"));
     if (!selected.isEmpty())
         open_source(std::filesystem::path{selected.toStdString()});
 }
 
-auto MainWindow::open_source(const std::filesystem::path& path) -> bool {
-    if (!confirm_abandon_changes())
+auto MainWindow::open_folder_dialog() -> void {
+    const QString selected = QFileDialog::getExistingDirectory(
+        this, QStringLiteral("Open ICAD workspace"), to_qstring(workspace_root_),
+        QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
+    if (!selected.isEmpty())
+        open_folder(std::filesystem::path{selected.toStdString()});
+}
+
+auto MainWindow::open_folder(const std::filesystem::path& path) -> bool {
+    const auto absolute = std::filesystem::absolute(path).lexically_normal();
+    std::error_code error;
+    if (!std::filesystem::is_directory(absolute, error)) {
+        QMessageBox::critical(this, QStringLiteral("Open folder failed"),
+                              QStringLiteral("The selected workspace folder is not available."));
         return false;
-    const auto absolute = std::filesystem::absolute(path);
-    auto next_session = std::make_unique<engine::Session>(absolute);
+    }
+    workspace_root_ = absolute;
+    const QModelIndex root = workspace_model_->setRootPath(to_qstring(workspace_root_));
+    workspace_tree_->setRootIndex(root);
+    workspace_tree_->setCurrentIndex(root);
+    workspace_dock_->setWindowTitle(
+        QStringLiteral("Workspace — %1").arg(QFileInfo{to_qstring(workspace_root_)}.fileName()));
+    QSettings{}.setValue(QStringLiteral("workspaceFolder"), to_qstring(workspace_root_));
+    workspace_dock_->show();
+    statusBar()->showMessage(QStringLiteral("Workspace opened: %1").arg(to_qstring(workspace_root_)),
+                             2500);
+    return true;
+}
+
+auto MainWindow::open_source(const std::filesystem::path& path) -> bool {
+    const auto absolute = std::filesystem::absolute(path).lexically_normal();
+    for (std::size_t index = 0; index < documents_.size(); ++index) {
+        if (documents_[index].path == absolute) {
+            document_tabs_->setCurrentIndex(static_cast<int>(index));
+            return true;
+        }
+    }
+    auto next_session = std::make_shared<engine::Session>(absolute);
     if (!next_session->ready()) {
         QMessageBox::critical(this, QStringLiteral("Open failed"),
                               QString::fromStdString(next_session->error()));
         return false;
     }
+    OpenDocument document;
+    document.id = next_document_id_++;
+    document.path = absolute;
+    document.session = std::move(next_session);
+    document.source = QString::fromStdString(document.session->source());
+    document.saved_source = document.source;
+    document.edit_history.push_back(document.source);
+    document.history_index = 0;
+    documents_.push_back(std::move(document));
+    document_tabs_->addTab(QFileInfo{to_qstring(absolute)}.fileName());
+    document_tabs_->setCurrentIndex(static_cast<int>(documents_.size()) - 1);
+    if (absolute.parent_path() != workspace_root_)
+        open_folder(absolute.parent_path());
+    update_recent_files(absolute);
+    return true;
+}
+
+auto MainWindow::active_document() -> OpenDocument* {
+    if (active_document_index_ < 0 ||
+        active_document_index_ >= static_cast<int>(documents_.size()))
+        return nullptr;
+    return &documents_[static_cast<std::size_t>(active_document_index_)];
+}
+
+auto MainWindow::active_document() const -> const OpenDocument* {
+    if (active_document_index_ < 0 ||
+        active_document_index_ >= static_cast<int>(documents_.size()))
+        return nullptr;
+    return &documents_[static_cast<std::size_t>(active_document_index_)];
+}
+
+auto MainWindow::active_source_path() const -> std::filesystem::path {
+    const auto* document = active_document();
+    return document == nullptr ? std::filesystem::path{} : document->path;
+}
+
+auto MainWindow::switch_document(int index) -> void {
+    if (index < 0 || index >= static_cast<int>(documents_.size()) ||
+        index == active_document_index_)
+        return;
     compile_timer_.stop();
     history_timer_.stop();
-    if (compile_watcher_.isRunning())
-        compile_watcher_.waitForFinished();
-    session_ = std::move(next_session);
-    source_path_ = absolute;
-    saved_source_ = QString::fromStdString(session_->source());
+    set_scene_playing(false);
+    active_document_index_ = index;
+    auto& document = documents_[static_cast<std::size_t>(index)];
     restoring_history_ = true;
-    editor_->setPlainText(saved_source_);
+    editor_->setPlainText(document.source);
     restoring_history_ = false;
     viewport_->clear_scene();
     diagnostics_->clear();
     model_tree_->clear();
     scenes_->clear();
-    reset_history(saved_source_);
-    update_recent_files(source_path_);
-    set_modified(false);
+    properties_->setText(QStringLiteral("No component selected"));
+    metrics_->clear();
+    {
+        const QSignalBlocker blocker{document_tabs_};
+        document_tabs_->setCurrentIndex(index);
+    }
+    update_document_chrome();
+    update_history_actions();
+    pending_source_ = document.source;
+    compile_pending_ = true;
     begin_compile();
     editor_->setFocus();
+}
+
+auto MainWindow::close_document(int index) -> void {
+    if (index < 0 || index >= static_cast<int>(documents_.size()) ||
+        !confirm_close_document(index))
+        return;
+    const bool was_active = index == active_document_index_;
+    documents_.erase(documents_.begin() + index);
+    {
+        const QSignalBlocker blocker{document_tabs_};
+        document_tabs_->removeTab(index);
+    }
+    if (documents_.empty()) {
+        active_document_index_ = -1;
+        close();
+        return;
+    }
+    if (index < active_document_index_)
+        --active_document_index_;
+    if (was_active) {
+        active_document_index_ = -1;
+        switch_document(std::min(index, static_cast<int>(documents_.size()) - 1));
+    } else {
+        const QSignalBlocker blocker{document_tabs_};
+        document_tabs_->setCurrentIndex(active_document_index_);
+    }
+}
+
+auto MainWindow::confirm_close_document(int index) -> bool {
+    if (index < 0 || index >= static_cast<int>(documents_.size()))
+        return false;
+    const auto& document = documents_[static_cast<std::size_t>(index)];
+    if (!document.modified)
+        return true;
+    const auto answer = QMessageBox::question(
+        this, QStringLiteral("Unsaved ICAD source"),
+        QStringLiteral("Save changes to %1 before closing?")
+            .arg(QFileInfo{to_qstring(document.path)}.fileName()),
+        QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel, QMessageBox::Save);
+    if (answer == QMessageBox::Cancel)
+        return false;
+    return answer != QMessageBox::Save || save_document(index);
+}
+
+auto MainWindow::save_document(int index) -> bool {
+    if (index < 0 || index >= static_cast<int>(documents_.size()))
+        return false;
+    auto& document = documents_[static_cast<std::size_t>(index)];
+    const auto result = document.session->save(document.source.toStdString());
+    if (!result.success) {
+        QMessageBox::critical(this, QStringLiteral("Save failed"),
+                              QString::fromStdString(result.message));
+        return false;
+    }
+    document.saved_source = document.source;
+    document.modified = false;
+    if (index == active_document_index_) {
+        capture_history();
+        update_document_chrome();
+        statusBar()->showMessage(QStringLiteral("Source saved"), 2500);
+    }
     return true;
+}
+
+auto MainWindow::update_document_chrome() -> void {
+    const auto* document = active_document();
+    if (document == nullptr)
+        return;
+    for (std::size_t index = 0; index < documents_.size(); ++index) {
+        const auto& candidate = documents_[index];
+        const QString marker = candidate.modified ? QStringLiteral(" •") : QString{};
+        document_tabs_->setTabText(static_cast<int>(index),
+                                   QFileInfo{to_qstring(candidate.path)}.fileName() + marker);
+        document_tabs_->setTabToolTip(static_cast<int>(index), to_qstring(candidate.path));
+    }
+    setWindowModified(document->modified);
+    const QString suffix = document->modified ? QStringLiteral("[*]") : QString{};
+    setWindowTitle(QStringLiteral("ICAD Studio — %1%2")
+                       .arg(QFileInfo{to_qstring(document->path)}.fileName(), suffix));
 }
 
 auto MainWindow::update_recent_files(const std::filesystem::path& path) -> void {
@@ -392,65 +647,76 @@ auto MainWindow::rebuild_recent_menu() -> void {
     }
 }
 
-auto MainWindow::confirm_abandon_changes() -> bool {
-    if (!modified_)
-        return true;
-    const auto answer = QMessageBox::question(
-        this, QStringLiteral("Unsaved ICAD source"), QStringLiteral("Save changes before continuing?"),
-        QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel, QMessageBox::Save);
-    if (answer == QMessageBox::Cancel)
-        return false;
-    return answer != QMessageBox::Save || save_source();
+auto MainWindow::confirm_all_changes() -> bool {
+    for (int index = 0; index < static_cast<int>(documents_.size()); ++index) {
+        if (!confirm_close_document(index))
+            return false;
+    }
+    return true;
 }
 
 auto MainWindow::reset_history(const QString& source) -> void {
-    edit_history_.clear();
-    edit_history_.push_back(source);
-    history_index_ = 0;
+    auto* document = active_document();
+    if (document == nullptr)
+        return;
+    document->edit_history.clear();
+    document->edit_history.push_back(source);
+    document->history_index = 0;
     update_history_actions();
 }
 
 auto MainWindow::capture_history() -> void {
     if (restoring_history_)
         return;
-    const QString source = editor_->toPlainText();
-    if (history_index_ >= 0 && edit_history_[static_cast<std::size_t>(history_index_)] == source)
+    auto* document = active_document();
+    if (document == nullptr)
         return;
-    if (history_index_ + 1 < static_cast<int>(edit_history_.size()))
-        edit_history_.erase(edit_history_.begin() + history_index_ + 1, edit_history_.end());
-    edit_history_.push_back(source);
+    const QString source = editor_->toPlainText();
+    document->source = source;
+    if (document->history_index >= 0 &&
+        document->edit_history[static_cast<std::size_t>(document->history_index)] == source)
+        return;
+    if (document->history_index + 1 < static_cast<int>(document->edit_history.size()))
+        document->edit_history.erase(document->edit_history.begin() + document->history_index + 1,
+                                     document->edit_history.end());
+    document->edit_history.push_back(source);
     // Keep one baseline plus 100 navigable edit operations.
-    if (edit_history_.size() > 101U)
-        edit_history_.erase(edit_history_.begin());
-    history_index_ = static_cast<int>(edit_history_.size()) - 1;
+    if (document->edit_history.size() > 101U)
+        document->edit_history.erase(document->edit_history.begin());
+    document->history_index = static_cast<int>(document->edit_history.size()) - 1;
     update_history_actions();
 }
 
 auto MainWindow::step_history(int direction) -> void {
+    auto* document = active_document();
+    if (document == nullptr)
+        return;
     history_timer_.stop();
     capture_history();
-    const int next = history_index_ + direction;
-    if (next < 0 || next >= static_cast<int>(edit_history_.size()))
+    const int next = document->history_index + direction;
+    if (next < 0 || next >= static_cast<int>(document->edit_history.size()))
         return;
-    history_index_ = next;
+    document->history_index = next;
     restoring_history_ = true;
-    editor_->setPlainText(edit_history_[static_cast<std::size_t>(history_index_)]);
+    editor_->setPlainText(document->edit_history[static_cast<std::size_t>(document->history_index)]);
     restoring_history_ = false;
-    set_modified(editor_->toPlainText() != saved_source_);
+    document->source = editor_->toPlainText();
+    set_modified(document->source != document->saved_source);
     schedule_compile();
     update_history_actions();
     statusBar()->showMessage(QStringLiteral("Operation history %1 / %2")
-                                 .arg(history_index_ + 1)
-                                 .arg(static_cast<int>(edit_history_.size())),
+                                 .arg(document->history_index + 1)
+                                 .arg(static_cast<int>(document->edit_history.size())),
                              1800);
 }
 
 auto MainWindow::update_history_actions() -> void {
+    const auto* document = active_document();
     if (history_back_action_ != nullptr)
-        history_back_action_->setEnabled(history_index_ > 0);
+        history_back_action_->setEnabled(document != nullptr && document->history_index > 0);
     if (history_next_action_ != nullptr)
-        history_next_action_->setEnabled(
-            history_index_ >= 0 && history_index_ + 1 < static_cast<int>(edit_history_.size()));
+        history_next_action_->setEnabled(document != nullptr && document->history_index >= 0 &&
+            document->history_index + 1 < static_cast<int>(document->edit_history.size()));
 }
 
 auto MainWindow::set_scene_playing(bool enabled) -> void {
@@ -469,13 +735,18 @@ auto MainWindow::set_scene_playing(bool enabled) -> void {
 }
 
 auto MainWindow::schedule_compile() -> void {
-    pending_source_ = editor_->toPlainText();
+    auto* document = active_document();
+    if (document == nullptr)
+        return;
+    document->source = editor_->toPlainText();
+    pending_source_ = document->source;
     compile_pending_ = true;
     compile_timer_.start();
 }
 
 auto MainWindow::begin_compile() -> void {
-    if (session_ == nullptr)
+    auto* document = active_document();
+    if (document == nullptr)
         return;
     if (compile_watcher_.isRunning()) {
         pending_source_ = editor_->toPlainText();
@@ -484,17 +755,32 @@ auto MainWindow::begin_compile() -> void {
     }
     compile_timer_.stop();
     const QString source = editor_->toPlainText();
+    document->source = source;
     compile_pending_ = false;
     compile_state_->setText(QStringLiteral("Compiling…"));
     compile_state_->setStyleSheet(QStringLiteral("color:#fbbf24"));
-    engine::Session* const session = session_.get();
-    compile_watcher_.setFuture(QtConcurrent::run([session, source] {
-        return session->preview(source.toStdString());
+    const auto session = document->session;
+    const std::uint64_t document_id = document->id;
+    compile_watcher_.setFuture(QtConcurrent::run([session, source, document_id] {
+        return CompileTaskResult{document_id, source, session->preview(source.toStdString())};
     }));
 }
 
 auto MainWindow::finish_compile() -> void {
-    const auto result = compile_watcher_.result();
+    const auto task = compile_watcher_.result();
+    const auto* document = active_document();
+    const bool belongs_to_active_document =
+        document != nullptr && document->id == task.document_id && document->source == task.source;
+    if (!belongs_to_active_document) {
+        if (compile_pending_ || (document != nullptr && pending_source_ != document->source)) {
+            pending_source_ = document == nullptr ? QString{} : document->source;
+            compile_pending_ = false;
+            begin_compile();
+        }
+        return;
+    }
+    const auto& result = task.preview;
+    bool scene_ready = false;
     update_diagnostics(result);
     if (result.success) {
         if (!result.model_json.empty()) {
@@ -503,6 +789,7 @@ auto MainWindow::finish_compile() -> void {
                 viewport_->set_scene(std::move(parsed.scene));
                 rebuild_model_tree();
                 rebuild_scene_panel();
+                scene_ready = true;
             } else {
                 compile_state_->setText(parsed.error);
                 compile_state_->setStyleSheet(QStringLiteral("color:#fb7185"));
@@ -523,11 +810,32 @@ auto MainWindow::finish_compile() -> void {
         compile_state_->setText(QString::fromStdString(result.message));
         compile_state_->setStyleSheet(QStringLiteral("color:#fb7185"));
     }
-    if (compile_pending_ || pending_source_ != editor_->toPlainText()) {
-        pending_source_ = editor_->toPlainText();
+    if (!pending_snapshot_path_.isEmpty()) {
+        const QString output_path = std::exchange(pending_snapshot_path_, QString{});
+        auto completion = std::exchange(snapshot_completion_, {});
+        QTimer::singleShot(180, this,
+                           [this, output_path, scene_ready,
+                            completion = std::move(completion)] {
+            bool saved = false;
+            if (scene_ready) {
+                viewport_->update();
+                viewport_->repaint();
+                saved = viewport_->save_screenshot(output_path);
+            }
+            if (completion)
+                completion(saved);
+        });
+    }
+    if (compile_pending_ || pending_source_ != document->source) {
+        pending_source_ = document->source;
         compile_pending_ = false;
         begin_compile();
     }
+}
+
+auto MainWindow::request_snapshot(QString path, std::function<void(bool)> completion) -> void {
+    pending_snapshot_path_ = std::move(path);
+    snapshot_completion_ = std::move(completion);
 }
 
 auto MainWindow::update_diagnostics(const engine::PreviewResult& result) -> void {
@@ -543,7 +851,7 @@ auto MainWindow::update_diagnostics(const engine::PreviewResult& result) -> void
         item->setData(Qt::UserRole, static_cast<qulonglong>(diagnostic.location.line));
     }
     if (result.diagnostics.empty())
-        diagnostics_->addItem(QStringLiteral("No compiler diagnostics."));
+        diagnostics_->addItem(QStringLiteral("No syntax, topology, assembly, or manufacturing diagnostics."));
 }
 
 auto MainWindow::rebuild_model_tree() -> void {
@@ -593,32 +901,27 @@ auto MainWindow::update_selection(std::optional<std::size_t> index) -> void {
 }
 
 auto MainWindow::save_source() -> bool {
-    if (session_ == nullptr)
+    auto* document = active_document();
+    if (document == nullptr)
         return false;
-    const auto result = session_->save(editor_->toPlainText().toStdString());
-    if (!result.success) {
-        QMessageBox::critical(this, QStringLiteral("Save failed"), QString::fromStdString(result.message));
-        return false;
-    }
-    saved_source_ = editor_->toPlainText();
-    capture_history();
-    set_modified(false);
-    statusBar()->showMessage(QStringLiteral("Source saved"), 2500);
-    return true;
+    document->source = editor_->toPlainText();
+    return save_document(active_document_index_);
 }
 
 auto MainWindow::export_package() -> void {
-    if (session_ == nullptr)
+    auto* document = active_document();
+    if (document == nullptr)
         return;
-    const QString suggested = to_qstring(session_->default_export_directory());
+    document->source = editor_->toPlainText();
+    const QString suggested = to_qstring(document->session->default_export_directory());
     const QString selected = QFileDialog::getExistingDirectory(
         this, QStringLiteral("Export ICAD manufacturing package"), suggested,
         QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
     if (selected.isEmpty())
         return;
     compile_state_->setText(QStringLiteral("Exporting package…"));
-    const auto result = session_->export_package(editor_->toPlainText().toStdString(),
-                                                  std::filesystem::path{selected.toStdString()});
+    const auto result = document->session->export_package(
+        document->source.toStdString(), std::filesystem::path{selected.toStdString()});
     if (!result.success) {
         QMessageBox::critical(this, QStringLiteral("Export failed"), QString::fromStdString(result.message));
         return;
@@ -633,7 +936,7 @@ auto MainWindow::export_package() -> void {
 auto MainWindow::export_screenshot() -> void {
     const QString path = QFileDialog::getSaveFileName(
         this, QStringLiteral("Export viewport image"),
-        QFileInfo{to_qstring(source_path_)}.completeBaseName() + QStringLiteral(".png"),
+        QFileInfo{to_qstring(active_source_path())}.completeBaseName() + QStringLiteral(".png"),
         QStringLiteral("PNG image (*.png)"));
     if (!path.isEmpty() && !viewport_->save_screenshot(path))
         QMessageBox::critical(this, QStringLiteral("Screenshot failed"),
@@ -641,15 +944,15 @@ auto MainWindow::export_screenshot() -> void {
 }
 
 auto MainWindow::set_modified(bool modified) -> void {
-    modified_ = modified;
-    setWindowModified(modified);
-    const QString suffix = modified ? QStringLiteral("[*]") : QString{};
-    setWindowTitle(QStringLiteral("ICAD Studio — %1%2")
-                       .arg(QFileInfo{to_qstring(source_path_)}.fileName(), suffix));
+    auto* document = active_document();
+    if (document == nullptr)
+        return;
+    document->modified = modified;
+    update_document_chrome();
 }
 
 auto MainWindow::closeEvent(QCloseEvent* event) -> void {
-    if (confirm_abandon_changes()) {
+    if (confirm_all_changes()) {
         event->accept();
     } else {
         event->ignore();

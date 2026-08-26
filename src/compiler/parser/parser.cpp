@@ -4,11 +4,12 @@
 #include "icad/compiler/language.hpp"
 
 #include <algorithm>
-#include <charconv>
 #include <cmath>
 #include <cstddef>
 #include <iterator>
+#include <locale>
 #include <ranges>
+#include <sstream>
 #include <span>
 #include <string>
 #include <string_view>
@@ -109,10 +110,12 @@ auto add_error(ParseResult& result, std::string code, std::string message, Sourc
     if (token.kind != TokenKind::number) {
         return false;
     }
-    const char* begin = token.lexeme.data();
-    const char* end = begin + token.lexeme.size();
-    const auto conversion = std::from_chars(begin, end, value);
-    return conversion.ec == std::errc{} && conversion.ptr == end;
+    std::istringstream stream{token.lexeme};
+    stream.imbue(std::locale::classic());
+    if (!(stream >> value))
+        return false;
+    char trailing{};
+    return !(stream >> trailing);
 }
 
 [[nodiscard]] auto parse_quantity(const Line& line, std::size_t value_index, ParseResult& result)
@@ -2044,6 +2047,86 @@ auto parse(const std::vector<Token>& tokens) -> ParseResult {
                               line[cursor].location);
                 }
                 result.program.joints.push_back(std::move(joint));
+            }
+            ++index;
+            continue;
+        }
+        if (first == "INTERFACE") {
+            const bool prefix = line.size() >= 10 && valid_identifier(line[1]) &&
+                                line[2].lexeme == "BODY" && valid_identifier(line[3]) &&
+                                line[4].lexeme == "AT" && valid_identifier(line[5]) &&
+                                line[6].lexeme == "AXIS" && valid_identifier(line[7]) &&
+                                line[8].lexeme == "TYPE" && valid_identifier(line[9]);
+            if (!prefix) {
+                add_error(result, "ICAD-P0030",
+                          "INTERFACE expects NAME BODY OCCURRENCE AT POINT AXIS VECTOR TYPE KIND [SIZE VALUE]",
+                          line.front().location);
+            } else {
+                ast::InterfaceDecl interface;
+                interface.name = line[1].lexeme;
+                interface.occurrence = line[3].lexeme;
+                interface.point = line[5].lexeme;
+                interface.axis = line[7].lexeme;
+                interface.kind = line[9].lexeme;
+                interface.location = line.front().location;
+                std::size_t cursor = 10;
+                if (cursor < line.size() && line[cursor].lexeme == "SIZE") {
+                    ++cursor;
+                    interface.size = parse_value(line, cursor, result);
+                    interface.has_size = true;
+                }
+                if (cursor != line.size()) {
+                    add_error(result, "ICAD-P0030", "INTERFACE has unexpected trailing values",
+                              line[cursor].location);
+                }
+                result.program.interfaces.push_back(std::move(interface));
+            }
+            ++index;
+            continue;
+        }
+        if (first == "CONNECT") {
+            const bool prefix = line.size() >= 6 && valid_identifier(line[1]) &&
+                                valid_identifier(line[2]) && valid_identifier(line[3]) &&
+                                line[4].lexeme == "METHOD" && valid_identifier(line[5]);
+            if (!prefix) {
+                add_error(result, "ICAD-P0031",
+                          "CONNECT expects NAME INTERFACE INTERFACE METHOD KIND plus manufacturing metadata",
+                          line.front().location);
+            } else {
+                ast::ConnectionDecl connection;
+                connection.name = line[1].lexeme;
+                connection.first_interface = line[2].lexeme;
+                connection.second_interface = line[3].lexeme;
+                connection.method = line[5].lexeme;
+                connection.location = line.front().location;
+                std::size_t cursor = 6;
+                while (cursor < line.size()) {
+                    const std::string option = line[cursor].lexeme;
+                    ++cursor;
+                    if (option == "AUTO") {
+                        connection.automatic = true;
+                    } else if (option == "STANDARD" || option == "FASTENER" || option == "FIT") {
+                        if (cursor >= line.size() || !valid_identifier(line[cursor])) {
+                            add_error(result, "ICAD-P0031", option + " expects an identifier",
+                                      line[cursor - 1].location);
+                            break;
+                        }
+                        if (option == "STANDARD")
+                            connection.standard = line[cursor].lexeme;
+                        else if (option == "FASTENER")
+                            connection.fastener = line[cursor].lexeme;
+                        else
+                            connection.fit = line[cursor].lexeme;
+                        ++cursor;
+                    } else if (option == "CLEARANCE") {
+                        connection.clearance = parse_value(line, cursor, result);
+                    } else {
+                        add_error(result, "ICAD-P0031", "unknown CONNECT option '" + option + "'",
+                                  line[cursor - 1].location);
+                        break;
+                    }
+                }
+                result.program.connections.push_back(std::move(connection));
             }
             ++index;
             continue;

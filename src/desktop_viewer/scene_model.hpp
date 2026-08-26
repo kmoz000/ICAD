@@ -23,6 +23,8 @@ struct RenderPart {
     QString material;
     std::uint32_t first_index{};
     std::uint32_t index_count{};
+    std::uint32_t first_wire_index{};
+    std::uint32_t wire_index_count{};
     QVector3D minimum;
     QVector3D maximum;
 };
@@ -37,6 +39,7 @@ struct RenderScene {
     QString project;
     std::vector<RenderVertex> vertices;
     std::vector<std::uint32_t> indices;
+    std::vector<std::uint32_t> wire_indices;
     std::vector<RenderPart> parts;
     std::vector<RenderSceneInfo> scenes;
     QVector3D minimum;

@@ -8,6 +8,8 @@
 
 namespace icad::cad {
 
+struct Model;
+
 struct Bounds {
     std::array<double, 3> minimum{};
     std::array<double, 3> maximum{};
@@ -29,6 +31,8 @@ struct ProjectAnalysis {
 };
 
 [[nodiscard]] auto analyze(const compiler::ir::Project& project) -> ProjectAnalysis;
+[[nodiscard]] auto analyze(const compiler::ir::Project& project, const Model& model)
+    -> ProjectAnalysis;
 [[nodiscard]] auto distance(const Bounds& first, const Bounds& second) -> double;
 
 } // namespace icad::cad

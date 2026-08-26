@@ -5,6 +5,10 @@
 #include <string>
 #include <vector>
 
+namespace icad::cad {
+struct ProjectAnalysis;
+}
+
 namespace icad::constraints {
 
 struct Result {
@@ -17,6 +21,8 @@ struct Result {
 };
 
 [[nodiscard]] auto validate(const compiler::ir::Project& project) -> std::vector<Result>;
+[[nodiscard]] auto validate(const compiler::ir::Project& project,
+                            const cad::ProjectAnalysis& analysis) -> std::vector<Result>;
 [[nodiscard]] auto all_passed(const std::vector<Result>& results) -> bool;
 
 } // namespace icad::constraints

@@ -32,7 +32,7 @@ execute_process(
 )
 if(NOT measure_result EQUAL 0 OR NOT measure_output MATCHES "PARTS 2" OR
    NOT measure_output MATCHES "BOUNDS_MIN -40 -40 0" OR
-   NOT measure_output MATCHES "BOUNDS_MAX 40 40 50")
+   NOT measure_output MATCHES "BOUNDS_MAX 140 40 50")
     message(FATAL_ERROR "selective edge measurements mismatch: ${measure_error}${measure_output}")
 endif()
 
@@ -42,7 +42,7 @@ execute_process(
     TIMEOUT 45
 )
 if(NOT build_result EQUAL 0 OR NOT build_output MATCHES "BUILD components=2 solids=2" OR
-   NOT build_output MATCHES "triangles=1536")
+   NOT build_output MATCHES "triangles=4608")
     message(FATAL_ERROR "selective edge build failed: ${build_error}${build_output}")
 endif()
 
@@ -59,7 +59,7 @@ execute_process(
     RESULT_VARIABLE stl_result OUTPUT_VARIABLE stl_output ERROR_VARIABLE stl_error
 )
 if(NOT stl_result EQUAL 0 OR NOT stl_output MATCHES "STL_SOLIDS 2" OR
-   NOT stl_output MATCHES "STL_FACETS 1536")
+   NOT stl_output MATCHES "STL_FACETS 4608")
     message(FATAL_ERROR "selective edge STL read-back mismatch: ${stl_error}${stl_output}")
 endif()
 

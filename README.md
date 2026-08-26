@@ -72,13 +72,26 @@ parametric starter for agent refinement.
 Open the source directly in ICAD Studio:
 
 ```sh
-open build/bin/icad-viewer.app --args examples/advanced.icad # macOS
+open build/bin/icad-viewer.app --args --view isometric examples/advanced.icad # macOS
+
+# Open several sources as independent tabs in one native workspace:
+open build/bin/icad-viewer.app --args examples/advanced.icad examples/assembly_semantics.icad
+
+# Headless automation using the exact native Qt/OpenGL viewport:
+build/bin/icad-viewer.app/Contents/MacOS/icad-viewer \
+  --view isometric --snapshot build/advanced.png examples/advanced.icad
 ```
 
 The native viewer live-compiles edits through the in-process engine, keeps the
 last valid mesh while diagnostics are fixed, uploads indexed meshes to OpenGL,
 and supports orbit, pan, zoom, orthographic standard views, component picking,
-wireframe, scenes, screenshots, and manufacturing-package export.
+CAD wireframe, scenes, screenshots, and manufacturing-package export. CAD
+wireframe contains only physical boundaries and creases; internal GPU triangle
+diagonals are deliberately hidden. The render mesh uses crease-aware,
+angle-weighted normals and restores depth state every frame after Qt HUD
+painting, preventing radial triangle bands on smooth revolved and filleted
+solids. `--snapshot output.png` waits for compilation, captures that same native
+viewport, and exits with a nonzero status if compilation or image writing fails.
 
 The advanced build produces:
 
@@ -308,6 +321,10 @@ convex loops. The native engine executes both fillet classifications and the
 same selectors for chamfers. `visual.json` reports the selected loop and legal
 operations. See
 [`examples/selective_round_vessel.icad`](examples/selective_round_vessel.icad).
+That acceptance source places its independently filleted inner-rim and
+outer-rim comparison bodies side by side. Coincident comparison bodies are
+forbidden because they create z-fighting and a false impression of internal
+plates.
 
 `TOPOLOGY_QUERY_V1` makes the same proven native topology addressable by a
 named, inspectable query:
@@ -426,6 +443,12 @@ dimensions, and invalid boolean results.
 an agent to reason about how a part was made instead of reverse engineering its
 triangles. See [`examples/sketch_history.icad`](examples/sketch_history.icad)
 and [`examples/persistent_face_plate.icad`](examples/persistent_face_plate.icad).
+
+Dependency graphs retain stable string IDs for diagnostics and agent tools, and
+also expose compact integer dependency-to-consumer edges for high-frequency
+layout or visualization without repeating ID lookups. Faceted topology uses a
+reserved hash edge index and pre-sized entity storage, keeping construction and
+validation linear on large triangle sets without an additional graph library.
 
 ### Low-level and advanced features
 
@@ -697,6 +720,33 @@ remain the explicit assembly pose definition. See
 Instance occurrences inherit the definition material in manufacturing checks
 and appear as separate BOM items with an explicit definition reference.
 
+Manufacturing interfaces describe how components are physically joined, not
+just where they appear. Each side names a point, axis, occurrence, interface
+type, and optional nominal size; `CONNECT` then records the process, standard,
+fastener or fit, allowable clearance, and deterministic magnetic-seat check:
+
+```icad
+INTERFACE motor_shaft BODY motor AT shoulder AXIS shaft_axis TYPE SHAFT SIZE 12 mm
+INTERFACE arm_bore BODY arm AT shoulder AXIS bore_axis TYPE BORE SIZE 12 mm
+CONNECT shoulder_fit motor_shaft arm_bore METHOD SLIP_FIT STANDARD ISO_286 FIT H7_g6 CLEARANCE 0.02 mm AUTO
+```
+
+The compiler rejects incompatible pairs and incomplete process metadata.
+Planar `MOUNT`, `FLANGE`, `WELD_SEAM`, and `BOND_FACE` interfaces must lie on
+the referenced occurrence boundary and their axes must match the outward face
+normal. Contact-only bolted, screwed, welded, brazed, and bonded connections
+also reject solid-volume penetration. `visual-json` exposes these checks as
+`attachmentValid`, `engineeringValid`, and an `INVALID_GEOMETRY` snap state in
+addition to gap and axis alignment. `AUTO` evaluates a candidate but never
+hides a source transform: an agent must repair the named datum or pose, then
+run manufacturing and interference validation. Interference feedback annotates declared
+engagements with their connection, method, and standard and reports anonymous
+collisions separately as `unintendedPenetratingPartPairs`; release requires
+that count to be zero. The example derives the instance origin and shared
+mounting plane from `block_width`, `block_depth`, and `block_height`, so a size
+edit propagates to its assembly datums instead of leaving stale coordinates. See
+[`examples/manufacturing_connections.icad`](examples/manufacturing_connections.icad).
+
 `POINT3` coordinates and `ANGLE`, `POSE`, joint, or constraint values may
 reference a named value with the correct physical dimension. Vectors are
 dimensionless and normalized during semantic lowering. Derived points use
@@ -833,23 +883,48 @@ Build and run ICAD Studio with:
 make viewer
 # Linux/Windows: build/bin/icad-viewer examples/advanced.icad
 # macOS:
-open build/bin/icad-viewer.app --args examples/advanced.icad
+open build/bin/icad-viewer.app --args --view front examples/advanced.icad
 ```
 
-The split IDE keeps `.icad` as the authoritative document. The editor includes
-language-specific highlighting and clickable diagnostics; the OpenGL viewport
-retains the last valid scene while a coalescing worker incrementally rebuilds
-only dirty bodies. Model, scene, property, timeline, standard-view, projection,
-wireframe, component-selection, and screenshot tools are native Qt widgets.
+The split IDE keeps `.icad` as the authoritative document. Its graphite native
+Qt shell provides an ICAD-only workspace tree, **File > Open Folder**, and
+multiple closeable source tabs. Every tab owns an independent engine session,
+saved state, and 100-operation back/next history; unsaved tabs are marked and
+confirmed individually. Native File, Edit, View, and Scene menus also provide
+recent files, save/export, standard views, and a debug overlay. The editor
+includes language-specific highlighting and clickable diagnostics; the OpenGL
+viewport retains the last valid scene while a coalescing worker incrementally
+rebuilds only dirty bodies. Each background result carries the stable document
+ID and exact source snapshot that produced it, so a late result from another tab
+cannot replace the active tab's geometry or diagnostics. Before replacing that scene, live preview checks real mate
+selectors, manufacturing-interface attachment, outward normals, and prohibited
+connection penetration against the already-built cached mesh. Invalid size
+edits therefore produce actionable syntax, topology, assembly, or manufacturing
+diagnostics without uploading intersecting geometry or rebuilding the model
+again for validation. The stationary two-sided viewport avoids disappearing faces
+from mixed mesh winding and adds a clickable orientation cube. Model, scene,
+property, projection, wireframe, component-selection, and screenshot tools are
+native Qt widgets.
+The orientation cube sits on a compact rounded-hexagon HUD backing so it stays
+visually distinct from both the model and ordinary toolbar controls.
+
+`--view` accepts `isometric`, `front`, `back`, `left`, `right`, `top`, or
+`bottom`. The VS Code `icad.viewer.initialView` setting exposes the same list as
+an autocomplete/dropdown and passes the selected side to ICAD Studio.
 
 Manufacturing export atomically emits the 13-file
 STEP/assembly STEP/STL/OBJ/glTF/GLB/3MF/scene/drawing/manufacturing package from
 the current editor text. Release packages deploy only the Qt modules and
 platform plugins used by ICAD Studio, and the dedicated viewer workflow creates
 maximum-compression `.tar.xz` or `.7z` archives with SHA-256 checksums.
-The macOS `.app` includes the ICAD icon, versioned bundle metadata, `.icad`
-document registration, and an ad-hoc local signature by default; Developer ID
+The macOS `.app` targets macOS 14+, includes the ICAD icon, versioned bundle
+metadata, `.icad` document registration, and a hardened ad-hoc local signature
+with bundled Qt library validation disabled for local distribution and the
+minimal JIT entitlement required by Qt's PCRE2 syntax highlighter; Developer ID
 signing can be selected with `-DICAD_MACOS_CODESIGN_IDENTITY="..."`.
+Both the build-tree bundle and installed package are signed after their final
+link/deployment step, and `viewer.macos_signature` runs strict recursive
+verification to catch invalid-page launch failures before packaging.
 
 ## CAD output note
 
@@ -929,12 +1004,12 @@ make sanitizers
 make thread-sanitizer  # race-check shared incremental compilation, then restore build
 ```
 
-The configured suite contains 56 deterministic tests: 34 C++ unit/fuzz
-executables, seven integration cases, one sandbox case, and 14 benchmark cases
-including a large robotic-arm live-refresh benchmark, sketch-history STEP/STL
-read-back, and the multi-shape plate. A 57th
-headless-Chromium viewer runtime smoke test is registered only when a configure-time
-launch probe confirms that the installed browser can actually run headless.
+The configured suite includes analytic geometry, mesh-fidelity, native viewer,
+integration, sandbox, and model benchmark gates. Known-shape tests lock exact
+box bounds/area/volume, a hollow annular bore, 96-sample circular edge finishes,
+non-overlapping comparison bodies, suppression of coplanar triangulation in CAD
+wireframe, preservation of physical crease edges, crease-aware smooth normals,
+compact graph-edge validity, and strict macOS bundle signature verification.
 
 The bridge acceptance model contains 6 parameters, 3 materials, 5 bodies, 35
 features, 206 feature properties, 1 scene, 2 tracks, and 5 keyframes. Its
@@ -946,13 +1021,13 @@ The robotic-arm benchmark compares against
 `examples/Robotic_Arm_3D_Model`: 10 reference STL component files, 23,314
 reference facets, 20 reference STEP solids, and 21 reference assembly
 occurrences. The native `robotic_arm.icad` acceptance design builds 10
-components, 25 solids, and 2,368 deterministic facets. It uses one coherent
+components, 27 solids, and 2,612 deterministic facets. It uses one coherent
 world datum chain, tapered arm/wrist shells, toothed gear profiles, opposed
 hooked gripper fingers, and flange fasteners. The benchmark validates four
 deterministic agent-readable depth views, exact mesh-volume attachment at all
 nine parent-child interfaces, and three samples of a 27-keyframe scene that
 drives all nine moving degrees of freedom while the base remains grounded. Its
-topology baseline is 274 exact vertices, 411 exact edges, and 187 exact faces. This is a
+topology baseline is 272 exact vertices, 408 exact edges, and 190 exact faces. This is a
 recognizable articulated acceptance model, not a claim that it duplicates the
 supplied proprietary surface model.
 

@@ -12,6 +12,8 @@
 
 namespace icad::cad {
 
+struct Model;
+
 inline constexpr double default_geometry_tolerance_mm = 1.0e-9;
 
 struct Segment3 {
@@ -81,6 +83,8 @@ struct IntersectionAnalysis {
     std::size_t intersecting_part_pairs{};
     std::size_t intersecting_triangle_pairs{};
     std::size_t penetrating_part_pairs{};
+    std::size_t declared_engagement_part_pairs{};
+    std::size_t unintended_penetrating_part_pairs{};
     std::size_t contained_part_pairs{};
     std::size_t surface_contact_only_part_pairs{};
     struct BodyContact {
@@ -93,6 +97,10 @@ struct IntersectionAnalysis {
         std::size_t penetrating_part_pairs{};
         std::size_t contained_part_pairs{};
         std::size_t surface_contact_only_part_pairs{};
+        bool declared_connection{};
+        std::string connection_name;
+        std::string connection_method;
+        std::string connection_standard;
     };
     std::vector<BodyContact> body_contacts;
 };
@@ -111,6 +119,10 @@ struct IntersectionAnalysis {
                              double tolerance_mm = default_geometry_tolerance_mm)
     -> IntersectionResult;
 [[nodiscard]] auto analyze_intersections(const compiler::ir::Project& project,
+                                         double tolerance_mm = default_geometry_tolerance_mm)
+    -> IntersectionAnalysis;
+[[nodiscard]] auto analyze_intersections(const compiler::ir::Project& project,
+                                         const Model& model,
                                          double tolerance_mm = default_geometry_tolerance_mm)
     -> IntersectionAnalysis;
 

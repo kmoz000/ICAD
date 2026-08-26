@@ -30,6 +30,8 @@ constexpr std::array supported_capabilities{
     std::string_view{"SKETCH_CONSTRAINTS"},
     std::string_view{"ASSEMBLY_OCCURRENCES"},
     std::string_view{"MATES_AND_JOINTS"},
+    std::string_view{"MANUFACTURING_CONNECTIONS_V1"},
+    std::string_view{"MAGNETIC_INTERFACE_SNAP_V1"},
     std::string_view{"SCENES"},
     std::string_view{"VISUAL_JSON_V1"},
 };

@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.25)
 
-if(APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
+if(CMAKE_HOST_APPLE AND NOT CMAKE_OSX_DEPLOYMENT_TARGET)
     # Homebrew Qt 6.11 is built for macOS 14+. Keep the executable and bundle
     # metadata honest and prevent accidental host-OS-only binaries.
-    set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "Minimum supported macOS version")
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "Minimum supported macOS version" FORCE)
 endif()
 
 project(

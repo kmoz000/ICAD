@@ -1,6 +1,7 @@
 #include "icad/scene/exporter.hpp"
 
 #include "icad/cad/model.hpp"
+#include "icad/compiler/dependency_graph.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -17,6 +18,27 @@
 
 namespace icad::scene {
 namespace {
+
+[[nodiscard]] auto json_string(std::string_view value) -> std::string;
+
+auto write_dependency_graph(std::ostream& output, const compiler::ir::Project& project) -> void {
+    const auto graph = compiler::build_dependency_graph(project);
+    output << "\"dependencyGraph\":{\"nodes\":[";
+    for (std::size_t index = 0; index < graph.nodes.size(); ++index) {
+        if (index != 0)
+            output << ',';
+        output << "{\"id\":" << json_string(graph.nodes[index].id)
+               << ",\"kind\":" << json_string(graph.nodes[index].kind) << '}';
+    }
+    output << "],\"edges\":[";
+    for (std::size_t index = 0; index < graph.edges.size(); ++index) {
+        if (index != 0)
+            output << ',';
+        output << '[' << graph.edges[index].dependency << ',' << graph.edges[index].consumer
+               << ']';
+    }
+    output << "]}";
+}
 
 auto rotate_axis(cad::Point3& point, const cad::Point3& pivot, const cad::Vector3& axis,
                  double degrees) -> void {
@@ -407,6 +429,8 @@ auto write_model(std::ostream& output, const compiler::ir::Project& project,
     write_mechanism(output, project);
     output << ',';
     write_scenes(output, project);
+    output << ',';
+    write_dependency_graph(output, project);
     if (geometry != nullptr) {
         output << ",\"parts\":[";
         for (std::size_t part_index = 0; part_index < geometry->parts.size(); ++part_index) {

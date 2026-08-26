@@ -1,6 +1,10 @@
 #include "icad/viewer/live_session.hpp"
 
+#include "icad/cad/analysis.hpp"
+#include "icad/cad/intersection.hpp"
 #include "icad/compiler/compiler.hpp"
+#include "icad/constraints/validator.hpp"
+#include "icad/manufacturing/validator.hpp"
 #include "icad/project/builder.hpp"
 #include "icad/scene/exporter.hpp"
 
@@ -33,6 +37,25 @@ namespace {
         const auto current = std::filesystem::last_write_time(stamp.first, error);
         return !error && current == stamp.second;
     });
+}
+
+[[nodiscard]] auto declaration_location(std::string_view source, std::string_view name)
+    -> compiler::SourceLocation {
+    constexpr std::string_view prefixes[]{"MATE ", "CONSTRAINT ", "INTERFACE ", "CONNECT ",
+                                          "BODY ", "INSTANCE "};
+    std::size_t position = std::string_view::npos;
+    for (const auto prefix : prefixes) {
+        position = source.find(std::string{prefix} + std::string{name});
+        if (position != std::string_view::npos)
+            break;
+    }
+    if (position == std::string_view::npos)
+        return {1, 1};
+    const auto line_start = source.rfind('\n', position);
+    return {1 + static_cast<std::size_t>(
+                    std::count(source.begin(), source.begin() + static_cast<std::ptrdiff_t>(position),
+                               '\n')),
+            position - (line_start == std::string_view::npos ? 0 : line_start + 1) + 1};
 }
 
 } // namespace
@@ -86,6 +109,39 @@ auto LiveSession::preview(std::string_view source) -> PreviewResult {
 
     if (!incremental.model) {
         result.message = "incremental preview did not produce a delivery model";
+        return result;
+    }
+    const auto& project = *compilation.ir_project;
+    const auto analysis = cad::analyze(project, *incremental.model);
+    const auto constraint_results = constraints::validate(project, analysis);
+    const auto intersections =
+        cad::analyze_intersections(project, *incremental.model, project.tolerance.linear_mm);
+    const auto manufacturing =
+        manufacturing::validate(project, analysis, intersections);
+    for (const auto& constraint : constraint_results) {
+        if (constraint.passed)
+            continue;
+        result.diagnostics.push_back(
+            {compiler::DiagnosticSeverity::error, "ICAD-V0001",
+             constraint.message + ": required " + std::to_string(constraint.required_mm) +
+                 " " + constraint.unit + ", actual " + std::to_string(constraint.actual_mm) +
+                 " " + constraint.unit,
+             declaration_location(source, constraint.name)});
+    }
+    for (const auto& issue : manufacturing.issues) {
+        result.diagnostics.push_back(
+            {issue.severity == manufacturing::Severity::error
+                 ? compiler::DiagnosticSeverity::error
+                 : issue.severity == manufacturing::Severity::warning
+                       ? compiler::DiagnosticSeverity::warning
+                       : compiler::DiagnosticSeverity::note,
+             issue.code, issue.message, declaration_location(source, issue.subject)});
+    }
+    if (!constraints::all_passed(constraint_results) || !manufacturing.passed) {
+        result.message = "engineering validation failed; last valid preview preserved";
+        result.milliseconds = std::chrono::duration<double, std::milli>(
+                                  std::chrono::steady_clock::now() - started)
+                                  .count();
         return result;
     }
     result.model_json = scene::render_model_json(*compilation.ir_project, *incremental.model);

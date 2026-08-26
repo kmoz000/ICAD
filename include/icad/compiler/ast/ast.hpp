@@ -132,6 +132,30 @@ struct JointDecl {
     SourceLocation location;
 };
 
+struct InterfaceDecl {
+    std::string name;
+    std::string occurrence;
+    std::string point;
+    std::string axis;
+    std::string kind;
+    ValueDecl size;
+    bool has_size{};
+    SourceLocation location;
+};
+
+struct ConnectionDecl {
+    std::string name;
+    std::string first_interface;
+    std::string second_interface;
+    std::string method;
+    std::string standard;
+    std::string fastener;
+    std::string fit;
+    ValueDecl clearance;
+    bool automatic{};
+    SourceLocation location;
+};
+
 struct MaterialDecl {
     std::string name;
     std::string preset;
@@ -386,6 +410,8 @@ struct Program {
     std::vector<PoseDecl> poses;
     std::vector<InstanceDecl> instances;
     std::vector<JointDecl> joints;
+    std::vector<InterfaceDecl> interfaces;
+    std::vector<ConnectionDecl> connections;
     std::vector<MaterialDecl> materials;
     std::vector<ProfileDecl> profiles;
     std::vector<SketchDecl> sketches;

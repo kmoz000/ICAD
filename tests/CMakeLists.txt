@@ -17,6 +17,7 @@ icad_add_unit_test(units unit/units_test.cpp)
 icad_add_unit_test(resolver unit/resolver_test.cpp)
 icad_add_unit_test(semantic unit/semantic_test.cpp)
 icad_add_unit_test(geometry unit/geometry_test.cpp)
+icad_add_unit_test(geometry_fidelity unit/geometry_fidelity_test.cpp)
 icad_add_unit_test(boolean unit/boolean_test.cpp)
 icad_add_unit_test(modeling_tools unit/modeling_tools_test.cpp)
 icad_add_unit_test(topology_query unit/topology_query_test.cpp)
@@ -34,6 +35,7 @@ icad_add_unit_test(importer unit/importer_test.cpp)
 icad_add_unit_test(queries unit/queries_test.cpp)
 icad_add_unit_test(instances unit/instances_test.cpp)
 icad_add_unit_test(assembly_semantics unit/assembly_semantics_test.cpp)
+icad_add_unit_test(assembly_interfaces unit/assembly_interfaces_test.cpp)
 add_test(NAME benchmark.incremental COMMAND icad_incremental_test)
 set_tests_properties(benchmark.incremental PROPERTIES LABELS "benchmark" TIMEOUT 60)
 icad_add_unit_test(intersection unit/intersection_test.cpp)
@@ -160,6 +162,18 @@ add_test(
 )
 set_tests_properties(benchmark.advanced_bridge PROPERTIES LABELS "benchmark" TIMEOUT 60)
 if(TARGET icad-viewer)
+    find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui)
+    add_executable(icad_viewer_geometry_test
+        unit/viewer_geometry_test.cpp
+        ${PROJECT_SOURCE_DIR}/src/desktop_viewer/scene_model.cpp)
+    target_include_directories(icad_viewer_geometry_test PRIVATE
+        ${PROJECT_SOURCE_DIR}/src/desktop_viewer)
+    target_link_libraries(icad_viewer_geometry_test PRIVATE
+        ICAD::compiler Qt6::Core Qt6::Gui icad_project_options)
+    add_test(NAME unit.viewer_geometry COMMAND icad_viewer_geometry_test)
+    set_tests_properties(unit.viewer_geometry PROPERTIES LABELS "unit;viewer;geometry")
+    list(APPEND ICAD_UNIT_TEST_TARGETS icad_viewer_geometry_test)
+
     add_test(
         NAME viewer.qt_native_smoke
         COMMAND $<TARGET_FILE:icad-viewer> --self-test ${PROJECT_SOURCE_DIR}/examples/advanced.icad
@@ -168,6 +182,24 @@ if(TARGET icad-viewer)
         LABELS "viewer;qt;native"
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
         TIMEOUT 60)
+    add_test(
+        NAME viewer.qt_window_construction
+        COMMAND $<TARGET_FILE:icad-viewer> --window-test --view front
+                ${PROJECT_SOURCE_DIR}/examples/selective_round_vessel.icad
+                ${PROJECT_SOURCE_DIR}/examples/assembly_semantics.icad
+    )
+    set_tests_properties(viewer.qt_window_construction PROPERTIES
+        LABELS "viewer;qt;native;window"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        TIMEOUT 60)
+    if(APPLE)
+        add_test(
+            NAME viewer.macos_signature
+            COMMAND /usr/bin/codesign --verify --deep --strict
+                    $<TARGET_BUNDLE_DIR:icad-viewer>)
+        set_tests_properties(viewer.macos_signature PROPERTIES
+            LABELS "viewer;release;macos")
+    endif()
 endif()
 add_test(
     NAME benchmark.robotic_arm

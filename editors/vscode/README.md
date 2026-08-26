@@ -13,6 +13,8 @@ This extension provides complete ICAD authoring support:
   references, including the production advanced constraint family;
 - named topology-query highlighting/completion and definition navigation for
   `SELECTION` declarations and `SELECT EDGESET` consumers;
+- manufacturing-interface highlighting for `INTERFACE`, `CONNECT`, compatible
+  interface types, standards, fits, fasteners, clearance, and magnetic seating;
 - configurable format-on-save and compiler check-on-save;
 - direct `.icad` launch into the native live editor and 3D workbench;
 - prompt-to-design agentic creation and complete artifact builds;
@@ -38,3 +40,7 @@ Run **ICAD: Open Settings** to control the toolchain, LSP, format/check on
 save, MCP, agentic helpers, and Codex plugin installation. MCP configuration
 is written by merging an `icad` stdio server into `.vscode/mcp.json`; existing
 servers are preserved and VS Code still asks the user to trust local servers.
+
+Set **ICAD › Viewer: Initial View** to `isometric`, `front`, `back`, `left`,
+`right`, `top`, or `bottom`. VS Code autocompletes the enum and the extension
+passes that standard side to the native viewer every time it opens a design.

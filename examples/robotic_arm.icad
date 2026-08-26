@@ -1,5 +1,8 @@
 # ICAD industrial articulated robot rebuilt from a single coherent datum chain.
 # Every link outline physically overlaps both pivots that define its joint span.
+REQUIRES ICAD 1.0
+REQUIRES CAPABILITY MANUFACTURING_CONNECTIONS_V1
+REQUIRES CAPABILITY MAGNETIC_INTERFACE_SNAP_V1
 PROJECT robotic_arm
 UNITS mm
 
@@ -21,8 +24,8 @@ POINT3 wrist_center 75 mm 0 mm 250 mm
 POINT3 palm_center 145 mm 0 mm 225 mm
 POINT3 upper_jaw_pivot 180 mm 0 mm 241 mm
 POINT3 lower_jaw_pivot 180 mm 0 mm 209 mm
-POINT3 drive_gear_center 164 mm 0 mm 233 mm
-POINT3 follower_gear_center 164 mm 0 mm 207 mm
+POINT3 drive_gear_center 164 mm 27 mm 233 mm
+POINT3 follower_gear_center 164 mm 27 mm 207 mm
 POINT3 tool_center 250 mm 0 mm 225 mm
 POINT3 tool_target 250 mm 0 mm 225 mm
 
@@ -95,19 +98,16 @@ END
 
 PROFILE upper_jaw_outline
 START 171 mm 232 mm
-LINE 184 mm 229 mm
-LINE 201 mm 234 mm
-LINE 232 mm 238 mm
-LINE 248 mm 235 mm
-LINE 257 mm 226 mm
-LINE 255 mm 216 mm
-LINE 247 mm 211 mm
-LINE 240 mm 217 mm
-LINE 241 mm 226 mm
-LINE 229 mm 229 mm
-LINE 199 mm 225 mm
-LINE 181 mm 219 mm
-LINE 171 mm 223 mm
+LINE 184 mm 232 mm
+LINE 201 mm 236 mm
+LINE 232 mm 240 mm
+LINE 248 mm 238 mm
+LINE 258 mm 236 mm
+LINE 250 mm 248 mm
+LINE 238 mm 252 mm
+LINE 208 mm 248 mm
+LINE 184 mm 244 mm
+LINE 171 mm 248 mm
 CLOSE
 END
 
@@ -335,6 +335,24 @@ ORIGIN_Y 14 mm
 ORIGIN_Z 225 mm
 ROTATION_X 90 deg
 END
+FEATURE drive_bearing_boss
+TYPE CYLINDER
+RADIUS 7 mm
+HEIGHT 10 mm
+ORIGIN_X 164 mm
+ORIGIN_Y 27 mm
+ORIGIN_Z 233 mm
+ROTATION_X 90 deg
+END
+FEATURE follower_bearing_boss
+TYPE CYLINDER
+RADIUS 7 mm
+HEIGHT 10 mm
+ORIGIN_X 164 mm
+ORIGIN_Y 27 mm
+ORIGIN_Z 207 mm
+ROTATION_X 90 deg
+END
 END
 
 BODY upper_jaw
@@ -384,16 +402,16 @@ TYPE EXTRUDE
 PROFILE drive_gear_teeth
 HEIGHT 10 mm
 ORIGIN_X 164 mm
-ORIGIN_Y 5 mm
+ORIGIN_Y 37 mm
 ORIGIN_Z 233 mm
 ROTATION_X 90 deg
 END
 FEATURE drive_hub
 TYPE CYLINDER
 RADIUS 5 mm
-HEIGHT 18 mm
+HEIGHT 10 mm
 ORIGIN_X 164 mm
-ORIGIN_Y 9 mm
+ORIGIN_Y 37 mm
 ORIGIN_Z 233 mm
 ROTATION_X 90 deg
 END
@@ -406,16 +424,16 @@ TYPE EXTRUDE
 PROFILE follower_gear_teeth
 HEIGHT 10 mm
 ORIGIN_X 164 mm
-ORIGIN_Y 5 mm
+ORIGIN_Y 37 mm
 ORIGIN_Z 207 mm
 ROTATION_X 90 deg
 END
 FEATURE follower_hub
 TYPE CYLINDER
 RADIUS 5 mm
-HEIGHT 18 mm
+HEIGHT 10 mm
 ORIGIN_X 164 mm
-ORIGIN_Y 9 mm
+ORIGIN_Y 37 mm
 ORIGIN_Z 207 mm
 ROTATION_X 90 deg
 END
@@ -433,6 +451,44 @@ JOINT upper_jaw_hinge REVOLUTE palm upper_jaw AT upper_jaw_pivot AXIS y_axis VAL
 JOINT lower_jaw_hinge REVOLUTE palm lower_jaw AT lower_jaw_pivot AXIS y_axis VALUE home_angle LIMIT -25 deg 0 deg
 JOINT drive_gear_joint REVOLUTE palm drive_gear AT drive_gear_center AXIS y_axis VALUE home_angle LIMIT -180 deg 180 deg
 JOINT follower_gear_joint REVOLUTE palm follower_gear AT follower_gear_center AXIS y_axis VALUE home_angle LIMIT -180 deg 180 deg
+
+# Physical connection contracts complement the kinematic joints. Each bearing
+# seat is validated at the same named pivot used by the corresponding joint.
+INTERFACE base_waist_shaft BODY base AT waist_center AXIS z_axis TYPE SHAFT SIZE 50 mm
+INTERFACE waist_base_bearing BODY waist AT waist_center AXIS z_axis TYPE BEARING_SEAT SIZE 50 mm
+CONNECT waist_bearing base_waist_shaft waist_base_bearing METHOD BEARING STANDARD ISO_492 FIT H7_g6 CLEARANCE 0.02 mm AUTO
+
+INTERFACE waist_shoulder_shaft BODY waist AT shoulder_center AXIS y_axis TYPE SHAFT SIZE 30 mm
+INTERFACE upper_arm_shoulder_bearing BODY upper_arm AT shoulder_center AXIS y_axis TYPE BEARING_SEAT SIZE 30 mm
+CONNECT shoulder_bearing waist_shoulder_shaft upper_arm_shoulder_bearing METHOD BEARING STANDARD ISO_492 FIT H7_g6 CLEARANCE 0.02 mm AUTO
+
+INTERFACE upper_arm_elbow_shaft BODY upper_arm AT elbow_center AXIS y_axis TYPE SHAFT SIZE 25 mm
+INTERFACE forearm_elbow_bearing BODY forearm AT elbow_center AXIS y_axis TYPE BEARING_SEAT SIZE 25 mm
+CONNECT elbow_bearing upper_arm_elbow_shaft forearm_elbow_bearing METHOD BEARING STANDARD ISO_492 FIT H7_g6 CLEARANCE 0.02 mm AUTO
+
+INTERFACE forearm_wrist_shaft BODY forearm AT wrist_center AXIS y_axis TYPE SHAFT SIZE 20 mm
+INTERFACE wrist_pitch_bearing BODY wrist AT wrist_center AXIS y_axis TYPE BEARING_SEAT SIZE 20 mm
+CONNECT wrist_pitch_bearing_connection forearm_wrist_shaft wrist_pitch_bearing METHOD BEARING STANDARD ISO_492 FIT H7_g6 CLEARANCE 0.02 mm AUTO
+
+INTERFACE wrist_roll_shaft BODY wrist AT palm_center AXIS wrist_axis TYPE SHAFT SIZE 17 mm
+INTERFACE palm_roll_bearing BODY palm AT palm_center AXIS wrist_axis TYPE BEARING_SEAT SIZE 17 mm
+CONNECT wrist_roll_bearing_connection wrist_roll_shaft palm_roll_bearing METHOD BEARING STANDARD ISO_492 FIT H7_g6 CLEARANCE 0.02 mm AUTO
+
+INTERFACE palm_upper_jaw_pin BODY palm AT upper_jaw_pivot AXIS y_axis TYPE PIN SIZE 10 mm
+INTERFACE upper_jaw_pivot_hole BODY upper_jaw AT upper_jaw_pivot AXIS y_axis TYPE HOLE SIZE 10 mm
+CONNECT upper_jaw_pin_connection palm_upper_jaw_pin upper_jaw_pivot_hole METHOD PINNED STANDARD ISO_8734 FASTENER PIN_10 CLEARANCE 0.02 mm AUTO
+
+INTERFACE palm_lower_jaw_pin BODY palm AT lower_jaw_pivot AXIS y_axis TYPE PIN SIZE 10 mm
+INTERFACE lower_jaw_pivot_hole BODY lower_jaw AT lower_jaw_pivot AXIS y_axis TYPE HOLE SIZE 10 mm
+CONNECT lower_jaw_pin_connection palm_lower_jaw_pin lower_jaw_pivot_hole METHOD PINNED STANDARD ISO_8734 FASTENER PIN_10 CLEARANCE 0.02 mm AUTO
+
+INTERFACE palm_drive_shaft BODY palm AT drive_gear_center AXIS y_axis TYPE SHAFT SIZE 5 mm
+INTERFACE drive_gear_bearing BODY drive_gear AT drive_gear_center AXIS y_axis TYPE BEARING_SEAT SIZE 5 mm
+CONNECT drive_gear_bearing_connection palm_drive_shaft drive_gear_bearing METHOD BEARING STANDARD ISO_492 FIT H7_g6 CLEARANCE 0.02 mm AUTO
+
+INTERFACE palm_follower_shaft BODY palm AT follower_gear_center AXIS y_axis TYPE SHAFT SIZE 5 mm
+INTERFACE follower_gear_bearing BODY follower_gear AT follower_gear_center AXIS y_axis TYPE BEARING_SEAT SIZE 5 mm
+CONNECT follower_gear_bearing_connection palm_follower_shaft follower_gear_bearing METHOD BEARING STANDARD ISO_492 FIT H7_g6 CLEARANCE 0.02 mm AUTO
 
 CONSTRAINT tool_axis_defined PARALLEL tool_axis tool_axis
 CONSTRAINT joint_plane PERPENDICULAR y_axis z_axis

@@ -43,6 +43,12 @@ subset consists of body-local `feature.face.top|bottom` paths, optional `FACE`
 aliases, strict earlier-feature ordering, and canonical `supportTopologyId`
 feedback. Do not emit side-face, edge, plural, or geometric fallback selectors.
 
+When `MANUFACTURING_CONNECTIONS_V1` is advertised, the production assembly
+contract includes named point/axis `INTERFACE` declarations and standards-aware
+`CONNECT` declarations for bolts, screws, pins, fits, bearings, welds, brazes,
+and bonds. `MAGNETIC_INTERFACE_SNAP_V1` adds deterministic `AUTO` seating
+evaluation in `visual.json`; it does not silently transform source geometry.
+
 Blueprint knowledge controls how design intent is interpreted. ICAD grammar
 controls how that intent is expressed. If the packaged EBNF and the running
 compiler disagree, use `icad.language`, report the mismatch, and never invent

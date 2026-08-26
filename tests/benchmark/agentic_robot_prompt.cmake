@@ -34,10 +34,11 @@ foreach(expected IN ITEMS "\"ready\":true" "\"bodies\":10" "\"joints\":10"
                           "\"degreesOfFreedom\":9" "\"topologyValid\":true"
                           "\"intent\":\"ROBOTIC_ARM\"" "\"expectedModelIterations\":1"
                           "\"schema\":\"icad.agent.design-map.v1\""
+                          "\"unintendedPenetratingPartPairs\":0"
                           "\"selectedTemplate\":\"robotic_arm\""
                           "\"name\":\"forearm_axis\""
                           "\"child\":\"forearm\""
-                          "components=10" "solids=25")
+                          "components=10" "solids=27")
     if(NOT create_result EQUAL 0 OR NOT create_output MATCHES "${expected}")
         message(FATAL_ERROR "one-command robotic creation is missing ${expected}: ${create_error}${create_output}")
     endif()
@@ -49,7 +50,7 @@ execute_process(
     OUTPUT_VARIABLE step_output
     ERROR_VARIABLE step_error
 )
-if(NOT step_result EQUAL 0 OR NOT step_output MATCHES "STEP_SOLIDS 25" OR
+if(NOT step_result EQUAL 0 OR NOT step_output MATCHES "STEP_SOLIDS 27" OR
    NOT step_output MATCHES "STEP_ASSEMBLY_COMPONENTS 10")
     message(FATAL_ERROR "robotic prompt STEP assembly failed: ${step_error}${step_output}")
 endif()
@@ -61,10 +62,12 @@ execute_process(
 )
 if(NOT visual_result EQUAL 0 OR
    NOT visual_output MATCHES "\"schema\":\"icad.visual.snapshot.v1\"" OR
-   NOT visual_output MATCHES "\"body\":\"upper_jaw\",\"parts\":2,\"triangles\":180" OR
+   NOT visual_output MATCHES "\"body\":\"upper_jaw\",\"parts\":2,\"triangles\":168" OR
    NOT visual_output MATCHES "\"body\":\"drive_gear\",\"parts\":2,\"triangles\":220" OR
+   NOT visual_output MATCHES "\"connections\"" OR
+   NOT visual_output MATCHES "\"snapState\":\"SEATED\"" OR
    NOT visual_output MATCHES "\"disconnectedJoints\":0" OR
    NOT visual_output MATCHES "\"rootMaxDisplacementMm\":0")
     message(FATAL_ERROR "agent-created robot lacks the accepted visual snapshot: ${visual_error}${visual_output}")
 endif()
-message(STATUS "one-command robotic prompt passed against reference: 10 source components, 10 ICAD bodies, 10 joints, 9 DOF, 25 solids, exact attachments, grounded scene samples, and four agent-readable views")
+message(STATUS "one-command robotic prompt passed against reference: 10 source components, 10 ICAD bodies, 10 joints, 9 DOF, 27 solids, 9 seated manufacturing connections, zero unintended penetrations, grounded scene samples, and four agent-readable views")

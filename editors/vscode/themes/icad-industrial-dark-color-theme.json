@@ -37,7 +37,7 @@
     {"scope": ["entity.name.material.icad"], "settings": {"foreground": "#FFE7B5"}},
     {"scope": ["keyword.declaration.constraint.icad", "support.type.constraint.icad"], "settings": {"foreground": "#BB9AF7", "fontStyle": "bold"}},
     {"scope": ["entity.name.constraint.icad"], "settings": {"foreground": "#D8C7FF"}},
-    {"scope": ["support.type.primitive.icad", "support.type.operation.icad", "support.type.assembly.icad", "support.type.sketch.icad", "support.type.animation.icad"], "settings": {"foreground": "#89DDFF"}},
+    {"scope": ["support.type.primitive.icad", "support.type.operation.icad", "support.type.assembly.icad", "support.type.manufacturing-interface.icad", "support.type.sketch.icad", "support.type.animation.icad"], "settings": {"foreground": "#89DDFF"}},
     {"scope": ["constant.numeric.icad", "constant.numeric.time.icad"], "settings": {"foreground": "#F6C177"}},
     {"scope": ["constant.language.unit.icad"], "settings": {"foreground": "#A6E3A1", "fontStyle": "italic"}},
     {"scope": ["string.quoted.double.icad"], "settings": {"foreground": "#A6E3A1"}},

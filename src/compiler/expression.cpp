@@ -1,8 +1,9 @@
 #include "icad/compiler/expression.hpp"
 
-#include <charconv>
 #include <cmath>
 #include <cstddef>
+#include <locale>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -19,10 +20,12 @@ auto add_error(std::vector<Diagnostic>& diagnostics, std::string code, std::stri
 }
 
 [[nodiscard]] auto parse_number(const Token& token, double& value) -> bool {
-    const char* begin = token.lexeme.data();
-    const char* end = begin + token.lexeme.size();
-    const auto conversion = std::from_chars(begin, end, value);
-    return conversion.ec == std::errc{} && conversion.ptr == end;
+    std::istringstream stream{token.lexeme};
+    stream.imbue(std::locale::classic());
+    if (!(stream >> value))
+        return false;
+    char trailing{};
+    return !(stream >> trailing);
 }
 
 [[nodiscard]] auto render_source(std::span<const Token> tokens) -> std::string {

@@ -94,6 +94,13 @@ auto main() -> int {
                                std::string{"feature:vessel/wall_solid"})) {
         return fail("topology selection is absent from the dependency graph");
     }
+    if (dependencies.edges.empty() || dependencies.edges.size() != dependencies.edge_count ||
+        std::ranges::any_of(dependencies.edges, [&](const auto& edge) {
+            return edge.dependency >= dependencies.nodes.size() ||
+                   edge.consumer >= dependencies.nodes.size();
+        })) {
+        return fail("compact topology graph edges are incomplete or out of range");
+    }
 
     const auto visual = icad::ai::visual_snapshot_json(*result.ir_project);
     if (!visual.contains("\"matchedTopologyId\":\"vessel/wall_solid/edge.loop.top.inner\"") ||

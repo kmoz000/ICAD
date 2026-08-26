@@ -184,7 +184,10 @@ struct ExactMetrics {
 } // namespace
 
 auto analyze(const compiler::ir::Project& project) -> ProjectAnalysis {
-    const auto model = build_model(project);
+    return analyze(project, build_model(project));
+}
+
+auto analyze(const compiler::ir::Project& project, const Model& model) -> ProjectAnalysis {
     ProjectAnalysis analysis;
     analysis.bounds = empty_bounds();
     std::size_t part_index = 0;

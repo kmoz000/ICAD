@@ -13,8 +13,9 @@ OpenCASCADE and do not disguise text or mesh data with another extension.
 
 Declare parameters and typed angles, datums, sketch workspaces, named path
 entities, ordered operations, materials and appearances, bodies/components,
-poses, joints and constraints, scenes, then exports. Prefer stable names and
-editable parameters that another agent can inspect and revise.
+named manufacturing interfaces, connections, poses, joints and constraints,
+scenes, then exports. Prefer stable names and editable parameters that another
+agent can inspect and revise.
 
 ## Raw prompt protocol
 
@@ -28,7 +29,8 @@ editable parameters that another agent can inspect and revise.
 
 Read [references/blueprint-concept-pass.md](references/blueprint-concept-pass.md) for image, drawing, and underspecified mechanical requests.
 Read [references/modeling-contract.md](references/modeling-contract.md) before
-authoring a manufactured part or articulated assembly.
+authoring a manufactured part or articulated assembly. It defines the mandatory
+interface/contact workflow that prevents floating or merely overlapping parts.
 Read [references/reference-index.md](references/reference-index.md) when exact
 grammar syntax or page-level blueprint interpretation is needed. The packaged
 EBNF defines source structure; the packaged PDF is supporting design-reading
@@ -114,8 +116,30 @@ topology JSON.
   valid, but prefer explicit shape roles for new multi-region parts.
 - Use low-level `FEATURE` blocks only for operations without a history
   shorthand or while maintaining an existing model.
+- For a newly generated industrial part, reject a feature-only result. At least
+  one manufactured body must expose body-local `SKETCH` plus `PAD` or `POCKET`
+  history, and `visual.json.sketches` must be non-empty. Treat a zero-sketch
+  result as a redesign signal even when its mesh, assembly, and exports validate.
 - Use named `POINT3`, `VECTOR`, `ANGLE`, `POSE`, and `JOINT` declarations for
   mechanisms instead of inferring structure from mesh vertices.
+- When `MANUFACTURING_CONNECTIONS_V1` is advertised, give each mating side a
+  named `INTERFACE ... BODY ... AT ... AXIS ... TYPE ... [SIZE ...]`, then use
+  `CONNECT ... METHOD ... STANDARD ...`. Supply `FASTENER` for bolted, screwed,
+  or pinned connections and `FIT` for fitted or bearing connections. Choose
+  compatible pairs: shaft/bore, pin/hole, shaft/bearing-seat, flange/mount, or
+  weld/bond faces as appropriate. Never use a connection name as a visual-only
+  label.
+- When `MAGNETIC_INTERFACE_SNAP_V1` is advertised, `AUTO` asks the engine to
+  evaluate the candidate seat. Read `visual.json.connections[].gapMm`,
+  `axisAlignment`, `snapState`, and `aligned`; `SEATED` is acceptance evidence,
+  while `SNAP_REQUIRED` or `MISALIGNED` requires a source pose/datum repair.
+  Then run `interference-json` and reject unintended penetration. AUTO never
+  licenses a floating part or silently rewrites the authoritative source.
+- In interference feedback, distinguish `declaredEngagementPartPairs` from
+  `unintendedPenetratingPartPairs`. A bearing, pin, or fit can explain geometry
+  engagement only when the body pair is tied to a compatible named connection
+  with its method and standard. Delivery requires zero unintended penetrations;
+  never excuse anonymous overlap as joint hardware.
 - After every geometry or pose edit, call `icad.visualize` through MCP (or
   `icad visual-json`) and inspect all four depth rasters. Reject a poor
   silhouette, misplaced component, or unexpected occlusion before building.

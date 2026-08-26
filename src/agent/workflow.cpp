@@ -4,6 +4,7 @@
 #include "icad/ai/inspector.hpp"
 #include "icad/cad/analysis.hpp"
 #include "icad/cad/intersection.hpp"
+#include "icad/cad/model.hpp"
 #include "icad/cad/topology.hpp"
 #include "icad/compiler/compiler.hpp"
 #include "icad/constraints/validator.hpp"
@@ -142,7 +143,7 @@ END
             signals.emplace_back("programmable articulation scene");
         if (normalized.contains("industrial"))
             signals.emplace_back("industrial material and manufacturing package");
-        assumptions.emplace_back("10 named component bodies and 25 closed solids");
+        assumptions.emplace_back("10 named component bodies and 27 closed solids");
         assumptions.emplace_back("9 driven degrees of freedom with explicit joint limits");
         assumptions.emplace_back("millimetre dimensions and deterministic embedded materials");
         assumptions.emplace_back("default link dimensions remain editable through named parameters");
@@ -409,16 +410,20 @@ auto review_json(std::string_view source) -> std::string {
     }
 
     const auto& project = *compilation.ir_project;
-    const auto constraint_results = constraints::validate(project);
-    const auto manufacturing_report = manufacturing::validate(project);
+    const auto model = cad::build_model(project);
+    const auto metrics = cad::analyze(project, model);
+    const auto interference =
+        cad::analyze_intersections(project, model, project.tolerance.linear_mm);
+    const auto constraint_results = constraints::validate(project, metrics);
+    const auto manufacturing_report =
+        manufacturing::validate(project, metrics, interference);
     const auto topology = cad::build_topology(project);
     const auto topology_validation = cad::validate_topology(topology);
-    const auto metrics = cad::analyze(project);
-    const auto interference =
-        cad::analyze_intersections(project, project.tolerance.linear_mm);
     const bool constraints_passed = constraints::all_passed(constraint_results);
+    const bool interference_passed = interference.unintended_penetrating_part_pairs == 0;
     const bool ready = constraints_passed && manufacturing_report.passed &&
-                       topology_validation.valid() && !metrics.parts.empty();
+                       topology_validation.valid() && interference_passed &&
+                       !metrics.parts.empty();
 
     json::Value::Array failed_constraints;
     for (const auto& constraint : constraint_results) {
@@ -438,8 +443,8 @@ auto review_json(std::string_view source) -> std::string {
         actions.emplace_back("Resolve manufacturing errors before export");
     if (!topology_validation.valid())
         actions.emplace_back("Repair invalid topology before export");
-    if (interference.penetrating_part_pairs != 0)
-        actions.emplace_back("Review reported assembly penetrations; joint hardware overlap may be intentional");
+    if (interference.unintended_penetrating_part_pairs != 0)
+        actions.emplace_back("Repair unintended assembly penetrations; declared manufacturing engagements are reported separately");
     if (ready)
         actions.emplace_back("Commit the exact source revision and call icad.project.build");
 
@@ -461,8 +466,13 @@ auto review_json(std::string_view source) -> std::string {
         {"checks", object({{"constraintsPassed", constraints_passed},
                             {"manufacturingPassed", manufacturing_report.passed},
                             {"topologyValid", topology_validation.valid()},
+                            {"interferencePassed", interference_passed},
                             {"penetratingPartPairs",
                              static_cast<double>(interference.penetrating_part_pairs)},
+                            {"declaredEngagementPartPairs",
+                             static_cast<double>(interference.declared_engagement_part_pairs)},
+                            {"unintendedPenetratingPartPairs",
+                             static_cast<double>(interference.unintended_penetrating_part_pairs)},
                             {"surfaceContactOnlyPartPairs",
                              static_cast<double>(interference.surface_contact_only_part_pairs)}})},
         {"failedConstraints", json::Value{std::move(failed_constraints)}},

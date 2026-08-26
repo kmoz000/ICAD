@@ -12,6 +12,10 @@ PARAMETER height 50 mm
 PARAMETER inner_round 3 mm
 PARAMETER outer_round 3 mm
 
+# The two bodies compare independent edge selections. Keep them physically
+# separated so the viewer never presents coincident comparison meshes.
+POINT3 outer_vessel_origin 100 mm 0 mm 0 mm
+
 BODY vessel
 SKETCH annulus ON PLANE XY
 SHAPE outside CLOSED ROLE STOCK
@@ -59,3 +63,5 @@ SELECT EDGE TOP OUTER
 RADIUS outer_round
 END
 END
+
+POSE outer_vessel AT outer_vessel_origin ROTATION 0 deg 0 deg 0 deg

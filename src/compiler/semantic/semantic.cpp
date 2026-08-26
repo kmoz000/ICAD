@@ -1901,6 +1901,163 @@ auto analyze(const ast::Program& program) -> SemanticResult {
         }
     }
 
+    constexpr std::string_view interface_kinds[]{
+        "MOUNT", "FLANGE", "SHAFT", "BORE", "PIN", "HOLE",
+        "BEARING_SEAT", "WELD_SEAM", "BOND_FACE", "DATUM"};
+    std::unordered_map<std::string, const ast::InterfaceDecl*> interface_declarations;
+    for (const auto& interface : program.interfaces) {
+        if (!interface_declarations.emplace(interface.name, &interface).second) {
+            add_error(result, "ICAD-S0041", "duplicate INTERFACE name '" + interface.name + "'",
+                      interface.location);
+        }
+        if (!occurrence_names.contains(interface.occurrence)) {
+            add_error(result, "ICAD-S0041", "INTERFACE references unknown body or instance '" +
+                                                interface.occurrence + "'",
+                      interface.location);
+        }
+        if (!point_values.contains(interface.point) || !vector_values.contains(interface.axis)) {
+            add_error(result, "ICAD-S0041", "INTERFACE requires an existing POINT3 and VECTOR",
+                      interface.location);
+        }
+        if (!std::ranges::contains(interface_kinds, interface.kind)) {
+            add_error(result, "ICAD-S0041", "unsupported manufacturing INTERFACE type '" +
+                                                interface.kind + "'",
+                      interface.location);
+        }
+        ir::ComponentInterface lowered_interface;
+        lowered_interface.name = interface.name;
+        lowered_interface.occurrence = interface.occurrence;
+        lowered_interface.point = interface.point;
+        lowered_interface.axis = interface.axis;
+        lowered_interface.kind = interface.kind;
+        lowered_interface.has_size = interface.has_size;
+        if (interface.has_size) {
+            lowered_interface.size_mm =
+                lower_value(interface.size, units::Dimension::length, parameter_values, result).value;
+            if (lowered_interface.size_mm <= 0.0) {
+                add_error(result, "ICAD-S0041", "INTERFACE SIZE must be greater than zero",
+                          interface.location);
+            }
+        }
+        lowered.interfaces.push_back(std::move(lowered_interface));
+    }
+
+    constexpr std::string_view connection_methods[]{
+        "BOLTED", "SCREWED", "PINNED", "PRESS_FIT", "SLIP_FIT",
+        "BEARING", "WELDED", "BRAZED", "BONDED"};
+    const auto compatible_connection = [](const std::string& method,
+                                          const std::string& first_kind,
+                                          const std::string& second_kind) {
+        const auto pair_is = [&](std::string_view first, std::string_view second) {
+            return (first_kind == first && second_kind == second) ||
+                   (first_kind == second && second_kind == first);
+        };
+        const auto both_are = [&](std::initializer_list<std::string_view> allowed) {
+            return std::ranges::contains(allowed, std::string_view{first_kind}) &&
+                   std::ranges::contains(allowed, std::string_view{second_kind});
+        };
+        if (method == "BOLTED" || method == "SCREWED") {
+            return both_are({"MOUNT", "FLANGE", "HOLE"});
+        }
+        if (method == "PINNED" || method == "PRESS_FIT" || method == "SLIP_FIT") {
+            return pair_is("PIN", "HOLE") || pair_is("SHAFT", "BORE");
+        }
+        if (method == "BEARING") {
+            return pair_is("SHAFT", "BEARING_SEAT") || pair_is("SHAFT", "BORE");
+        }
+        if (method == "WELDED" || method == "BRAZED") {
+            return both_are({"WELD_SEAM", "MOUNT", "FLANGE"});
+        }
+        if (method == "BONDED") {
+            return both_are({"BOND_FACE", "MOUNT", "FLANGE"});
+        }
+        return false;
+    };
+    std::unordered_set<std::string> connection_names;
+    for (const auto& connection : program.connections) {
+        if (!connection_names.insert(connection.name).second) {
+            add_error(result, "ICAD-S0042", "duplicate CONNECT name '" + connection.name + "'",
+                      connection.location);
+        }
+        const auto first = interface_declarations.find(connection.first_interface);
+        const auto second = interface_declarations.find(connection.second_interface);
+        if (first == interface_declarations.end() || second == interface_declarations.end() ||
+            connection.first_interface == connection.second_interface) {
+            add_error(result, "ICAD-S0042",
+                      "CONNECT requires two different existing INTERFACE declarations",
+                      connection.location);
+            continue;
+        }
+        if (first->second->occurrence == second->second->occurrence) {
+            add_error(result, "ICAD-S0042", "CONNECT interfaces must belong to different occurrences",
+                      connection.location);
+        }
+        if (!std::ranges::contains(connection_methods, connection.method)) {
+            add_error(result, "ICAD-S0042", "unsupported manufacturing connection method '" +
+                                                connection.method + "'",
+                      connection.location);
+        } else if (!compatible_connection(connection.method, first->second->kind,
+                                           second->second->kind)) {
+            add_error(result, "ICAD-S0042",
+                      connection.method + " is incompatible with INTERFACE types " +
+                          first->second->kind + " and " + second->second->kind,
+                      connection.location);
+        }
+        if (connection.standard.empty()) {
+            add_error(result, "ICAD-S0042", "CONNECT requires STANDARD manufacturing metadata",
+                      connection.location);
+        }
+        const bool fastened = connection.method == "BOLTED" || connection.method == "SCREWED" ||
+                              connection.method == "PINNED";
+        const bool fitted = connection.method == "PRESS_FIT" || connection.method == "SLIP_FIT" ||
+                            connection.method == "BEARING";
+        if (fastened && connection.fastener.empty()) {
+            add_error(result, "ICAD-S0042", connection.method + " CONNECT requires FASTENER",
+                      connection.location);
+        }
+        if (fitted && connection.fit.empty()) {
+            add_error(result, "ICAD-S0042", connection.method + " CONNECT requires FIT",
+                      connection.location);
+        }
+
+        const bool has_clearance = !connection.clearance.expression.empty() ||
+                                   !connection.clearance.parameter_reference.empty() ||
+                                   !connection.clearance.literal.unit.empty();
+        const double clearance = has_clearance
+                                     ? lower_value(connection.clearance, units::Dimension::length,
+                                                   parameter_values, result)
+                                           .value
+                                     : lowered.tolerance.linear_mm;
+        if (clearance < 0.0) {
+            add_error(result, "ICAD-S0042", "CONNECT CLEARANCE cannot be negative",
+                      connection.location);
+        }
+        double gap = 0.0;
+        double alignment = 0.0;
+        const auto first_point = point_values.find(first->second->point);
+        const auto second_point = point_values.find(second->second->point);
+        const auto first_axis = vector_values.find(first->second->axis);
+        const auto second_axis = vector_values.find(second->second->axis);
+        if (first_point != point_values.end() && second_point != point_values.end()) {
+            gap = std::hypot(first_point->second[0] - second_point->second[0],
+                             first_point->second[1] - second_point->second[1],
+                             first_point->second[2] - second_point->second[2]);
+        }
+        if (first_axis != vector_values.end() && second_axis != vector_values.end()) {
+            alignment = std::abs(first_axis->second[0] * second_axis->second[0] +
+                                 first_axis->second[1] * second_axis->second[1] +
+                                 first_axis->second[2] * second_axis->second[2]);
+        }
+        const double angular_cosine =
+            std::cos(lowered.tolerance.angular_degrees * std::numbers::pi / 180.0);
+        const bool aligned = gap <= clearance + lowered.tolerance.linear_mm &&
+                             alignment + 1e-12 >= angular_cosine;
+        lowered.connections.push_back(ir::AssemblyConnection{
+            connection.name, connection.first_interface, connection.second_interface,
+            connection.method, connection.standard, connection.fastener, connection.fit,
+            clearance, gap, alignment, connection.automatic, aligned});
+    }
+
     for (const auto& constraint : program.constraints) {
         const bool distance = constraint.kind == "MIN_DISTANCE";
         const bool coincident = constraint.kind == "COINCIDENT";

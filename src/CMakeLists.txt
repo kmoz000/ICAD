@@ -142,6 +142,21 @@ if(ICAD_BUILD_DESKTOP_VIEWER)
         set_property(TARGET icad-viewer PROPERTY INTERPROCEDURAL_OPTIMIZATION_MINSIZEREL TRUE)
     endif()
     qt_finalize_executable(icad-viewer)
+    if(APPLE)
+        if(ICAD_MACOS_CODESIGN_IDENTITY STREQUAL "-")
+            add_custom_command(TARGET icad-viewer POST_BUILD
+                COMMAND /usr/bin/codesign --force --deep --options runtime
+                        --entitlements ${PROJECT_SOURCE_DIR}/cmake/icad-viewer-adhoc.entitlements.plist
+                        --sign - $<TARGET_BUNDLE_DIR:icad-viewer>
+                COMMENT "Ad-hoc signing the build-tree ICAD Studio bundle")
+        else()
+            add_custom_command(TARGET icad-viewer POST_BUILD
+                COMMAND /usr/bin/codesign --force --deep --options runtime --timestamp
+                        --entitlements ${PROJECT_SOURCE_DIR}/cmake/icad-viewer-adhoc.entitlements.plist
+                        --sign ${ICAD_MACOS_CODESIGN_IDENTITY} $<TARGET_BUNDLE_DIR:icad-viewer>
+                COMMENT "Signing the build-tree ICAD Studio bundle")
+        endif()
+    endif()
     install(TARGETS icad-viewer
             BUNDLE DESTINATION . COMPONENT Viewer
             RUNTIME DESTINATION bin COMPONENT Viewer)
@@ -197,6 +212,7 @@ qt_deploy_runtime_dependencies(
             else()
                 execute_process(
                     COMMAND /usr/bin/codesign --force --deep --options runtime --timestamp
+                            --entitlements \"${PROJECT_SOURCE_DIR}/cmake/icad-viewer-adhoc.entitlements.plist\"
                             --sign \"${ICAD_MACOS_CODESIGN_IDENTITY}\" \"\${icad_viewer_app}\"
                     RESULT_VARIABLE icad_sign_result
                     OUTPUT_VARIABLE icad_sign_output

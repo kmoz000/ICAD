@@ -3,33 +3,57 @@
 
 #include "icad/engine/session.hpp"
 
+#include <QAction>
 #include <QApplication>
 #include <QCommandLineOption>
 #include <QCommandLineParser>
 #include <QCoreApplication>
+#include <QDir>
 #include <QFileInfo>
 #include <QFileDialog>
 #include <QIcon>
 #include <QMessageBox>
 #include <QSurfaceFormat>
+#include <QTabBar>
+#include <QTreeView>
 
 #include <filesystem>
 #include <iostream>
 #include <algorithm>
 #include <ranges>
+#include <optional>
 #include <span>
 #include <string_view>
 
 namespace {
 
-auto configure_parser(QCommandLineParser& parser, QCommandLineOption& self_test_option) -> void {
+auto configure_parser(QCommandLineParser& parser, QCommandLineOption& self_test_option,
+                      QCommandLineOption& window_test_option,
+                      QCommandLineOption& view_option,
+                      QCommandLineOption& snapshot_option) -> void {
     parser.setApplicationDescription(
         QStringLiteral("Native Qt/OpenGL IDE and live viewer for agentic ICAD models."));
     parser.addHelpOption();
     parser.addVersionOption();
     parser.addOption(self_test_option);
+    parser.addOption(window_test_option);
+    parser.addOption(view_option);
+    parser.addOption(snapshot_option);
     parser.addPositionalArgument(QStringLiteral("source.icad"),
-                                 QStringLiteral("ICAD source file to edit and preview."));
+                                 QStringLiteral("One or more ICAD source files to edit and preview."),
+                                 QStringLiteral("[source.icad…]"));
+}
+
+[[nodiscard]] auto standard_view(QString name) -> std::optional<icad::desktop::StandardView> {
+    name = name.toLower();
+    if (name == QStringLiteral("isometric")) return icad::desktop::StandardView::isometric;
+    if (name == QStringLiteral("front")) return icad::desktop::StandardView::front;
+    if (name == QStringLiteral("back")) return icad::desktop::StandardView::back;
+    if (name == QStringLiteral("left")) return icad::desktop::StandardView::left;
+    if (name == QStringLiteral("right")) return icad::desktop::StandardView::right;
+    if (name == QStringLiteral("top")) return icad::desktop::StandardView::top;
+    if (name == QStringLiteral("bottom")) return icad::desktop::StandardView::bottom;
+    return std::nullopt;
 }
 
 auto configure_application_metadata() -> void {
@@ -76,11 +100,21 @@ auto main(int argc, char** argv) -> int {
         });
     QCommandLineOption self_test_option{QStringLiteral("self-test"),
                                         QStringLiteral("Compile and validate a scene without opening a window.")};
+    QCommandLineOption window_test_option{
+        QStringLiteral("window-test"),
+        QStringLiteral("Construct and validate the native editor window without entering the event loop.")};
+    QCommandLineOption view_option{QStringLiteral("view"),
+                                   QStringLiteral("Initial standard 3D view."),
+                                   QStringLiteral("side"), QStringLiteral("isometric")};
+    QCommandLineOption snapshot_option{
+        QStringLiteral("snapshot"),
+        QStringLiteral("Render the compiled viewport to a PNG and exit."),
+        QStringLiteral("output.png")};
     if (requested_core_only) {
         QCoreApplication application{argc, argv};
         configure_application_metadata();
         QCommandLineParser parser;
-        configure_parser(parser, self_test_option);
+        configure_parser(parser, self_test_option, window_test_option, view_option, snapshot_option);
         parser.process(application);
         const auto positional = parser.positionalArguments();
         if (!requested_self_test)
@@ -104,11 +138,14 @@ auto main(int argc, char** argv) -> int {
     QApplication::setWindowIcon(QIcon{QStringLiteral(":/icad/icons/icad-256.png")});
 
     QCommandLineParser parser;
-    configure_parser(parser, self_test_option);
+    configure_parser(parser, self_test_option, window_test_option, view_option, snapshot_option);
     parser.process(application);
+    const auto initial_view = standard_view(parser.value(view_option));
+    if (!initial_view) {
+        std::cerr << "icad-viewer: --view expects isometric, front, back, left, right, top, or bottom\n";
+        return 2;
+    }
     const auto positional = parser.positionalArguments();
-    if (positional.size() > 1)
-        parser.showHelp(2);
     QString source;
     if (positional.empty()) {
         source = QFileDialog::getOpenFileName(nullptr, QStringLiteral("Open ICAD source"), QString{},
@@ -118,14 +155,58 @@ auto main(int argc, char** argv) -> int {
     } else {
         source = QFileInfo{positional.front()}.absoluteFilePath();
     }
-    if (QFileInfo{source}.suffix().compare(QStringLiteral("icad"), Qt::CaseInsensitive) != 0) {
-        std::cerr << "icad-viewer: expected an .icad source file\n";
-        return 2;
+    for (const QString& candidate : positional) {
+        if (QFileInfo{candidate}.suffix().compare(QStringLiteral("icad"), Qt::CaseInsensitive) != 0) {
+            std::cerr << "icad-viewer: expected .icad source files\n";
+            return 2;
+        }
     }
     icad::desktop::MainWindow window{std::filesystem::path{source.toStdString()}};
     if (!window.ready()) {
         QMessageBox::critical(nullptr, QStringLiteral("ICAD Studio"), window.error());
         return 2;
+    }
+    for (qsizetype index = 1; index < positional.size(); ++index) {
+        if (!window.open_document(
+                std::filesystem::path{QFileInfo{positional[index]}.absoluteFilePath().toStdString()}))
+            return 2;
+    }
+    window.set_standard_view(*initial_view);
+    if (parser.isSet(window_test_option)) {
+        const auto* tabs = window.findChild<QTabBar*>(QStringLiteral("documentTabs"));
+        const auto* workspace = window.findChild<QTreeView*>(QStringLiteral("workspaceTree"));
+        const bool has_open_folder = std::ranges::any_of(
+            window.findChildren<QAction*>(), [](const QAction* action) {
+                return action->text().remove(QLatin1Char('&')) == QStringLiteral("Open Folder…");
+            });
+        const int expected_tabs = std::max(1, static_cast<int>(positional.size()));
+        if (tabs == nullptr || tabs->count() != expected_tabs ||
+            window.document_count() != static_cast<std::size_t>(expected_tabs) || workspace == nullptr ||
+            workspace->model() == nullptr || !has_open_folder) {
+            std::cerr << "QT_VIEWER_WINDOW_TEST failed: workspace shell is incomplete\n";
+            return 3;
+        }
+        std::cout << "QT_VIEWER_WINDOW_TEST passed\n";
+        return 0;
+    }
+    if (parser.isSet(snapshot_option)) {
+        const QString output = QFileInfo{parser.value(snapshot_option)}.absoluteFilePath();
+        if (QFileInfo{output}.suffix().compare(QStringLiteral("png"), Qt::CaseInsensitive) != 0) {
+            std::cerr << "icad-viewer: --snapshot expects a .png output path\n";
+            return 2;
+        }
+        if (!QDir{}.mkpath(QFileInfo{output}.absolutePath())) {
+            std::cerr << "icad-viewer: could not create the snapshot output directory\n";
+            return 2;
+        }
+        window.request_snapshot(output, [&application, output](bool saved) {
+            if (saved)
+                std::cout << "ICAD_VIEWER_SNAPSHOT " << output.toStdString() << '\n';
+            else
+                std::cerr << "icad-viewer: could not write snapshot " << output.toStdString()
+                          << '\n';
+            application.exit(saved ? 0 : 3);
+        });
     }
     window.show();
     return QApplication::exec();

@@ -35,7 +35,7 @@
       {"name": "support.type.surface.operation.icad", "match": "\\b(EXTRUDE|REVOLVE|SWEEP|LOFT|FREEFORM)\\b"},
       {"name": "support.type.surface.selector.icad", "match": "\\b(FACE|EDGE|EDGESET|EDGES|LOOP|CIRCULAR|CONCAVE|CONVEX|ADJACENT_TO|TOP|BOTTOM|INNER|OUTER|PLANAR|CYLINDRICAL|SPHERICAL|X_MIN|X_MAX|Y_MIN|Y_MAX|Z_MIN|Z_MAX)\\b"}
     ]},
-    "objectDeclarations": {"patterns": [{"match": "^(\\s*)(PROJECT|BODY|INSTANCE|FEATURE|PAD|POCKET|PROFILE|SKETCH|SHAPE|REGION|SELECTION)(\\s+)([A-Za-z_][A-Za-z0-9_]*)", "captures": {"2": {"name": "keyword.declaration.object.icad"}, "4": {"name": "entity.name.object.icad"}}}]},
+    "objectDeclarations": {"patterns": [{"match": "^(\\s*)(PROJECT|BODY|INSTANCE|FEATURE|PAD|POCKET|PROFILE|SKETCH|SHAPE|REGION|SELECTION|INTERFACE|CONNECT)(\\s+)([A-Za-z_][A-Za-z0-9_]*)", "captures": {"2": {"name": "keyword.declaration.object.icad"}, "4": {"name": "entity.name.object.icad"}}}]},
     "sceneDeclarations": {"patterns": [
       {"match": "^(\\s*)(SCENE|TRACK)(\\s+)([A-Za-z_][A-Za-z0-9_]*)", "captures": {"2": {"name": "keyword.declaration.scene.icad"}, "4": {"name": "entity.name.scene.icad"}}},
       {"match": "^(\\s*)(EVENT)(\\s+)([^\\s]+\\s+[A-Za-z]+)(\\s+)([A-Za-z_][A-Za-z0-9_]*)", "captures": {"2": {"name": "keyword.declaration.event.icad"}, "4": {"name": "constant.numeric.time.icad"}, "6": {"name": "entity.name.event.icad"}}},
@@ -46,11 +46,12 @@
       {"match": "^(\\s*)(CONSTRAINT|MATE|JOINT)(\\s+)([A-Za-z_][A-Za-z0-9_]*)", "captures": {"2": {"name": "keyword.declaration.constraint.icad"}, "4": {"name": "entity.name.constraint.icad"}}},
       {"name": "support.type.constraint.icad", "match": "\\b(HORIZONTAL|VERTICAL|COINCIDENT|H_DISTANCE|V_DISTANCE|PARALLEL|PERPENDICULAR|EQUAL_LENGTH|CONCENTRIC|EQUAL_RADIUS|MIDPOINT|SYMMETRIC|TANGENT|MIN_DISTANCE|ANGLE_BETWEEN)\\b"}
     ]},
-    "keywords": {"patterns": [{"name": "keyword.control.icad", "match": "\\b(REQUIRES|ICAD|CAPABILITY|IMPORT|INJECT|UNITS|TOLERANCE|LINEAR|ANGULAR|PRESET|BASE_COLOR|METALLIC|ROUGHNESS|TEXTURE_SCALE|UV_MODE|TARGET_PROFILE|OUTER|HOLES|ROLE|SOLVE|FULL|ALLOW_UNDER|TYPE|OPERATION|NEW|ADD|POSITION|ROTATION|VALUE|LIMIT|AT|ON|OF|FROM|TO|ALONG|DEPTH|DISTANCE|RADIUS|AROUND|BY|AXIS|SELECT|NEAREST|PATH|DIRECTION|COUNT|PLANE|NORMAL|CENTER|OFFSET|SECTION|ABOUT|WHERE|END)\\b"}]},
+    "keywords": {"patterns": [{"name": "keyword.control.icad", "match": "\\b(REQUIRES|ICAD|CAPABILITY|IMPORT|INJECT|UNITS|TOLERANCE|LINEAR|ANGULAR|PRESET|BASE_COLOR|METALLIC|ROUGHNESS|TEXTURE_SCALE|UV_MODE|TARGET_PROFILE|OUTER|HOLES|ROLE|SOLVE|FULL|ALLOW_UNDER|TYPE|OPERATION|NEW|ADD|POSITION|ROTATION|VALUE|LIMIT|AT|ON|OF|FROM|TO|ALONG|DEPTH|DISTANCE|RADIUS|AROUND|BY|AXIS|SELECT|NEAREST|PATH|DIRECTION|COUNT|PLANE|NORMAL|CENTER|OFFSET|SECTION|ABOUT|WHERE|BODY|METHOD|STANDARD|FASTENER|FIT|CLEARANCE|SIZE|AUTO|END)\\b"}]},
     "types": {"patterns": [
       {"name": "support.type.primitive.icad", "match": "\\b(BOX|CYLINDER|CONE|SPHERE)\\b"},
       {"name": "support.type.operation.icad", "match": "\\b(UNION|CUT|INTERSECT|NEW|ADD)\\b"},
       {"name": "support.type.assembly.icad", "match": "\\b(FIXED|REVOLUTE|PRISMATIC|CAMERA|VISIBILITY)\\b"},
+      {"name": "support.type.manufacturing-interface.icad", "match": "\\b(MOUNT|FLANGE|SHAFT|BORE|PIN|HOLE|BEARING_SEAT|WELD_SEAM|BOND_FACE|DATUM|BOLTED|SCREWED|PINNED|PRESS_FIT|SLIP_FIT|BEARING|WELDED|BRAZED|BONDED)\\b"},
       {"name": "support.type.sketch.icad", "match": "\\b(START|CLOSE|CW|CCW|OPEN|CLOSED|STOCK|ADDITIVE|HOLE|CONSTRUCTION)\\b"},
       {"name": "support.type.animation.icad", "match": "\\b(DIRECTIONAL|LINEAR|EASE_IN|EASE_OUT|EASE_IN_OUT|STEP|ON|OFF)\\b"}
     ]},

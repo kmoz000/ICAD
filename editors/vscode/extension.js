@@ -149,7 +149,8 @@ async function openViewer() {
   const document = activeDesign();
   if (!document) return;
   await document.save();
-  const process = spawn(toolchain.viewer, [document.uri.fsPath], {
+  const initialView = configuration().get("viewer.initialView", "isometric");
+  const process = spawn(toolchain.viewer, ["--view", initialView, document.uri.fsPath], {
     detached: true, stdio: "ignore", shell: false, windowsHide: true
   });
   process.on("error", async error => {

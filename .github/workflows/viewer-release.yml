@@ -68,7 +68,7 @@ jobs:
       - name: Create maximum-compression tar.xz
         if: matrix.archive == 'tar.xz'
         shell: bash
-        run: tar -C build/stage -cJf "${{ matrix.asset }}.tar.xz" .
+        run: XZ_OPT=-9e tar -C build/stage -cJf "${{ matrix.asset }}.tar.xz" .
       - name: Create maximum-compression 7z
         if: matrix.archive == '7z'
         shell: pwsh

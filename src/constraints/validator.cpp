@@ -42,7 +42,11 @@ namespace {
 } // namespace
 
 auto validate(const compiler::ir::Project& project) -> std::vector<Result> {
-    const auto analysis = cad::analyze(project);
+    return validate(project, cad::analyze(project));
+}
+
+auto validate(const compiler::ir::Project& project, const cad::ProjectAnalysis& analysis)
+    -> std::vector<Result> {
     std::map<std::string, cad::Bounds> body_bounds;
     std::map<std::string, bool> initialized;
     for (const auto& part : analysis.parts) {

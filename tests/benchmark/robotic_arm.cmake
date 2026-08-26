@@ -44,8 +44,8 @@ if(NOT inspect_result EQUAL 0)
 endif()
 foreach(expected IN ITEMS "PARAMETERS 7" "ANGLES 1" "POINTS3 12" "VECTORS 7" "POSES 1"
                           "JOINTS 10" "MATERIALS 3" "PROFILES 7" "BODIES 10"
-                          "PROFILE_SEGMENTS 110" "CURVED_PROFILE_SEGMENTS 0"
-                          "FEATURES 25" "CONSTRAINTS 3" "SCENES 1" "ANIMATION_TRACKS 9"
+                          "PROFILE_SEGMENTS 107" "CURVED_PROFILE_SEGMENTS 0"
+                          "FEATURES 27" "CONSTRAINTS 3" "SCENES 1" "ANIMATION_TRACKS 9"
                           "KEYFRAMES 27")
     if(NOT inspect_output MATCHES "${expected}")
         message(FATAL_ERROR "robotic arm is missing metric ${expected}: ${inspect_output}")
@@ -65,6 +65,8 @@ foreach(expected IN ITEMS "\"schema\":\"icad.visual.snapshot.v1\""
                           "\"body\":\"forearm\",\"parts\":2,\"triangles\":172"
                           "\"body\":\"drive_gear\",\"parts\":2,\"triangles\":220"
                           "\"body\":\"follower_gear\",\"parts\":2,\"triangles\":220"
+                          "\"connections\""
+                          "\"snapState\":\"SEATED\""
                           "\"attachmentSummary\":\{\"checkedJoints\":9,\"disconnectedJoints\":0"
                           "\"timeSeconds\":4,\"disconnectedJoints\":0,\"rootMaxDisplacementMm\":0")
     if(NOT visual_result EQUAL 0 OR NOT visual_output MATCHES "${expected}")
@@ -79,6 +81,8 @@ execute_process(
     ERROR_VARIABLE agent_error
 )
 if(NOT agent_result EQUAL 0 OR NOT agent_output MATCHES "\"degreesOfFreedom\":9" OR
+   NOT agent_output MATCHES "\"declaredEngagementPartPairs\":14" OR
+   NOT agent_output MATCHES "\"unintendedPenetratingPartPairs\":0" OR
    NOT agent_output MATCHES "\"name\":\"elbow_hinge\",\"type\":\"revolute\"" OR
    NOT agent_output MATCHES "\"name\":\"upper_arm_axis\",\"kind\":\"betweenPoints\"" OR
    NOT agent_output MATCHES "\"from\":\"shoulder_center\",\"to\":\"elbow_center\"" OR
@@ -116,7 +120,7 @@ execute_process(
     ERROR_VARIABLE topology_error
 )
 if(NOT topology_result EQUAL 0 OR NOT topology_output MATCHES
-   "\\\"counts\\\":\\{\\\"solids\\\":25,\\\"vertices\\\":274,\\\"edges\\\":411,\\\"wires\\\":187,\\\"faces\\\":187\\}" OR
+   "\\\"counts\\\":\\{\\\"solids\\\":27,\\\"vertices\\\":272,\\\"edges\\\":408,\\\"wires\\\":190,\\\"faces\\\":190\\}" OR
    NOT topology_output MATCHES "upper_arm/upper_arm_shell/face.side.1")
     message(FATAL_ERROR "robotic-arm exact topology mismatch: ${topology_error}${topology_output}")
 endif()
@@ -127,7 +131,7 @@ execute_process(
     OUTPUT_VARIABLE assembly_output
     ERROR_VARIABLE assembly_error
 )
-if(NOT assembly_result EQUAL 0 OR NOT assembly_output MATCHES "STEP_SOLIDS 25" OR
+if(NOT assembly_result EQUAL 0 OR NOT assembly_output MATCHES "STEP_SOLIDS 27" OR
    NOT assembly_output MATCHES "STEP_ASSEMBLY_COMPONENTS 10")
     message(FATAL_ERROR "generated robotic assembly mismatch: ${assembly_error}${assembly_output}")
 endif()
@@ -137,10 +141,10 @@ execute_process(
     OUTPUT_VARIABLE stl_output
     ERROR_VARIABLE stl_error
 )
-if(NOT stl_result EQUAL 0 OR NOT stl_output MATCHES "STL_SOLIDS 25" OR
-   NOT stl_output MATCHES "STL_FACETS 2368")
+if(NOT stl_result EQUAL 0 OR NOT stl_output MATCHES "STL_SOLIDS 27" OR
+   NOT stl_output MATCHES "STL_FACETS 2612")
     message(FATAL_ERROR "generated robotic STL mismatch: ${stl_error}${stl_output}")
 endif()
 
 message(STATUS
-    "robotic arm benchmark passed: reference=10 STL files/23314 facets/20 STEP solids; ICAD=10 components/25 solids/187 exact faces/2368 facets with toothed gears, mechanical gripper silhouettes, exact rest attachments, three connected animation samples, a stationary ground, four agent-readable views, and a fully animated 10-joint/9-DOF mechanism graph")
+    "robotic arm benchmark passed: reference=10 STL files/23314 facets/20 STEP solids; ICAD=10 components/27 solids/190 exact faces/2612 facets with external meshing gears, standards-aware seated interfaces, zero unintended penetrations, exact rest attachments, three connected animation samples, a stationary ground, four agent-readable views, and a fully animated 10-joint/9-DOF mechanism graph")

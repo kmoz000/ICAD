@@ -17,7 +17,8 @@ for (const scope of [
   "support.type.surface.operation.icad",
   "entity.name.object.icad",
   "entity.name.event.icad",
-  "support.type.constraint.icad"
+  "support.type.constraint.icad",
+  "support.type.manufacturing-interface.icad"
 ]) {
   assert(syntaxText.includes(scope), `syntax grammar omits ${scope}`);
   assert(themeText.includes(scope), `ICAD theme omits ${scope}`);
@@ -26,5 +27,13 @@ assert(syntaxText.includes("TANGENT"), "syntax grammar omits TANGENT");
 for (const token of ["SELECTION", "EDGESET", "EDGES", "WHERE", "LOOP", "CIRCULAR", "CONCAVE", "CONVEX", "ADJACENT_TO"]) {
   assert(syntaxText.includes(token), `syntax grammar omits ${token}`);
 }
+for (const token of ["INTERFACE", "CONNECT", "STANDARD", "FASTENER", "CLEARANCE", "AUTO", "PRESS_FIT", "BEARING_SEAT"]) {
+  assert(syntaxText.includes(token), `syntax grammar omits ${token}`);
+}
 assert.strictEqual(manifest.contributes.themes[0].label, "ICAD Industrial Dark");
 assert(manifest.files.includes("themes/**"), "VSIX package omits themes");
+assert.deepStrictEqual(
+  manifest.contributes.configuration[0].properties["icad.viewer.initialView"].enum,
+  ["isometric", "front", "back", "left", "right", "top", "bottom"],
+  "viewer standard-side autocomplete is incomplete"
+);

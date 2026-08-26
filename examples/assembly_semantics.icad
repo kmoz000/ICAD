@@ -4,8 +4,8 @@ UNITS mm
 TOLERANCE LINEAR 0.001 mm ANGULAR 0.001 deg
 
 POINT3 origin 0 mm 0 mm 0 mm
-POINT3 upper 0 mm 0 mm 10 mm
-POINT3 hinge_point 0 mm 0 mm 10 mm
+POINT3 upper 0 mm 0 mm 100 mm
+POINT3 hinge_point 0 mm 0 mm 100 mm
 VECTOR hinge_axis 0 0 1
 
 MATERIAL alloy ALUMINUM
@@ -13,9 +13,9 @@ BODY link_definition
 MATERIAL alloy
 FEATURE stock
 TYPE BOX
-WIDTH 10 mm
-DEPTH 10 mm
-HEIGHT 10 mm
+WIDTH 100 mm
+DEPTH 100 mm
+HEIGHT 100 mm
 END
 END
 

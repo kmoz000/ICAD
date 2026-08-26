@@ -6,8 +6,8 @@ syntax, semantic, geometry, exact-topology, constraint, manufacturing,
 read-back, and runtime outcomes.
 
 The bridge baseline contains 35 solids, 250 exact vertices, 375 exact edges,
-and 195 exact faces. The robotic-arm baseline contains 25 solids, 274 exact
-vertices, 411 exact edges, and 187 exact faces in addition to reference STEP/STL
+and 195 exact faces. The robotic-arm baseline contains 27 solids, 272 exact
+vertices, 408 exact edges, and 190 exact faces in addition to reference STEP/STL
 comparisons, four depth-raster views, actual mesh-volume joint attachment, three
 connected scene samples, a stationary root, and its semantic mechanism graph. The boolean showcase locks
 ordered union/cut/intersection behavior at 2,840 mm3, validates all repaired

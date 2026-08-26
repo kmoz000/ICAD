@@ -1,7 +1,7 @@
 {
   "name": "icad-agentic-cad",
-  "version": "0.21.0+codex.20260824001415",
-  "description": "Blueprint-aware prompt compression, visual.json feedback, native agentic CAD design, live editing, mechanisms, validation, animation, and manufacturing export with ICAD.",
+  "version": "0.21.0+codex.20260825001207",
+  "description": "Blueprint-aware prompt compression, visual.json feedback, native agentic CAD design, live editing, mechanisms, standards-aware assembly, validation, animation, and manufacturing export with ICAD.",
   "author": {
     "name": "ICAD Project"
   },
@@ -9,7 +9,7 @@
   "interface": {
     "displayName": "ICAD Agentic CAD",
     "shortDescription": "Design and validate programmable native 3D models.",
-    "longDescription": "Guides Codex through one blueprint-aware concept pass, ICAD-only generation, direct visual.json feedback, and validated ICAD geometry, mechanisms, assemblies, materials, scenes, drawings, and manufacturing artifacts.",
+    "longDescription": "Guides Codex through one blueprint-aware concept pass, ICAD-only generation, direct visual.json feedback, and validated ICAD geometry, mechanisms, standards-aware manufacturing connections, materials, scenes, drawings, and artifacts.",
     "developerName": "ICAD Project",
     "category": "Developer Tools",
     "capabilities": [
@@ -17,6 +17,7 @@
       "Validation",
       "3D Export",
       "Mechanisms",
+      "Manufacturing Connections",
       "Animation",
       "Visual Feedback",
       "Prompt Compression"

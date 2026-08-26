@@ -54,6 +54,8 @@ auto main() -> int {
         !review.contains("\"joints\":10") ||
         !review.contains("\"degreesOfFreedom\":9") ||
         !review.contains("\"topologyValid\":true") ||
+        !review.contains("\"interferencePassed\":true") ||
+        !review.contains("\"unintendedPenetratingPartPairs\":0") ||
         !review.contains("\"schema\":\"icad.agent.design-map.v1\"") ||
         !review.contains("\"centerMm\":[0,0,37.5]") ||
         !review.contains("\"name\":\"elbow_hinge\"") ||
@@ -77,6 +79,31 @@ auto main() -> int {
     }
     if (!icad::agent::review_json("PROJECT broken\n$").contains("\"stage\":\"compile\"")) {
         return fail("agent review did not focus invalid source on compiler repair");
+    }
+    constexpr std::string_view overlapping = R"ICAD(PROJECT overlapping
+UNITS mm
+BODY first
+FEATURE block
+TYPE BOX
+WIDTH 10 mm
+DEPTH 10 mm
+HEIGHT 10 mm
+END
+END
+BODY second
+FEATURE block
+TYPE BOX
+WIDTH 10 mm
+DEPTH 10 mm
+HEIGHT 10 mm
+END
+END
+)ICAD";
+    const auto overlapping_review = icad::agent::review_json(overlapping);
+    if (!overlapping_review.contains("\"ready\":false") ||
+        !overlapping_review.contains("\"interferencePassed\":false") ||
+        !overlapping_review.contains("Repair unintended assembly penetrations")) {
+        return fail("agent review accepted an unexplained penetrating assembly");
     }
     return 0;
 }

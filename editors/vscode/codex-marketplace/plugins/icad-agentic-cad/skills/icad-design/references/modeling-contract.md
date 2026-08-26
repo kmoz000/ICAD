@@ -4,7 +4,8 @@ Use the dependency chain below for every manufactured or articulated design:
 
 ```text
 parameters/datums -> sketch workspace -> named path entities -> feature history
--> body -> component interfaces -> assembly joints -> scene -> visual feedback
+-> body -> manufacturing interfaces -> connections/joints -> collision review
+-> scene -> visual feedback
 ```
 
 ## Current sketch grammar
@@ -62,6 +63,43 @@ with `FACE alias FROM feature.face.top|bottom` and attach the next sketch using
 Confirm `supportTopologyId` in `visual.json`; never substitute a mesh index or
 proximity guess.
 
+## Manufacturing interfaces and magnetic seating
+
+An assembly is not valid merely because two meshes touch. Declare the physical
+contract on both occurrences and the manufacturing method that realizes it:
+
+```icad
+POINT3 shaft_seat 40 mm 0 mm 24 mm
+VECTOR shaft_axis 1 0 0
+VECTOR bore_axis -1 0 0
+INTERFACE motor_shaft BODY motor AT shaft_seat AXIS shaft_axis TYPE SHAFT SIZE 12 mm
+INTERFACE arm_bore BODY arm AT shaft_seat AXIS bore_axis TYPE BORE SIZE 12 mm
+CONNECT shoulder_fit motor_shaft arm_bore METHOD SLIP_FIT STANDARD ISO_286 FIT H7_g6 CLEARANCE 0.02 mm AUTO
+```
+
+The production pairing rules are:
+
+- bolted/screwed: mount, flange, or hole interfaces, with `FASTENER`;
+- pinned: pin/hole or shaft/bore, with `FASTENER`;
+- press/slip fit: pin/hole or shaft/bore, with `FIT`;
+- bearing: shaft/bearing-seat or shaft/bore, with `FIT`;
+- welded/brazed: weld-seam, mount, or flange interfaces;
+- bonded: bond-face, mount, or flange interfaces.
+
+Every `CONNECT` requires `STANDARD`. `AUTO` is deterministic seating evidence,
+not a hidden transform: use the returned interface gap and axis alignment to
+repair source datums or poses. A released connection must report `SEATED`, its
+manufacturing validation must pass, and `interference-json` must show only the
+contact intended by the chosen method. Use `JOINT` separately for kinematics;
+the connection states how parts are manufactured together, while the joint
+states what relative motion remains.
+
+`interference-json` annotates each colliding body pair with its declared
+connection, method, and standard. `declaredEngagementPartPairs` counts overlap
+that has such a contract; `unintendedPenetratingPartPairs` counts anonymous
+collision and must be zero. Treat this as the required second feedback pass
+after all interfaces report `SEATED`.
+
 ## Acceptance
 
 Compilation and body counts are necessary but not sufficient. Inspect:
@@ -72,6 +110,7 @@ Compilation and body counts are necessary but not sufficient. Inspect:
 4. contact/attachment gaps at rest;
 5. first, middle, and last animation frames;
 6. interference, joint-limit, manifold, manufacturing, STEP, and STL read-back.
+7. every connection's standard, fit/fastener, gap, alignment, and snap state.
 
 If a reference image and output disagree visibly, the output fails even when
 all numeric count tests pass. Repair datums, dimensions, and topology from the

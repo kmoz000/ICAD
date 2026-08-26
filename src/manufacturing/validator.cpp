@@ -1,10 +1,16 @@
 #include "icad/manufacturing/validator.hpp"
 
 #include "icad/cad/analysis.hpp"
+#include "icad/cad/intersection.hpp"
+#include "icad/cad/model.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <fstream>
 #include <iomanip>
+#include <limits>
+#include <map>
+#include <numbers>
 #include <set>
 #include <string_view>
 
@@ -34,13 +40,92 @@ namespace {
     return false;
 }
 
+[[nodiscard]] auto occurrence_bounds(const cad::ProjectAnalysis& analysis)
+    -> std::map<std::string, cad::Bounds> {
+    std::map<std::string, cad::Bounds> result;
+    for (const auto& part : analysis.parts) {
+        const auto [found, inserted] = result.emplace(part.body, part.bounds);
+        if (inserted)
+            continue;
+        for (std::size_t axis = 0; axis < 3; ++axis) {
+            found->second.minimum[axis] =
+                std::min(found->second.minimum[axis], part.bounds.minimum[axis]);
+            found->second.maximum[axis] =
+                std::max(found->second.maximum[axis], part.bounds.maximum[axis]);
+        }
+    }
+    return result;
+}
+
+struct Attachment {
+    bool on_surface{};
+    bool axis_matches{};
+    double nearest_surface_mm{};
+};
+
+[[nodiscard]] auto attachment(const compiler::ir::Project& project,
+                              const compiler::ir::ComponentInterface& interface,
+                              const cad::Bounds& bounds) -> Attachment {
+    const auto point = std::ranges::find(project.points, interface.point,
+                                         &compiler::ir::SpatialPoint::name);
+    const auto direction = std::ranges::find(project.vectors, interface.axis,
+                                             &compiler::ir::Direction::name);
+    if (point == project.points.end() || direction == project.vectors.end())
+        return {};
+
+    const auto& position = point->position_mm;
+    const double tolerance = project.tolerance.linear_mm;
+    const double angular_cosine =
+        std::cos(project.tolerance.angular_degrees * std::numbers::pi / 180.0);
+    Attachment result{false, false, std::numeric_limits<double>::max()};
+    for (std::size_t axis = 0; axis < 3; ++axis) {
+        bool inside_projection = true;
+        for (std::size_t other = 0; other < 3; ++other) {
+            if (other == axis)
+                continue;
+            inside_projection = inside_projection &&
+                                position[other] >= bounds.minimum[other] - tolerance &&
+                                position[other] <= bounds.maximum[other] + tolerance;
+        }
+        for (const bool maximum : {false, true}) {
+            const double surface = maximum ? bounds.maximum[axis] : bounds.minimum[axis];
+            const double distance = std::abs(position[axis] - surface);
+            result.nearest_surface_mm = std::min(result.nearest_surface_mm, distance);
+            if (!inside_projection || distance > tolerance)
+                continue;
+            result.on_surface = true;
+            const double outward = maximum ? 1.0 : -1.0;
+            result.axis_matches = result.axis_matches ||
+                                  direction->unit[axis] * outward + 1e-12 >= angular_cosine;
+        }
+    }
+    return result;
+}
+
+[[nodiscard]] auto requires_planar_attachment(std::string_view kind) -> bool {
+    return kind == "MOUNT" || kind == "FLANGE" || kind == "WELD_SEAM" ||
+           kind == "BOND_FACE";
+}
+
+[[nodiscard]] auto contact_only_connection(std::string_view method) -> bool {
+    return method == "BOLTED" || method == "SCREWED" || method == "WELDED" ||
+           method == "BRAZED" || method == "BONDED";
+}
+
 } // namespace
 
 auto validate(const compiler::ir::Project& project, const Rules& rules) -> Report {
-    const auto analysis = cad::analyze(project);
+    const auto model = cad::build_model(project);
+    return validate(project, cad::analyze(project, model),
+                    cad::analyze_intersections(project, model, project.tolerance.linear_mm),
+                    rules);
+}
+
+auto validate(const compiler::ir::Project& project, const cad::ProjectAnalysis& analysis,
+              const cad::IntersectionAnalysis& intersections, const Rules& rules) -> Report {
     Report report;
     report.process = rules.process;
-    report.checked_rules = 8;
+    report.checked_rules = 8 + project.interfaces.size() * 2 + project.connections.size() * 2;
     constexpr std::string_view processes[]{"GENERAL", "CNC", "ADDITIVE", "SHEET_METAL"};
     if (std::ranges::find(processes, rules.process) == std::end(processes)) {
         report.issues.push_back({"ICAD-M0005", Severity::error, rules.process,
@@ -51,6 +136,49 @@ auto validate(const compiler::ir::Project& project, const Rules& rules) -> Repor
         if (!body.material.empty()) {
             bodies_with_material.insert(body.name);
         }
+    }
+    for (const auto& connection : project.connections) {
+        if (!connection.aligned) {
+            report.issues.push_back(
+                {"ICAD-M0012", Severity::error, connection.name,
+                 connection.automatic
+                     ? "magnetic assembly interface still requires a snap transform before release"
+                     : "manufacturing connection interfaces are not seated within clearance"});
+        }
+    }
+    const auto bounds = occurrence_bounds(analysis);
+    for (const auto& interface : project.interfaces) {
+        if (!requires_planar_attachment(interface.kind))
+            continue;
+        const auto occurrence = bounds.find(interface.occurrence);
+        if (occurrence == bounds.end()) {
+            report.issues.push_back({"ICAD-M0013", Severity::error, interface.name,
+                                     "interface occurrence has no delivery geometry"});
+            continue;
+        }
+        const auto result = attachment(project, interface, occurrence->second);
+        if (!result.on_surface) {
+            report.issues.push_back(
+                {"ICAD-M0013", Severity::error, interface.name,
+                 "interface datum is not attached to the referenced occurrence surface; "
+                 "update its POINT3 after changing part dimensions (nearest boundary " +
+                     std::to_string(result.nearest_surface_mm) + " mm)"});
+        } else if (!result.axis_matches) {
+            report.issues.push_back(
+                {"ICAD-M0014", Severity::error, interface.name,
+                 "interface axis does not match the outward normal of its attachment face"});
+        }
+    }
+    for (const auto& contact : intersections.body_contacts) {
+        if (!contact.declared_connection || contact.penetrating_part_pairs == 0 ||
+            !contact_only_connection(contact.connection_method)) {
+            continue;
+        }
+        report.issues.push_back(
+            {"ICAD-M0015", Severity::error, contact.connection_name,
+             contact.connection_method +
+                 " connection has solid-volume penetration; contact-only connections may "
+                 "touch at their interface but may not overlap"});
     }
     for (const auto& instance : project.instances) {
         const auto definition =

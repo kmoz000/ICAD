@@ -27,6 +27,14 @@ auto add_node(DependencyGraph& graph, std::string id, std::string kind,
 
 auto build_dependency_graph(const ir::Project& project) -> DependencyGraph {
     DependencyGraph graph;
+    const std::size_t expected_nodes = 1U + project.parameters.size() + project.angles.size() +
+                                       project.materials.size() + project.points.size() +
+                                       project.vectors.size() + project.sketches.size() +
+                                       project.profiles.size() + project.poses.size() +
+                                       project.instances.size() + project.constraints.size() +
+                                       project.joints.size() + project.mates.size() +
+                                       project.scenes.size();
+    graph.nodes.reserve(expected_nodes + project.bodies.size() * 4U);
     add_node(graph, "tolerance:project", "tolerance");
     const std::string project_prefix = project.name + ".";
     for (const auto& parameter : project.parameters) {
@@ -190,30 +198,23 @@ auto build_dependency_graph(const ir::Project& project) -> DependencyGraph {
         add_node(graph, "constraint:" + constraint.name, "constraint",
                  std::move(dependencies));
     }
+    std::unordered_set<std::string_view> instance_names;
+    instance_names.reserve(project.instances.size());
+    for (const auto& instance : project.instances)
+        instance_names.insert(instance.name);
+    const auto occurrence_id = [&](const std::string& occurrence) {
+        return instance_names.contains(occurrence) ? "instance:" + occurrence
+                                                   : "body:" + occurrence;
+    };
     for (const auto& joint : project.joints) {
         std::vector<std::string> dependencies{
             joint.parent_body == "WORLD" ? "tolerance:project"
-                                           : (std::ranges::any_of(project.instances, [&](const auto& instance) {
-                                                  return instance.name == joint.parent_body;
-                                              })
-                                                  ? "instance:" + joint.parent_body
-                                                  : "body:" + joint.parent_body),
-            std::ranges::any_of(project.instances, [&](const auto& instance) {
-                return instance.name == joint.child_body;
-            })
-                ? "instance:" + joint.child_body
-                : "body:" + joint.child_body,
+                                           : occurrence_id(joint.parent_body),
+            occurrence_id(joint.child_body),
             "point:" + joint.point, "vector:" + joint.axis};
         add_node(graph, "joint:" + joint.name, "joint", std::move(dependencies));
     }
     for (const auto& mate : project.mates) {
-        const auto occurrence_id = [&](const std::string& occurrence) {
-            return std::ranges::any_of(project.instances, [&](const auto& instance) {
-                       return instance.name == occurrence;
-                   })
-                       ? "instance:" + occurrence
-                       : "body:" + occurrence;
-        };
         std::vector<std::string> dependencies{occurrence_id(mate.first_occurrence),
                                               occurrence_id(mate.second_occurrence),
                                               "tolerance:project"};
@@ -225,12 +226,7 @@ auto build_dependency_graph(const ir::Project& project) -> DependencyGraph {
         std::vector<std::string> dependencies;
         for (const auto& track : scene.tracks) {
             if (track.target_kind == "BODY")
-                append_unique(dependencies,
-                              std::ranges::any_of(project.instances, [&](const auto& instance) {
-                                  return instance.name == track.target;
-                              })
-                                  ? "instance:" + track.target
-                                  : "body:" + track.target);
+                append_unique(dependencies, occurrence_id(track.target));
             else if (track.target_kind == "JOINT")
                 append_unique(dependencies, "joint:" + track.target);
         }
@@ -238,10 +234,12 @@ auto build_dependency_graph(const ir::Project& project) -> DependencyGraph {
     }
 
     std::unordered_map<std::string, std::size_t> node_index;
+    node_index.reserve(graph.nodes.size());
     for (std::size_t index = 0; index < graph.nodes.size(); ++index)
         node_index.emplace(graph.nodes[index].id, index);
     std::vector<std::size_t> indegree(graph.nodes.size(), 0);
     std::vector<std::vector<std::size_t>> consumers(graph.nodes.size());
+    graph.edges.reserve(graph.edge_count);
     for (std::size_t index = 0; index < graph.nodes.size(); ++index) {
         for (const auto& dependency : graph.nodes[index].dependencies) {
             const auto found = node_index.find(dependency);
@@ -249,6 +247,7 @@ auto build_dependency_graph(const ir::Project& project) -> DependencyGraph {
                 continue;
             ++indegree[index];
             consumers[found->second].push_back(index);
+            graph.edges.push_back({found->second, index});
         }
     }
     std::vector<std::size_t> ready;
