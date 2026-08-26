@@ -24,6 +24,130 @@ ICAD is available under the [MIT License](LICENSE).
 Tagged releases are built by GitHub Actions for Linux, Windows, Intel macOS,
 Apple Silicon macOS, and VS Code. See [the release guide](docs/releasing.md).
 
+## Install ICAD for Codex
+
+The `icad-agentic-cad` plugin gives Codex the ICAD design workflow and uses the
+native `icad` compiler and ICAD Studio viewer for compilation, visual feedback,
+validation, and export. Tagged GitHub Releases publish the plugin, installers,
+compiler, and viewer together. The commands below resolve the latest release
+and verify every downloaded plugin or native archive against its published
+SHA-256 file.
+
+You need the [Codex CLI](https://developers.openai.com/codex/cli) on `PATH` to
+register the plugin. The native toolchain does not require Codex when installed
+separately.
+
+### Install the plugin and native dependencies
+
+On macOS or Linux:
+
+```sh
+curl -fsSL https://github.com/kmoz000/ICAD/releases/latest/download/install.sh | sh
+```
+
+On Windows PowerShell:
+
+```powershell
+$installer = Join-Path $env:TEMP "icad-install.ps1"
+Invoke-WebRequest https://github.com/kmoz000/ICAD/releases/latest/download/install.ps1 -OutFile $installer
+& $installer
+```
+
+The default install does all of the following:
+
+1. Downloads and verifies `icad-codex-plugin.zip`.
+2. Registers the release marketplace and installs `icad-agentic-cad@icad`.
+3. Selects the native package for the current operating system and CPU.
+4. Downloads and verifies the ICAD compiler and native Qt/OpenGL viewer.
+5. Places the toolchain in the current user's application-data directory and
+   links it from `~/.local/bin` on macOS/Linux or adds it to the user `PATH` on
+   Windows. The installer prints the one required `PATH` change if
+   `~/.local/bin` is not already present.
+
+Start a new Codex conversation after installation so the new skill is loaded.
+
+### Install only the plugin
+
+Use this mode when ICAD is already installed or when Codex should download the
+native dependencies on first use:
+
+```sh
+# macOS or Linux
+curl -fsSL https://github.com/kmoz000/ICAD/releases/latest/download/install.sh | \
+  sh -s -- --plugin-only
+```
+
+```powershell
+# Windows PowerShell
+$installer = Join-Path $env:TEMP "icad-install.ps1"
+Invoke-WebRequest https://github.com/kmoz000/ICAD/releases/latest/download/install.ps1 -OutFile $installer
+& $installer -PluginOnly
+```
+
+When a design task begins, the plugin checks for both `icad` and
+`icad-viewer`. If either is missing and Codex has permission to use the network
+and run the installer, the plugin downloads the matching checksum-verified
+GitHub Release automatically. If automatic downloads are disabled, install the
+dependencies separately with the next command.
+
+### Install the compiler and viewer separately
+
+This keeps plugin registration unchanged and installs only the native runtime:
+
+```sh
+# macOS or Linux
+curl -fsSL https://github.com/kmoz000/ICAD/releases/latest/download/install.sh | \
+  sh -s -- --dependencies-only
+```
+
+```powershell
+# Windows PowerShell
+$installer = Join-Path $env:TEMP "icad-install.ps1"
+Invoke-WebRequest https://github.com/kmoz000/ICAD/releases/latest/download/install.ps1 -OutFile $installer
+& $installer -DependenciesOnly
+```
+
+To pin all downloads to a specific release, add `--version v0.21.0` on macOS
+or Linux, or `-Version v0.21.0` on Windows.
+
+### Fully manual native installation
+
+Each GitHub Release contains one compiler-and-viewer archive per supported
+platform:
+
+| Platform | Release asset |
+|---|---|
+| Linux x86-64 | `icad-linux-x86_64.zip` |
+| Windows x86-64 | `icad-windows-x86_64.zip` |
+| macOS Intel | `icad-macos-x86_64.zip` |
+| macOS Apple Silicon | `icad-macos-arm64.zip` |
+
+Download the matching ZIP and its adjacent `.sha256` file from the
+[GitHub Releases page](https://github.com/kmoz000/ICAD/releases), verify the
+checksum, and extract the archive. For example:
+
+```sh
+# Linux
+sha256sum -c icad-linux-x86_64.zip.sha256
+
+# macOS Apple Silicon
+shasum -a 256 -c icad-macos-arm64.zip.sha256
+```
+
+On Windows, compare `(Get-FileHash -Algorithm SHA256 <archive>).Hash` with the
+first value in the `.sha256` file. Add the extracted `stage/bin` directory to
+`PATH`. On macOS, `stage/bin/icad` is the compiler and
+`stage/icad-viewer.app` is the viewer; optionally link
+`stage/icad-viewer.app/Contents/MacOS/icad-viewer` into a directory on `PATH`.
+
+Verify either installation mode before starting a design:
+
+```sh
+icad --version
+icad-viewer --help
+codex plugin list
+```
+
 ## Quick start
 
 Requirements are intentionally small:

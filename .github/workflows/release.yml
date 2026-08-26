@@ -108,10 +108,50 @@ jobs:
             echo "VSCE_PAT is not configured; the release workflow still publishes the VSIX to GitHub Releases."
           fi
 
+  codex-plugin:
+    name: Codex plugin and installers
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: Validate plugin metadata
+        run: |
+          jq -e '.name == "icad-agentic-cad" and (.version | length > 0) and .skills == "./skills/"' \
+            editors/vscode/codex-marketplace/plugins/icad-agentic-cad/.codex-plugin/plugin.json
+          jq -e '.name == "icad" and any(.plugins[]; .name == "icad-agentic-cad")' \
+            editors/vscode/codex-marketplace/.agents/plugins/marketplace.json
+          sh -n editors/vscode/codex-marketplace/plugins/icad-agentic-cad/scripts/install.sh
+          pwsh -NoProfile -Command '$tokens = $null; $errors = $null; [System.Management.Automation.Language.Parser]::ParseFile("editors/vscode/codex-marketplace/plugins/icad-agentic-cad/scripts/install.ps1", [ref]$tokens, [ref]$errors) > $null; if ($errors.Count) { $errors; exit 1 }'
+      - name: Package Codex marketplace and standalone installers
+        run: |
+          mkdir -p build/codex-plugin/codex-marketplace
+          cp -R editors/vscode/codex-marketplace/. build/codex-plugin/codex-marketplace/
+          cmake -E chdir build/codex-plugin cmake -E tar cf ../icad-codex-plugin.zip --format=zip -- codex-marketplace
+          cp editors/vscode/codex-marketplace/plugins/icad-agentic-cad/scripts/install.sh build/install.sh
+          cp editors/vscode/codex-marketplace/plugins/icad-agentic-cad/scripts/install.ps1 build/install.ps1
+          cmake -E sha256sum build/icad-codex-plugin.zip > build/icad-codex-plugin.zip.sha256
+          cmake -E sha256sum build/install.sh > build/install.sh.sha256
+          cmake -E sha256sum build/install.ps1 > build/install.ps1.sha256
+      - name: Verify plugin release archive
+        run: |
+          cmake -E tar tf build/icad-codex-plugin.zip
+          unzip -p build/icad-codex-plugin.zip codex-marketplace/.agents/plugins/marketplace.json | \
+            jq -e '.name == "icad" and any(.plugins[]; .name == "icad-agentic-cad")'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: icad-codex-plugin
+          path: |
+            build/icad-codex-plugin.zip
+            build/icad-codex-plugin.zip.sha256
+            build/install.sh
+            build/install.sh.sha256
+            build/install.ps1
+            build/install.ps1.sha256
+          if-no-files-found: error
+
   publish:
     name: GitHub Release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [native, vscode]
+    needs: [native, vscode, codex-plugin]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

@@ -16,6 +16,14 @@ Each native ZIP has a companion `.sha256` file. The VS Code extension requires
 that checksum before installing the compiler and viewer into its machine-local
 extension storage.
 
+The same workflow validates and packages the bundled Codex marketplace as
+`icad-codex-plugin.zip`. It also publishes `install.sh` and `install.ps1` for
+command-line setup. The plugin archive and both installers have companion
+`.sha256` files, while the installers independently verify the plugin and native
+archives before installing them. Keep these asset names stable because the
+README and the plugin's automatic dependency bootstrap use the GitHub
+`releases/latest/download` endpoints.
+
 The dedicated `Release ICAD Studio Viewer` workflow independently builds the
 `Viewer` install component in `MinSizeRel`, deploys only its required Qt runtime,
 runs the compiler-to-renderer self-test, and attaches maximum-compression
