@@ -44,9 +44,9 @@ jobs:
       - name: Build
         run: cmake --build build --config Release --parallel
       - name: Test release suite
-        # Model-corpus benchmarks stay in normal CI and `make benchmark`. They
-        # are intentionally excluded from the four-platform packaging matrix,
-        # where fixture/performance variance must not block release artifacts.
+        # Model-corpus benchmarks remain available through `make benchmark`.
+        # They are excluded from the four-platform packaging matrix, where
+        # fixture/performance variance must not block release artifacts.
         run: ctest --test-dir build -C Release --output-on-failure -LE benchmark
       - name: Install
         run: cmake --install build --config Release --prefix build/stage

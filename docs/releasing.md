@@ -10,9 +10,9 @@ package. `integration.release_metadata` enforces that contract.
 
 The four-platform native packaging matrix runs the release suite with the
 `benchmark` CTest label excluded. Model-corpus and agent benchmarks remain in
-normal branch/pull-request CI and `make benchmark`; unit, integration, release
-metadata, sandbox, viewer, install, and archive verification still gate every
-release package.
+the repository and run explicitly through `make benchmark`; unit, integration,
+release metadata, sandbox, viewer, install, and archive verification still gate
+every branch build and release package.
 
 The `Release ICAD` workflow builds and tests the CLI plus native Qt/OpenGL
 desktop viewer on Linux x86-64, Windows x86-64, Intel macOS, and
