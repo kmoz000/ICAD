@@ -74,6 +74,7 @@ MainWindow::MainWindow(std::filesystem::path source_path, QWidget* parent) : QMa
     setWindowIcon(QIcon{QStringLiteral(":/icad/icons/icad-256.png")});
     setUnifiedTitleAndToolBarOnMac(true);
     resize(1540, 960);
+    resizeDocks({diagnostics_dock_}, {145}, Qt::Vertical);
 
     compile_timer_.setSingleShot(true);
     compile_timer_.setInterval(110);
@@ -187,11 +188,12 @@ auto MainWindow::build_ui() -> void {
     document_tabs_->setDocumentMode(true);
     document_tabs_->setDrawBase(false);
     document_tabs_->setExpanding(false);
-    document_tabs_->setMovable(false);
+    document_tabs_->setMovable(true);
     document_tabs_->setTabsClosable(true);
     document_tabs_->setUsesScrollButtons(true);
+    document_tabs_->setFixedHeight(40);
     document_tabs_->setSelectionBehaviorOnRemove(QTabBar::SelectPreviousTab);
-    document_tabs_->setElideMode(Qt::ElideMiddle);
+    document_tabs_->setElideMode(Qt::ElideRight);
     central_layout->addWidget(document_tabs_);
 
     auto* splitter = new QSplitter{Qt::Horizontal, central};
@@ -399,11 +401,12 @@ auto MainWindow::apply_theme() -> void {
         QListWidget::item:selected, QTreeWidget::item:selected, QTreeView::item:selected { background:#0a84ff; color:#ffffff; }
         QTreeView#workspaceTree { background:#202124; padding:5px; }
         QHeaderView::section { background:#25262a; color:#d1d1d6; border:0; padding:6px; }
-        QTabBar#documentTabs { background:#202124; border:0; padding:4px 6px 0 6px; }
-        QTabBar#documentTabs::tab { background:#292a2e; color:#aeb0b6; border:0; border-radius:9px; min-width:128px; padding:7px 13px; margin-right:4px; }
+        QTabBar#documentTabs { background:#202124; border:0; padding:3px 6px 0 6px; }
+        QTabBar#documentTabs::tab { background:#292a2e; color:#aeb0b6; border:0; border-radius:7px 7px 0 0; min-width:104px; max-width:210px; height:31px; padding:0 10px; margin-right:3px; }
         QTabBar#documentTabs::tab:hover { background:#35363b; color:#f2f2f7; }
-        QTabBar#documentTabs::tab:selected { background:#3a3b40; color:#ffffff; }
-        QTabBar#documentTabs QToolButton { background:transparent; border:0; padding:2px; }
+        QTabBar#documentTabs::tab:selected { background:#3a3b40; color:#ffffff; border-bottom:2px solid #0a84ff; }
+        QTabBar#documentTabs QToolButton { background:transparent; border:0; border-radius:4px; padding:0; margin:0 5px 0 2px; min-width:16px; max-width:16px; min-height:16px; max-height:16px; qproperty-iconSize:10px 10px; }
+        QTabBar#documentTabs QToolButton:hover { background:#55565c; }
         QStatusBar { background:#202124; border-top:1px solid #36373b; }
         QSlider::groove:horizontal { background:#45464b; height:5px; border-radius:3px; }
         QSlider::handle:horizontal { background:#0a84ff; width:14px; margin:-5px 0; border-radius:7px; }

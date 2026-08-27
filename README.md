@@ -212,6 +212,10 @@ open build/bin/icad-viewer.app --args examples/advanced.icad examples/assembly_s
 # Headless automation using the exact native Qt/OpenGL viewport:
 build/bin/icad-viewer.app/Contents/MacOS/icad-viewer \
   --view isometric --snapshot build/advanced.png examples/advanced.icad
+
+# Capture the complete native IDE, including project tree, tabs, and panels:
+build/bin/icad-viewer.app/Contents/MacOS/icad-viewer \
+  --studio-snapshot build/icad-studio.png examples/advanced.icad examples/robotic_arm.icad
 ```
 
 The native viewer live-compiles edits through the in-process engine, keeps the
@@ -224,6 +228,8 @@ angle-weighted normals and restores depth state every frame after Qt HUD
 painting, preventing radial triangle bands on smooth revolved and filleted
 solids. `--snapshot output.png` waits for compilation, captures that same native
 viewport, and exits with a nonzero status if compilation or image writing fails.
+`--studio-snapshot output.png` captures the complete rendered workbench after
+its source tabs finish compiling, making release screenshots reproducible.
 
 The advanced build produces:
 

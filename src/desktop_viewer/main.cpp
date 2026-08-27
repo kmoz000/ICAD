@@ -15,8 +15,10 @@
 #include <QIcon>
 #include <QHeaderView>
 #include <QMessageBox>
+#include <QPixmap>
 #include <QSurfaceFormat>
 #include <QTabBar>
+#include <QTimer>
 #include <QTreeView>
 #include <QTreeWidget>
 
@@ -33,7 +35,8 @@ namespace {
 auto configure_parser(QCommandLineParser& parser, QCommandLineOption& self_test_option,
                       QCommandLineOption& window_test_option,
                       QCommandLineOption& view_option,
-                      QCommandLineOption& snapshot_option) -> void {
+                      QCommandLineOption& snapshot_option,
+                      QCommandLineOption& studio_snapshot_option) -> void {
     parser.setApplicationDescription(
         QStringLiteral("Native Qt/OpenGL IDE and live viewer for agentic ICAD models."));
     parser.addHelpOption();
@@ -42,6 +45,7 @@ auto configure_parser(QCommandLineParser& parser, QCommandLineOption& self_test_
     parser.addOption(window_test_option);
     parser.addOption(view_option);
     parser.addOption(snapshot_option);
+    parser.addOption(studio_snapshot_option);
     parser.addPositionalArgument(QStringLiteral("source.icad"),
                                  QStringLiteral("One or more ICAD source files to edit and preview."),
                                  QStringLiteral("[source.icad…]"));
@@ -113,11 +117,16 @@ auto main(int argc, char** argv) -> int {
         QStringLiteral("snapshot"),
         QStringLiteral("Render the compiled viewport to a PNG and exit."),
         QStringLiteral("output.png")};
+    QCommandLineOption studio_snapshot_option{
+        QStringLiteral("studio-snapshot"),
+        QStringLiteral("Capture the complete rendered ICAD Studio window to a PNG and exit."),
+        QStringLiteral("output.png")};
     if (requested_core_only) {
         QCoreApplication application{argc, argv};
         configure_application_metadata();
         QCommandLineParser parser;
-        configure_parser(parser, self_test_option, window_test_option, view_option, snapshot_option);
+        configure_parser(parser, self_test_option, window_test_option, view_option, snapshot_option,
+                         studio_snapshot_option);
         parser.process(application);
         const auto positional = parser.positionalArguments();
         if (!requested_self_test)
@@ -141,7 +150,8 @@ auto main(int argc, char** argv) -> int {
     QApplication::setWindowIcon(QIcon{QStringLiteral(":/icad/icons/icad-256.png")});
 
     QCommandLineParser parser;
-    configure_parser(parser, self_test_option, window_test_option, view_option, snapshot_option);
+    configure_parser(parser, self_test_option, window_test_option, view_option, snapshot_option,
+                     studio_snapshot_option);
     parser.process(application);
     const auto initial_view = standard_view(parser.value(view_option));
     if (!initial_view) {
@@ -185,6 +195,7 @@ auto main(int argc, char** argv) -> int {
             });
         const int expected_tabs = std::max(1, static_cast<int>(positional.size()));
         if (tabs == nullptr || tabs->count() != expected_tabs ||
+            tabs->height() > 40 || !tabs->isMovable() || tabs->elideMode() != Qt::ElideRight ||
             window.document_count() != static_cast<std::size_t>(expected_tabs) || workspace == nullptr ||
             workspace->model() == nullptr || window.workspace_root().empty() || model == nullptr ||
             model->selectionBehavior() != QAbstractItemView::SelectRows ||
@@ -194,6 +205,10 @@ auto main(int argc, char** argv) -> int {
         }
         std::cout << "QT_VIEWER_WINDOW_TEST passed\n";
         return 0;
+    }
+    if (parser.isSet(snapshot_option) && parser.isSet(studio_snapshot_option)) {
+        std::cerr << "icad-viewer: --snapshot and --studio-snapshot cannot be combined\n";
+        return 2;
     }
     if (parser.isSet(snapshot_option)) {
         const QString output = QFileInfo{parser.value(snapshot_option)}.absoluteFilePath();
@@ -215,5 +230,25 @@ auto main(int argc, char** argv) -> int {
         });
     }
     window.show();
+    if (parser.isSet(studio_snapshot_option)) {
+        const QString output = QFileInfo{parser.value(studio_snapshot_option)}.absoluteFilePath();
+        if (QFileInfo{output}.suffix().compare(QStringLiteral("png"), Qt::CaseInsensitive) != 0) {
+            std::cerr << "icad-viewer: --studio-snapshot expects a .png output path\n";
+            return 2;
+        }
+        if (!QDir{}.mkpath(QFileInfo{output}.absolutePath())) {
+            std::cerr << "icad-viewer: could not create the Studio snapshot output directory\n";
+            return 2;
+        }
+        QTimer::singleShot(1200, &application, [&window, &application, output] {
+            const bool saved = window.grab().save(output, "PNG");
+            if (saved)
+                std::cout << "ICAD_STUDIO_SNAPSHOT " << output.toStdString() << '\n';
+            else
+                std::cerr << "icad-viewer: could not write Studio snapshot "
+                          << output.toStdString() << '\n';
+            application.exit(saved ? 0 : 3);
+        });
+    }
     return QApplication::exec();
 }

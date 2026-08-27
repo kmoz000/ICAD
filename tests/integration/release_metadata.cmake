@@ -15,12 +15,27 @@ foreach(relative IN ITEMS "src/cli/main.cpp" "src/mcp/server.cpp")
         message(FATAL_ERROR "${relative} does not use generated release metadata")
     endif()
 endforeach()
-foreach(relative IN ITEMS "editors/vscode/package.json" "editors/vscode/package-lock.json")
-    file(READ "${PROJECT_ROOT}/${relative}" content)
-    if(NOT content MATCHES "${EXPECTED_PROJECT_VERSION}")
-        message(FATAL_ERROR "${relative} does not contain project version ${EXPECTED_PROJECT_VERSION}")
-    endif()
-endforeach()
+file(READ "${PROJECT_ROOT}/editors/vscode/package.json" extension_manifest)
+file(READ "${PROJECT_ROOT}/editors/vscode/package-lock.json" extension_lock)
+string(JSON extension_version GET "${extension_manifest}" version)
+string(JSON extension_lock_version GET "${extension_lock}" version)
+if(NOT extension_version STREQUAL extension_lock_version)
+    message(FATAL_ERROR
+        "VS Code manifest version ${extension_version} does not match lock version ${extension_lock_version}")
+endif()
+if(NOT extension_version MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+(\\.[0-9]+)?$")
+    message(FATAL_ERROR
+        "VS Code version ${extension_version} must contain three or four dotted numbers without a v prefix or release suffix")
+endif()
+
+file(READ
+    "${PROJECT_ROOT}/editors/vscode/codex-marketplace/plugins/icad-agentic-cad/.codex-plugin/plugin.json"
+    plugin_manifest)
+string(JSON plugin_version GET "${plugin_manifest}" version)
+if(NOT plugin_version MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+")
+    message(FATAL_ERROR
+        "Codex plugin version ${plugin_version} must be SemVer without a v prefix")
+endif()
 file(READ "${PROJECT_ROOT}/.github/workflows/release.yml" release_workflow)
 if(NOT release_workflow MATCHES "zip.sha256" OR
    NOT release_workflow MATCHES "release_tag" OR
