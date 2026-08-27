@@ -20,7 +20,9 @@ namespace icad::exchange {
 auto format_from_extension(const std::filesystem::path& output) -> ExportFormat {
     std::string extension = output.extension().string();
     std::ranges::transform(extension, extension.begin(),
-                           [](unsigned char character) { return std::tolower(character); });
+                           [](unsigned char character) {
+                               return static_cast<char>(std::tolower(character));
+                           });
     if (extension == ".obj") {
         return ExportFormat::obj;
     }

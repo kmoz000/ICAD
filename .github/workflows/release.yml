@@ -124,7 +124,7 @@ jobs:
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
       - name: Install
-        run: cmake --install build --config Release --prefix build/stage
+        run: cmake --install build --config Release --prefix "${{ github.workspace }}/build/stage"
       - name: Verify installed programs
         if: runner.os == 'Linux'
         run: build/stage/bin/icad --version && build/stage/bin/icad-viewer --help
