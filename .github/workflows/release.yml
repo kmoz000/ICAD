@@ -169,6 +169,8 @@ jobs:
       - name: Install and test extension
         working-directory: editors/vscode
         run: npm ci --ignore-scripts && npm test
+      - name: Prepare release output directory
+        run: mkdir -p build
       - name: Package VSIX
         working-directory: editors/vscode
         run: npm run package
