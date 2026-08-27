@@ -104,7 +104,12 @@ jobs:
       - uses: actions/checkout@v6
       - name: Install Linux OpenGL runtime headers
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libgl1-mesa-dev libxkbcommon-x11-0
+        run: |
+          sudo apt-get update \
+            -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources \
+            -o Dir::Etc::sourceparts=- \
+            -o APT::Get::List-Cleanup=0
+          sudo apt-get install -y libgl1-mesa-dev libxkbcommon-x11-0
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
         with:
