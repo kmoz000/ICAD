@@ -78,12 +78,6 @@
   <main id="main">
     <section class="hero shell" id="top">
       <div class="hero-copy reveal">
-        <img class="hero-logo" src="assets/icad-logo.png" width="92" height="92" alt="ICAD compiler, geometry, and agent logo">
-        <a class="eyebrow" href="https://github.com/valorisystems/ICAD/releases/latest">
-          <span class="pulse"></span>
-          Open source · Latest alpha available
-          <span aria-hidden="true">↗</span>
-        </a>
         <h1>Engineering geometry.<br><span>Written with intent.</span></h1>
         <p class="hero-lede">ICAD is a compiler and native 3D engine for agentic CAD. People and AI agents write deterministic designs, validate engineering intent, and export production-ready artifacts from one auditable source.</p>
         <div class="hero-actions">
@@ -97,62 +91,12 @@
         </dl>
       </div>
 
-      <div class="hero-product reveal" aria-label="ICAD source compiling into a native 3D model">
-        <div class="product-toolbar">
-          <div class="window-dots" aria-hidden="true"><i></i><i></i><i></i></div>
-          <span>robotic_arm.icad</span>
-          <span class="build-state"><i></i> Valid</span>
-        </div>
-        <div class="product-grid">
-          <div class="code-pane" aria-hidden="true">
-            <div class="line"><b>01</b><code><em>PROJECT</em> robot_arm</code></div>
-            <div class="line"><b>02</b><code><em>UNITS</em> mm</code></div>
-            <div class="line"><b>03</b><code></code></div>
-            <div class="line"><b>04</b><code><em>BODY</em> upper_arm</code></div>
-            <div class="line"><b>05</b><code>  <strong>FEATURE</strong> shell</code></div>
-            <div class="line"><b>06</b><code>  <strong>TYPE</strong> BOX</code></div>
-            <div class="line"><b>07</b><code>  <strong>WIDTH</strong> <u>120 mm</u></code></div>
-            <div class="line"><b>08</b><code>  <strong>DEPTH</strong> <u>28 mm</u></code></div>
-            <div class="line"><b>09</b><code>  <strong>HEIGHT</strong> <u>22 mm</u></code></div>
-            <div class="line"><b>10</b><code><em>END</em></code></div>
-            <div class="line"><b>11</b><code></code></div>
-            <div class="line"><b>12</b><code><em>JOINT</em> elbow <mark>REVOLUTE</mark></code></div>
-            <div class="line"><b>13</b><code>  upper_arm forearm</code></div>
-            <div class="line"><b>14</b><code><em>END</em></code></div>
-          </div>
-          <div class="viewport-pane">
-            <div class="axis-label axis-z">Z</div><div class="axis-label axis-y">Y</div><div class="axis-label axis-x">X</div>
-            <svg class="robot-model" viewBox="0 0 500 470" role="img" aria-label="Stylized articulated robot arm generated from ICAD source">
-              <defs>
-                <linearGradient id="metal" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f0f4f7"/><stop offset=".52" stop-color="#96a5b1"/><stop offset="1" stop-color="#586875"/></linearGradient>
-                <linearGradient id="darkMetal" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#687782"/><stop offset="1" stop-color="#263642"/></linearGradient>
-                <linearGradient id="signal" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#00e2b8"/><stop offset="1" stop-color="#009d91"/></linearGradient>
-                <filter id="shadow"><feDropShadow dx="0" dy="16" stdDeviation="13" flood-color="#000" flood-opacity=".45"/></filter>
-              </defs>
-              <g filter="url(#shadow)">
-                <ellipse cx="247" cy="418" rx="118" ry="25" fill="#07101a" stroke="#294252"/>
-                <path d="M159 386 204 358h93l50 28-38 30H194Z" fill="url(#darkMetal)" stroke="#84939d"/>
-                <path d="M194 375v33l30 14h74l11-14v-34Z" fill="#344650"/>
-                <ellipse cx="251" cy="365" rx="56" ry="24" fill="url(#metal)" stroke="#d9e3e8"/>
-                <ellipse cx="251" cy="365" rx="25" ry="11" fill="#1a2933" stroke="#00d9b5" stroke-width="3"/>
-                <path d="m235 352 19-117 51 5-13 127Z" fill="url(#metal)" stroke="#dbe5e9"/>
-                <path d="m260 248 30 2-17 105-30-4Z" fill="#6f808b" opacity=".65"/>
-                <circle cx="281" cy="238" r="41" fill="url(#darkMetal)" stroke="#a7b5be" stroke-width="3"/>
-                <circle cx="281" cy="238" r="19" fill="url(#signal)" stroke="#7affdf" stroke-width="3"/>
-                <path d="m301 211 73-94 43 29-101 105Z" fill="url(#metal)" stroke="#dbe5e9"/>
-                <path d="m325 214 69-74 17 12-86 88Z" fill="#6f808b" opacity=".68"/>
-                <circle cx="397" cy="134" r="31" fill="url(#darkMetal)" stroke="#a7b5be" stroke-width="3"/>
-                <circle cx="397" cy="134" r="12" fill="url(#signal)"/>
-                <path d="m415 111 35-38 23 20-43 46Z" fill="url(#metal)" stroke="#dbe5e9"/>
-                <path d="m459 73 15-22 10 7-11 28Z" fill="#9aa8b1"/><path d="m466 86 20 1 2 10-25 5Z" fill="#7c8d98"/>
-              </g>
-              <g fill="none" stroke="#00ddb5" stroke-width="1.2" opacity=".5"><circle cx="281" cy="238" r="55" stroke-dasharray="4 8"/><path d="M281 238 397 134" stroke-dasharray="3 7"/></g>
-            </svg>
-            <div class="viewport-chip">ISOMETRIC</div>
-            <div class="viewport-status"><span>27 solids</span><span>190 faces</span><span>9 DOF</span></div>
-          </div>
-        </div>
-      </div>
+      <figure class="hero-product hero-screenshot reveal">
+        <a href="assets/icad-studio.webp" aria-label="Open the full-size native ICAD Studio screenshot">
+          <img src="assets/icad-studio.webp" width="1800" height="1122" alt="Actual ICAD Studio window with project tree, three compact source tabs, robotic arm source, compiled native OpenGL model, scene lighting, and inspectors">
+        </a>
+        <figcaption><span><i></i> Actual native application</span><b>robotic_arm.icad</b></figcaption>
+      </figure>
     </section>
 
     <section class="proof-strip" aria-label="ICAD outputs">

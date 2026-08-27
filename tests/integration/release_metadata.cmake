@@ -19,6 +19,7 @@ file(READ "${PROJECT_ROOT}/editors/vscode/package.json" extension_manifest)
 file(READ "${PROJECT_ROOT}/editors/vscode/package-lock.json" extension_lock)
 string(JSON extension_version GET "${extension_manifest}" version)
 string(JSON extension_lock_version GET "${extension_lock}" version)
+string(JSON extension_publisher GET "${extension_manifest}" publisher)
 if(NOT extension_version STREQUAL extension_lock_version)
     message(FATAL_ERROR
         "VS Code manifest version ${extension_version} does not match lock version ${extension_lock_version}")
@@ -26,6 +27,10 @@ endif()
 if(NOT extension_version MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+(\\.[0-9]+)?$")
     message(FATAL_ERROR
         "VS Code version ${extension_version} must contain three or four dotted numbers without a v prefix or release suffix")
+endif()
+if(NOT extension_publisher STREQUAL "kmoz")
+    message(FATAL_ERROR
+        "VS Code publisher ID must remain kmoz for Marketplace publication, got ${extension_publisher}")
 endif()
 
 file(READ
