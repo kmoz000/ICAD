@@ -118,9 +118,9 @@ int main() {
     // complete cache revision even while dirty-body geometry itself is built in
     // parallel.
     std::array<bool, 4> concurrent_ok{};
-    std::array<std::jthread, 4> callers;
+    std::array<std::thread, 4> callers;
     for (std::size_t index = 0; index < callers.size(); ++index) {
-        callers[index] = std::jthread([&compiler, &concurrent_ok, index, &changed] {
+        callers[index] = std::thread([&compiler, &concurrent_ok, index, &changed] {
             const auto result = compiler.compile(changed);
             concurrent_ok[index] = result.compilation.ok() && result.model.has_value() &&
                                    result.model->parts.size() == 2;

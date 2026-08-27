@@ -116,8 +116,8 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
           -DBUILD_TESTING=ON
           -DICAD_WARNINGS_AS_ERRORS=ON
-          -DICAD_PROJECT_VERSION=${{ needs.version.outputs.project_version }}
-          -DICAD_RELEASE_VERSION=${{ needs.version.outputs.package_version }}
+          "-DICAD_PROJECT_VERSION=${{ needs.version.outputs.project_version }}"
+          "-DICAD_RELEASE_VERSION=${{ needs.version.outputs.package_version }}"
           -DICAD_BUILD_DESKTOP_VIEWER=ON
       - name: Build
         run: cmake --build build --config Release --parallel

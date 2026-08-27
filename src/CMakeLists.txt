@@ -194,7 +194,6 @@ qt_deploy_runtime_dependencies(
         qt_generate_deploy_app_script(
             TARGET icad-viewer
             OUTPUT_SCRIPT icad_viewer_deploy_script
-            INCLUDE_PLUGIN_TYPES platforms imageformats
             NO_TRANSLATIONS
             NO_UNSUPPORTED_PLATFORM_ERROR
         )

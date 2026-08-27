@@ -128,7 +128,7 @@ auto IncrementalCompiler::compile(std::string_view source, CompileOptions option
             std::min({dirty.size(), static_cast<std::size_t>(hardware), max_workers});
         result.incremental.worker_count = worker_count;
         std::atomic_size_t next_job{};
-        std::vector<std::jthread> workers;
+        std::vector<std::thread> workers;
         workers.reserve(worker_count);
         for (std::size_t worker = 0; worker < worker_count; ++worker) {
             workers.emplace_back([&] {
@@ -166,6 +166,8 @@ auto IncrementalCompiler::compile(std::string_view source, CompileOptions option
                 }
             });
         }
+        for (auto& worker : workers)
+            worker.join();
     }
 
     std::unordered_set<std::string> current_names;
