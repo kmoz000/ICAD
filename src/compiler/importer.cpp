@@ -64,8 +64,9 @@ struct State {
 [[nodiscard]] auto within_root(const std::filesystem::path& path,
                                const std::filesystem::path& root) -> bool {
     const auto relative = path.lexically_relative(root);
-    return !relative.empty() && relative.native() != "." &&
-           relative.begin() != relative.end() && *relative.begin() != "..";
+    return !relative.empty() && relative != std::filesystem::path{"."} &&
+           relative.begin() != relative.end() &&
+           *relative.begin() != std::filesystem::path{".."};
 }
 
 auto error(State& state, std::string code, std::string message, std::size_t line) -> void {

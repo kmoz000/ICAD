@@ -34,6 +34,8 @@ PLAN.md
 *.drawing.svg
 *.viewer.js
 *.vsix
+!examples/Robotic_Arm_3D_Model/*.STL
+!examples/Robotic_Arm_3D_Model/*.STEP
 editors/vscode/node_modules/
 editors/vscode/dist/
 

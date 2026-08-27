@@ -94,6 +94,8 @@ struct ExactMetrics {
         twice_area += cross_value;
         numerator += (segment.start.x_mm + segment.end.x_mm) * cross_value;
     }
+    if (std::abs(twice_area) <= std::numeric_limits<double>::epsilon())
+        return 0.0;
     return numerator / (3.0 * twice_area);
 }
 

@@ -959,13 +959,15 @@ auto visual_snapshot_json(const compiler::ir::Project& project) -> std::string {
                                     : body_geometry_gap(model, joint.parent_body,
                                                         anchor->position_mm,
                                                         attachment_tolerance);
+        const double child_gap_mm = child_gap.value_or(0.0);
+        const double parent_gap_mm = parent_gap.value_or(0.0);
         if (!child_gap || !parent_gap) {
             ++disconnected_joints;
             continue;
         }
         if (joint.parent_body != "WORLD")
             ++checked_attachments;
-        if (*child_gap > attachment_tolerance || *parent_gap > attachment_tolerance)
+        if (child_gap_mm > attachment_tolerance || parent_gap_mm > attachment_tolerance)
             ++disconnected_joints;
     }
     constexpr std::string_view symbols =
@@ -1178,6 +1180,8 @@ auto visual_snapshot_json(const compiler::ir::Project& project) -> std::string {
                                     : body_geometry_gap(model, joint.parent_body,
                                                         anchor->position_mm,
                                                         attachment_tolerance);
+        const double child_gap_mm = child_gap.value_or(0.0);
+        const double parent_gap_mm = parent_gap.value_or(0.0);
         output << "{\"name\":" << quoted(joint.name) << ",\"parent\":"
                << quoted(joint.parent_body) << ",\"child\":" << quoted(joint.child_body)
                << ",\"type\":" << quoted(joint_kind_name(joint.kind)) << ",\"point\":"
@@ -1191,11 +1195,11 @@ auto visual_snapshot_json(const compiler::ir::Project& project) -> std::string {
             if (joint.parent_body == "WORLD")
                 output << "null";
             else
-                output << *parent_gap;
-            output << ",\"childGapMm\":" << *child_gap
+                output << parent_gap_mm;
+            output << ",\"childGapMm\":" << child_gap_mm
                    << ",\"connected\":"
-                   << (*parent_gap <= attachment_tolerance &&
-                               *child_gap <= attachment_tolerance
+                   << (parent_gap_mm <= attachment_tolerance &&
+                               child_gap_mm <= attachment_tolerance
                            ? "true"
                            : "false");
         }
@@ -1306,8 +1310,9 @@ auto visual_snapshot_json(const compiler::ir::Project& project) -> std::string {
                                             : body_geometry_gap(sampled_model, joint.parent_body,
                                                                 position,
                                                                 attachment_tolerance);
-                if (!child_gap || !parent_gap || *child_gap > attachment_tolerance ||
-                    *parent_gap > attachment_tolerance)
+                if (!child_gap || !parent_gap ||
+                    child_gap.value_or(0.0) > attachment_tolerance ||
+                    parent_gap.value_or(0.0) > attachment_tolerance)
                     ++disconnected;
             }
             double root_displacement = 0.0;
