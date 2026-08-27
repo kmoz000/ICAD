@@ -67,7 +67,9 @@ jobs:
             changed_files=$(git diff-tree --no-commit-id --name-only -r HEAD | sed '/^$/d' | wc -l | tr -d ' ')
           fi
           release_label="0.0.${padded_serial}-${channel}"
-          package_version="0.0.${next_serial}-${channel}"
+          # VSIX and native platform metadata only accept dotted numeric versions.
+          # Keep the release channel on the Git tag and public release label.
+          package_version="0.0.${next_serial}"
           {
             echo "release_tag=v${release_label}"
             echo "release_label=${release_label}"
@@ -122,7 +124,7 @@ jobs:
           -DBUILD_TESTING=ON
           -DICAD_WARNINGS_AS_ERRORS=ON
           "-DICAD_PROJECT_VERSION=${{ needs.version.outputs.project_version }}"
-          "-DICAD_RELEASE_VERSION=${{ needs.version.outputs.package_version }}"
+          "-DICAD_RELEASE_VERSION=${{ needs.version.outputs.release_label }}"
           -DICAD_BUILD_DESKTOP_VIEWER=ON
       - name: Build
         run: cmake --build build --config Release --parallel
@@ -205,7 +207,7 @@ jobs:
       - uses: actions/checkout@v6
       - name: Apply generated plugin version
         env:
-          PLUGIN_VERSION: ${{ needs.version.outputs.package_version }}+codex.${{ github.run_id }}
+          PLUGIN_VERSION: ${{ needs.version.outputs.package_version }}-${{ needs.version.outputs.channel }}+codex.${{ github.run_id }}
         run: |
           temporary=$(mktemp)
           jq --arg version "$PLUGIN_VERSION" '.version = $version' \

@@ -41,7 +41,7 @@ async function resolveToolchain(context, force = false) {
   }
   const manifest = context.extension.packageJSON;
   const releaseBaseUrl = configuration().get(
-    "toolchain.releaseBaseUrl", "https://github.com/kmoz000/ICAD/releases/download");
+    "toolchain.releaseBaseUrl", "https://github.com/valorisystems/ICAD/releases/download");
   return vscode.window.withProgress({
     location: vscode.ProgressLocation.Notification,
     title: `Installing ICAD ${manifest.version} compiler and viewer`,

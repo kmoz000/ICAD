@@ -19,7 +19,10 @@ repository. This is a deliberate product rule: the
 engine is designed around auditable AI-agent workflows instead of wrapping a
 desktop CAD API.
 
-ICAD is available under the [MIT License](LICENSE).
+ICAD is maintained by [Valori Systems](https://valorisystems.com/) and is
+available under the [MIT License](LICENSE). Visit the
+[ICAD project website](https://icad.valorisystems.com/) for the product
+overview, installation paths, and release links.
 
 Ordered releases are built automatically from `main` by GitHub Actions for
 Linux, Windows, Intel macOS, Apple Silicon macOS, VS Code, and Codex. Release
@@ -44,7 +47,7 @@ Codex can install the ICAD marketplace directly from GitHub using the
 [official marketplace workflow](https://developers.openai.com/plugins/build/plugins#add-a-marketplace-from-the-cli):
 
 ```sh
-codex plugin marketplace add kmoz000/ICAD --ref main
+codex plugin marketplace add valorisystems/ICAD --ref main
 codex plugin add icad-agentic-cad@icad
 ```
 
@@ -71,14 +74,14 @@ dependencies-only or fully manual instructions below.
 On macOS or Linux:
 
 ```sh
-curl -fsSL https://github.com/kmoz000/ICAD/releases/latest/download/install.sh | sh
+curl -fsSL https://github.com/valorisystems/ICAD/releases/latest/download/install.sh | sh
 ```
 
 On Windows PowerShell:
 
 ```powershell
 $installer = Join-Path $env:TEMP "icad-install.ps1"
-Invoke-WebRequest https://github.com/kmoz000/ICAD/releases/latest/download/install.ps1 -OutFile $installer
+Invoke-WebRequest https://github.com/valorisystems/ICAD/releases/latest/download/install.ps1 -OutFile $installer
 & $installer
 ```
 
@@ -101,14 +104,14 @@ This keeps plugin registration unchanged and installs only the native runtime:
 
 ```sh
 # macOS or Linux
-curl -fsSL https://github.com/kmoz000/ICAD/releases/latest/download/install.sh | \
+curl -fsSL https://github.com/valorisystems/ICAD/releases/latest/download/install.sh | \
   sh -s -- --dependencies-only
 ```
 
 ```powershell
 # Windows PowerShell
 $installer = Join-Path $env:TEMP "icad-install.ps1"
-Invoke-WebRequest https://github.com/kmoz000/ICAD/releases/latest/download/install.ps1 -OutFile $installer
+Invoke-WebRequest https://github.com/valorisystems/ICAD/releases/latest/download/install.ps1 -OutFile $installer
 & $installer -DependenciesOnly
 ```
 
@@ -128,7 +131,7 @@ platform:
 | macOS Apple Silicon | `icad-macos-arm64.zip` |
 
 Download the matching ZIP and its adjacent `.sha256` file from the
-[GitHub Releases page](https://github.com/kmoz000/ICAD/releases), verify the
+[GitHub Releases page](https://github.com/valorisystems/ICAD/releases), verify the
 checksum, and extract the archive. For example:
 
 ```sh

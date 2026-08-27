@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ICAD — Agentic CAD compiler and native 3D engine</title>
+  <meta name="description" content="ICAD is an open-source C++23 compiler, geometry engine, and native 3D studio for deterministic agentic CAD. Write auditable .icad designs and export STEP, STL, OBJ, glTF, 3MF, DXF, drawings, and manufacturing data.">
+  <meta name="keywords" content="agentic CAD, AI CAD, parametric CAD, CAD compiler, C++ geometry engine, 3D design language, STEP exporter, manufacturing automation, Codex plugin">
+  <meta name="author" content="Valori Systems">
+  <meta name="robots" content="index, follow, max-image-preview:large">
+  <meta name="theme-color" content="#08111f">
+  <link rel="canonical" href="https://icad.valorisystems.com/">
+  <link rel="icon" href="assets/icad-mark.svg" type="image/svg+xml">
+  <link rel="manifest" href="site.webmanifest">
+  <link rel="stylesheet" href="styles.css">
+
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="ICAD by Valori Systems">
+  <meta property="og:title" content="ICAD — Engineering geometry, written with intent">
+  <meta property="og:description" content="An open-source compiler and native geometry engine for deterministic, agentic 3D design.">
+  <meta property="og:url" content="https://icad.valorisystems.com/">
+  <meta property="og:image" content="https://icad.valorisystems.com/assets/og-card.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="ICAD agentic CAD compiler by Valori Systems">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="ICAD — Agentic CAD compiler">
+  <meta name="twitter:description" content="Deterministic 3D design for people and AI agents.">
+  <meta name="twitter:image" content="https://icad.valorisystems.com/assets/og-card.png">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "ICAD",
+    "alternateName": "ICAD Agentic CAD",
+    "applicationCategory": "DesignApplication",
+    "operatingSystem": "Linux, Windows, macOS",
+    "softwareRequirements": "64-bit operating system",
+    "description": "Open-source C++23 compiler, geometry engine, and native 3D studio for deterministic agentic CAD.",
+    "url": "https://icad.valorisystems.com/",
+    "downloadUrl": "https://github.com/valorisystems/ICAD/releases/latest",
+    "codeRepository": "https://github.com/valorisystems/ICAD",
+    "license": "https://opensource.org/license/mit",
+    "isAccessibleForFree": true,
+    "publisher": {
+      "@type": "Organization",
+      "name": "Valori Systems",
+      "url": "https://valorisystems.com/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="ambient ambient-one" aria-hidden="true"></div>
+  <div class="ambient ambient-two" aria-hidden="true"></div>
+
+  <header class="site-header">
+    <nav class="nav shell" aria-label="Primary navigation">
+      <a class="brand" href="#top" aria-label="ICAD home">
+        <img src="assets/icad-mark.svg" width="34" height="34" alt="">
+        <span>ICAD</span>
+      </a>
+      <div class="nav-links">
+        <a href="#capabilities">Capabilities</a>
+        <a href="#workflow">Workflow</a>
+        <a href="#install">Install</a>
+        <a href="https://github.com/valorisystems/ICAD/tree/main/docs">Docs</a>
+      </div>
+      <a class="nav-github" href="https://github.com/valorisystems/ICAD" aria-label="ICAD on GitHub">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .7a11.5 11.5 0 0 0-3.64 22.4c.58.1.79-.25.79-.56v-2.23c-3.22.7-3.9-1.37-3.9-1.37-.53-1.34-1.29-1.7-1.29-1.7-1.05-.72.08-.7.08-.7 1.16.08 1.78 1.2 1.78 1.2 1.04 1.77 2.71 1.26 3.37.96.1-.75.4-1.26.74-1.55-2.57-.3-5.28-1.29-5.28-5.69 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.16 1.18a10.97 10.97 0 0 1 5.76 0c2.2-1.49 3.16-1.18 3.16-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.42-2.72 5.39-5.3 5.68.42.36.79 1.06.79 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .7Z"/></svg>
+        <span>GitHub</span>
+      </a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="hero shell" id="top">
+      <div class="hero-copy reveal">
+        <a class="eyebrow" href="https://github.com/valorisystems/ICAD/releases/latest">
+          <span class="pulse"></span>
+          Open source · Latest alpha available
+          <span aria-hidden="true">↗</span>
+        </a>
+        <h1>Engineering geometry.<br><span>Written with intent.</span></h1>
+        <p class="hero-lede">ICAD is a compiler and native 3D engine for agentic CAD. People and AI agents write deterministic designs, validate engineering intent, and export production-ready artifacts from one auditable source.</p>
+        <div class="hero-actions">
+          <a class="button button-primary" href="#install">Install ICAD</a>
+          <a class="button button-secondary" href="https://github.com/valorisystems/ICAD">Explore the source <span aria-hidden="true">→</span></a>
+        </div>
+        <dl class="hero-stats" aria-label="Project facts">
+          <div><dt>C++23</dt><dd>native engine</dd></div>
+          <div><dt>10+</dt><dd>export formats</dd></div>
+          <div><dt>4</dt><dd>native targets</dd></div>
+        </dl>
+      </div>
+
+      <div class="hero-product reveal" aria-label="ICAD source compiling into a native 3D model">
+        <div class="product-toolbar">
+          <div class="window-dots" aria-hidden="true"><i></i><i></i><i></i></div>
+          <span>robotic_arm.icad</span>
+          <span class="build-state"><i></i> Valid</span>
+        </div>
+        <div class="product-grid">
+          <div class="code-pane" aria-hidden="true">
+            <div class="line"><b>01</b><code><em>PROJECT</em> robot_arm</code></div>
+            <div class="line"><b>02</b><code><em>UNITS</em> mm</code></div>
+            <div class="line"><b>03</b><code></code></div>
+            <div class="line"><b>04</b><code><em>BODY</em> upper_arm</code></div>
+            <div class="line"><b>05</b><code>  <strong>FEATURE</strong> shell</code></div>
+            <div class="line"><b>06</b><code>  <strong>TYPE</strong> BOX</code></div>
+            <div class="line"><b>07</b><code>  <strong>WIDTH</strong> <u>120 mm</u></code></div>
+            <div class="line"><b>08</b><code>  <strong>DEPTH</strong> <u>28 mm</u></code></div>
+            <div class="line"><b>09</b><code>  <strong>HEIGHT</strong> <u>22 mm</u></code></div>
+            <div class="line"><b>10</b><code><em>END</em></code></div>
+            <div class="line"><b>11</b><code></code></div>
+            <div class="line"><b>12</b><code><em>JOINT</em> elbow <mark>REVOLUTE</mark></code></div>
+            <div class="line"><b>13</b><code>  upper_arm forearm</code></div>
+            <div class="line"><b>14</b><code><em>END</em></code></div>
+          </div>
+          <div class="viewport-pane">
+            <div class="axis-label axis-z">Z</div><div class="axis-label axis-y">Y</div><div class="axis-label axis-x">X</div>
+            <svg class="robot-model" viewBox="0 0 500 470" role="img" aria-label="Stylized articulated robot arm generated from ICAD source">
+              <defs>
+                <linearGradient id="metal" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f0f4f7"/><stop offset=".52" stop-color="#96a5b1"/><stop offset="1" stop-color="#586875"/></linearGradient>
+                <linearGradient id="darkMetal" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#687782"/><stop offset="1" stop-color="#263642"/></linearGradient>
+                <linearGradient id="signal" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#00e2b8"/><stop offset="1" stop-color="#009d91"/></linearGradient>
+                <filter id="shadow"><feDropShadow dx="0" dy="16" stdDeviation="13" flood-color="#000" flood-opacity=".45"/></filter>
+              </defs>
+              <g filter="url(#shadow)">
+                <ellipse cx="247" cy="418" rx="118" ry="25" fill="#07101a" stroke="#294252"/>
+                <path d="M159 386 204 358h93l50 28-38 30H194Z" fill="url(#darkMetal)" stroke="#84939d"/>
+                <path d="M194 375v33l30 14h74l11-14v-34Z" fill="#344650"/>
+                <ellipse cx="251" cy="365" rx="56" ry="24" fill="url(#metal)" stroke="#d9e3e8"/>
+                <ellipse cx="251" cy="365" rx="25" ry="11" fill="#1a2933" stroke="#00d9b5" stroke-width="3"/>
+                <path d="m235 352 19-117 51 5-13 127Z" fill="url(#metal)" stroke="#dbe5e9"/>
+                <path d="m260 248 30 2-17 105-30-4Z" fill="#6f808b" opacity=".65"/>
+                <circle cx="281" cy="238" r="41" fill="url(#darkMetal)" stroke="#a7b5be" stroke-width="3"/>
+                <circle cx="281" cy="238" r="19" fill="url(#signal)" stroke="#7affdf" stroke-width="3"/>
+                <path d="m301 211 73-94 43 29-101 105Z" fill="url(#metal)" stroke="#dbe5e9"/>
+                <path d="m325 214 69-74 17 12-86 88Z" fill="#6f808b" opacity=".68"/>
+                <circle cx="397" cy="134" r="31" fill="url(#darkMetal)" stroke="#a7b5be" stroke-width="3"/>
+                <circle cx="397" cy="134" r="12" fill="url(#signal)"/>
+                <path d="m415 111 35-38 23 20-43 46Z" fill="url(#metal)" stroke="#dbe5e9"/>
+                <path d="m459 73 15-22 10 7-11 28Z" fill="#9aa8b1"/><path d="m466 86 20 1 2 10-25 5Z" fill="#7c8d98"/>
+              </g>
+              <g fill="none" stroke="#00ddb5" stroke-width="1.2" opacity=".5"><circle cx="281" cy="238" r="55" stroke-dasharray="4 8"/><path d="M281 238 397 134" stroke-dasharray="3 7"/></g>
+            </svg>
+            <div class="viewport-chip">ISOMETRIC</div>
+            <div class="viewport-status"><span>27 solids</span><span>190 faces</span><span>9 DOF</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="proof-strip" aria-label="ICAD outputs">
+      <div class="shell proof-inner"><span>One source</span><i></i><span>STEP</span><span>STL</span><span>OBJ</span><span>glTF</span><span>3MF</span><span>DXF</span><span>SVG</span><span>JSON</span></div>
+    </section>
+
+    <section class="section shell" id="capabilities">
+      <div class="section-heading reveal">
+        <p class="kicker">A compiler, not a macro layer</p>
+        <h2>Geometry that can explain itself.</h2>
+        <p>ICAD owns the language, semantic model, geometry, topology, and exporters—so every result remains inspectable from prompt to manufacturing artifact.</p>
+      </div>
+      <div class="capability-grid">
+        <article class="capability-card featured reveal">
+          <div class="card-index">01</div>
+          <div class="card-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 8-4 4 4 4M17 8l4 4-4 4M14 4l-4 16"/></svg></div>
+          <h3>Deterministic language</h3>
+          <p>Typed dimensions, constraints, profiles, features, assemblies, mechanisms, and animation compile into a canonical intermediate representation.</p>
+          <ul><li>Human-readable source</li><li>Stable diagnostics</li><li>Persistent topology references</li></ul>
+        </article>
+        <article class="capability-card reveal">
+          <div class="card-index">02</div>
+          <div class="card-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2 9 5-9 5-9-5 9-5Zm9 10-9 5-9-5m18 5-9 5-9-5"/></svg></div>
+          <h3>Native geometry engine</h3>
+          <p>Primitive and programmable geometry, boolean CSG, analytic surfaces, triangulation, topology queries, mates, and joint solving in modern C++.</p>
+        </article>
+        <article class="capability-card reveal">
+          <div class="card-index">03</div>
+          <div class="card-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4zM8 8h8v8H8zM2 12h4m12 0h4M12 2v4m0 12v4"/></svg></div>
+          <h3>Agent-native feedback</h3>
+          <p>Structured inspection, visual snapshots, manufacturing validation, topology evidence, and MCP tooling help agents reason about what they built.</p>
+        </article>
+        <article class="capability-card reveal">
+          <div class="card-index">04</div>
+          <div class="card-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v3h16v-3"/></svg></div>
+          <h3>Production outputs</h3>
+          <p>Build complete packages with CAD, mesh, drawing, scene, BOM, topology, and manufacturing files—then read them back in acceptance tests.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section workflow-section" id="workflow">
+      <div class="shell">
+        <div class="section-heading horizontal reveal">
+          <div><p class="kicker">The agentic build loop</p><h2>Intent in. Evidence out.</h2></div>
+          <p>A short prompt can create a complete editable design. Every step remains available to inspect, revise, compile, and verify.</p>
+        </div>
+        <ol class="workflow-grid">
+          <li class="reveal"><span>01</span><div><strong>Describe</strong><p>State the part, assembly, mechanism, materials, and engineering intent.</p></div></li>
+          <li class="reveal"><span>02</span><div><strong>Compile</strong><p>ICAD parses and validates deterministic source into geometry and topology.</p></div></li>
+          <li class="reveal"><span>03</span><div><strong>Inspect</strong><p>The native studio and structured reports expose the design to people and agents.</p></div></li>
+          <li class="reveal"><span>04</span><div><strong>Manufacture</strong><p>Export interoperable CAD, meshes, drawings, BOMs, and evidence packages.</p></div></li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="section studio-section shell">
+      <div class="studio-panel reveal">
+        <div class="studio-copy">
+          <p class="kicker">ICAD Studio</p>
+          <h2>Stay close to the model.</h2>
+          <p>A native Qt/OpenGL workbench combines source editing, multi-file project navigation, live compilation, model structure, standard views, and export controls without a browser runtime.</p>
+          <div class="studio-tags"><span>Multi-tab editor</span><span>Project tree</span><span>Live viewport</span><span>Model inspector</span></div>
+          <a class="text-link" href="https://github.com/valorisystems/ICAD/releases/latest">Download the native studio <span>→</span></a>
+        </div>
+        <div class="studio-window" aria-hidden="true">
+          <div class="studio-titlebar"><b>ICAD Studio</b><span>File &nbsp; Edit &nbsp; Build &nbsp; View &nbsp; Scene</span></div>
+          <div class="studio-body">
+            <div class="file-tree"><small>PROJECT</small><b>robot-cell</b><span>⌄ examples</span><span class="active">&nbsp;&nbsp;robotic_arm.icad</span><span>&nbsp;&nbsp;gripper.icad</span><span>› materials</span><span>› exports</span></div>
+            <div class="mini-editor"><div class="tabs"><span class="active">robotic_arm.icad</span><span>gripper.icad</span></div><pre><i>BODY</i> base
+  <b>FEATURE</b> stock
+  <b>TYPE</b> CYLINDER
+  <em>RADIUS</em> 90 mm
+  <em>HEIGHT</em> 42 mm
+<i>END</i></pre></div>
+            <div class="mini-view"><svg viewBox="0 0 220 210"><path d="m57 172 32-20h59l31 20-28 17H83Z" fill="#344651"/><path d="m95 154 8-67 37 2-6 69Z" fill="#93a1aa"/><circle cx="123" cy="87" r="23" fill="#334650" stroke="#00dbb3"/><path d="m139 74 40-44 23 18-52 48Z" fill="#a6b3bb"/><circle cx="188" cy="39" r="15" fill="#344751" stroke="#00dbb3"/></svg></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section install-section" id="install">
+      <div class="shell install-grid">
+        <div class="install-copy reveal">
+          <p class="kicker">Start building</p>
+          <h2>One command.<br>The complete toolchain.</h2>
+          <p>The release flow installs the Codex plugin, compiler, and native viewer for your platform. Every downloaded archive is verified against its published SHA-256 checksum.</p>
+          <div class="platforms"><span>macOS</span><span>Linux</span><span>Windows</span><span>VS Code</span><span>Codex</span></div>
+        </div>
+        <div class="terminal reveal">
+          <div class="terminal-tabs" role="tablist" aria-label="Installation platform">
+            <button class="terminal-tab active" role="tab" aria-selected="true" aria-controls="command-panel" data-platform="unix">macOS / Linux</button>
+            <button class="terminal-tab" role="tab" aria-selected="false" aria-controls="command-panel" data-platform="windows">Windows</button>
+          </div>
+          <div class="terminal-body" id="command-panel" role="tabpanel">
+            <div class="terminal-label"><span>Terminal</span><button class="copy-button" type="button" aria-label="Copy installation command">Copy</button></div>
+            <pre><code id="install-command">curl -fsSL https://github.com/valorisystems/ICAD/releases/latest/download/install.sh | sh</code></pre>
+            <div class="terminal-result"><span>✓</span> Installs plugin + checksum-verified native tools</div>
+          </div>
+          <div class="terminal-footer">
+            <a href="https://github.com/valorisystems/ICAD#install-the-compiler-and-viewer-separately">Manual installation</a>
+            <a href="https://github.com/valorisystems/ICAD/releases/latest">Release checksums</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section shell principles-section">
+      <div class="section-heading reveal"><p class="kicker">Built for accountable automation</p><h2>Open source all the way down.</h2></div>
+      <div class="principles-grid">
+        <article class="reveal"><strong>Auditable</strong><p>Source, diagnostics, geometry, and export evidence are deterministic and reviewable.</p></article>
+        <article class="reveal"><strong>Independent</strong><p>The core compiler and geometry engine do not wrap a proprietary desktop CAD kernel.</p></article>
+        <article class="reveal"><strong>Interoperable</strong><p>Standard CAD, mesh, scene, drawing, and manufacturing outputs keep the workflow portable.</p></article>
+        <article class="reveal"><strong>MIT licensed</strong><p>Use, study, modify, and embed ICAD in commercial or open engineering workflows.</p></article>
+      </div>
+    </section>
+
+    <section class="cta-section">
+      <div class="shell cta-inner reveal">
+        <p class="kicker">The next design starts as text</p>
+        <h2>Build something precise.</h2>
+        <p>Join the project, inspect the engine, and help shape an open foundation for agentic engineering.</p>
+        <div class="hero-actions">
+          <a class="button button-primary" href="https://github.com/valorisystems/ICAD">View ICAD on GitHub</a>
+          <a class="button button-secondary" href="https://github.com/valorisystems/ICAD/issues">Open an issue</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="shell footer-grid">
+      <div><a class="brand" href="#top"><img src="assets/icad-mark.svg" width="30" height="30" alt=""><span>ICAD</span></a><p>Agentic CAD compiler and native 3D engine.</p></div>
+      <div class="footer-links"><a href="https://github.com/valorisystems/ICAD">GitHub</a><a href="https://github.com/valorisystems/ICAD/tree/main/docs">Documentation</a><a href="https://github.com/valorisystems/ICAD/releases">Releases</a><a href="https://github.com/valorisystems/ICAD/blob/main/LICENSE">MIT License</a></div>
+      <div class="maintained">Maintained by <a href="https://valorisystems.com/">Valori Systems</a><small>© <span id="year">2026</span> Valori Systems</small></div>
+    </div>
+  </footer>
+
+  <script src="script.js" defer></script>
+</body>
+</html>

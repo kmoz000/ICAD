@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-repository="kmoz000/ICAD"
+repository="valorisystems/ICAD"
 release_tag="latest"
 install_plugin=1
 install_dependencies=1

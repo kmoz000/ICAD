@@ -2,8 +2,9 @@
   "name": "icad-agentic-cad",
   "displayName": "ICAD Agentic CAD",
   "description": "Language tooling, compiler commands, and viewer launch support for ICAD agentic 3D designs.",
-  "version": "0.0.1-alpha",
+  "version": "0.0.1",
   "publisher": "icad",
+  "author": "Valori Systems",
   "icon": "assets/icad-128.png",
   "license": "MIT",
   "engines": {
@@ -15,7 +16,7 @@
   "main": "./dist/extension.js",
   "repository": {
     "type": "git",
-    "url": "https://github.com/kmoz000/ICAD.git"
+    "url": "https://github.com/valorisystems/ICAD.git"
   },
   "files": [
     "dist/extension.js",
@@ -107,7 +108,7 @@
         },
         "icad.toolchain.releaseBaseUrl": {
           "type": "string",
-          "default": "https://github.com/kmoz000/ICAD/releases/download",
+          "default": "https://github.com/valorisystems/ICAD/releases/download",
           "scope": "machine",
           "tags": ["usesOnlineServices"],
           "description": "Base URL used to download versioned ICAD release archives and SHA-256 files."

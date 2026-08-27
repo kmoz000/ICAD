@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#07111d"/><stop offset="1" stop-color="#0b1d29"/></linearGradient>
+    <linearGradient id="signal" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#4ff2d0"/><stop offset="1" stop-color="#00a98f"/></linearGradient>
+    <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse"><path d="M48 0H0v48" fill="none" stroke="#27404d" stroke-width="1" opacity=".45"/></pattern>
+    <filter id="glow"><feGaussianBlur stdDeviation="35"/></filter>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/><rect width="1200" height="630" fill="url(#grid)"/>
+  <circle cx="1015" cy="115" r="190" fill="#00d8ae" opacity=".10" filter="url(#glow)"/>
+  <g transform="translate(76 70)"><rect width="78" height="78" rx="21" fill="#0c1b28" stroke="#34505e" stroke-width="2"/><path d="m39 14 23 13v25L39 65 16 52V27l23-13Z" fill="none" stroke="url(#signal)" stroke-width="4"/><path d="m16 27 23 13 23-13M39 40v25" fill="none" stroke="url(#signal)" stroke-width="4"/></g>
+  <text x="176" y="126" fill="#f3f8f7" font-family="Inter,Arial,sans-serif" font-size="53" font-weight="750">ICAD</text>
+  <text x="78" y="287" fill="#f5faf9" font-family="Inter,Arial,sans-serif" font-size="72" font-weight="730">Engineering geometry.</text>
+  <text x="78" y="377" fill="url(#signal)" font-family="Inter,Arial,sans-serif" font-size="72" font-weight="730">Written with intent.</text>
+  <text x="82" y="465" fill="#a9bac2" font-family="Inter,Arial,sans-serif" font-size="29">Agentic CAD compiler and native 3D engine</text>
+  <line x1="80" y1="526" x2="1120" y2="526" stroke="#29424f"/>
+  <text x="82" y="576" fill="#d3dfe2" font-family="Inter,Arial,sans-serif" font-size="22">Open source · C++23 · Linux · Windows · macOS</text>
+  <text x="1118" y="576" text-anchor="end" fill="#64e8ca" font-family="Inter,Arial,sans-serif" font-size="22">VALORI SYSTEMS</text>
+</svg>

@@ -1,0 +1,10 @@
+{
+  "name": "ICAD by Valori Systems",
+  "short_name": "ICAD",
+  "description": "Agentic CAD compiler and native 3D engine.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#08111f",
+  "theme_color": "#08111f",
+  "icons": [{"src": "assets/icad-mark.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"}]
+}

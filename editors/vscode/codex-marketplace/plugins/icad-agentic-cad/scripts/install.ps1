@@ -5,7 +5,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Repository = "kmoz000/ICAD"
+$Repository = "valorisystems/ICAD"
 $InstallPlugin = -not $DependenciesOnly
 $InstallDependencies = -not $PluginOnly
 

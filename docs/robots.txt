@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://icad.valorisystems.com/sitemap.xml

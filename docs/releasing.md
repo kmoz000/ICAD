@@ -46,7 +46,7 @@ README and the plugin's automatic dependency bootstrap use the GitHub
 `releases/latest/download` endpoints.
 
 The repository-root `.agents/plugins/marketplace.json` is the canonical source
-for `codex plugin marketplace add kmoz000/ICAD`. It points to the plugin bundled
+for `codex plugin marketplace add valorisystems/ICAD`. It points to the plugin bundled
 under `editors/vscode/codex-marketplace`; keep its marketplace and plugin names
 aligned with the release ZIP's marketplace metadata.
 
