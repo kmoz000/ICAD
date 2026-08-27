@@ -44,6 +44,7 @@ class MainWindow final : public QMainWindow {
     auto open_document(const std::filesystem::path& path) -> bool;
     auto open_workspace(const std::filesystem::path& path) -> bool;
     auto set_standard_view(StandardView view) -> void;
+    auto set_display_mode(DisplayMode mode) -> void;
     auto request_snapshot(QString path, std::function<void(bool)> completion) -> void;
 
   protected:

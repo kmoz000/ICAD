@@ -29,10 +29,20 @@ struct RenderPart {
     QVector3D maximum;
 };
 
+struct RenderLight {
+    QString name;
+    bool point{};
+    QVector3D color;
+    float intensity{};
+    QVector3D position;
+};
+
 struct RenderSceneInfo {
     QString name;
     double duration_seconds{};
     double frames_per_second{};
+    QString background;
+    std::vector<RenderLight> lights;
 };
 
 struct RenderScene {
@@ -40,6 +50,7 @@ struct RenderScene {
     std::vector<RenderVertex> vertices;
     std::vector<std::uint32_t> indices;
     std::vector<std::uint32_t> wire_indices;
+    std::vector<std::uint32_t> mesh_wire_indices;
     std::vector<RenderPart> parts;
     std::vector<RenderSceneInfo> scenes;
     QVector3D minimum;

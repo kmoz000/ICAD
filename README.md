@@ -221,12 +221,15 @@ build/bin/icad-viewer.app/Contents/MacOS/icad-viewer \
 The native viewer live-compiles edits through the in-process engine, keeps the
 last valid mesh while diagnostics are fixed, uploads indexed meshes to OpenGL,
 and supports orbit, pan, zoom, orthographic standard views, component picking,
-CAD wireframe, scenes, screenshots, and manufacturing-package export. CAD
-wireframe contains only physical boundaries and creases; internal GPU triangle
-diagonals are deliberately hidden. The render mesh uses crease-aware,
-angle-weighted normals and restores depth state every frame after Qt HUD
-painting, preventing radial triangle bands on smooth revolved and filleted
-solids. `--snapshot output.png` waits for compilation, captures that same native
+frame-all/frame-selected camera centering, scene-defined backgrounds and lights,
+four viewport shading modes, screenshots, and manufacturing-package export.
+`Solid with mesh edges` and `Triangle mesh` expose every render triangle like a
+Blender mesh overlay, while `CAD wireframe` keeps only physical boundaries and
+creases. The render mesh uses crease-aware, angle-weighted normals, an explicit
+24-bit depth buffer, opaque depth writes, and depth-safe overlays, preventing
+radial triangle bands on smooth revolved and filleted solids. Use
+`--display solid|solid-mesh|cad-wire|mesh-wire` for reproducible automation.
+`--snapshot output.png` waits for compilation, captures that same native
 viewport, and exits with a nonzero status if compilation or image writing fails.
 `--studio-snapshot output.png` captures the complete rendered workbench after
 its source tabs finish compiling, making release screenshots reproducible.

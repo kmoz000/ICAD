@@ -35,6 +35,7 @@ namespace {
 auto configure_parser(QCommandLineParser& parser, QCommandLineOption& self_test_option,
                       QCommandLineOption& window_test_option,
                       QCommandLineOption& view_option,
+                      QCommandLineOption& display_option,
                       QCommandLineOption& snapshot_option,
                       QCommandLineOption& studio_snapshot_option) -> void {
     parser.setApplicationDescription(
@@ -44,6 +45,7 @@ auto configure_parser(QCommandLineParser& parser, QCommandLineOption& self_test_
     parser.addOption(self_test_option);
     parser.addOption(window_test_option);
     parser.addOption(view_option);
+    parser.addOption(display_option);
     parser.addOption(snapshot_option);
     parser.addOption(studio_snapshot_option);
     parser.addPositionalArgument(QStringLiteral("source.icad"),
@@ -60,6 +62,15 @@ auto configure_parser(QCommandLineParser& parser, QCommandLineOption& self_test_
     if (name == QStringLiteral("right")) return icad::desktop::StandardView::right;
     if (name == QStringLiteral("top")) return icad::desktop::StandardView::top;
     if (name == QStringLiteral("bottom")) return icad::desktop::StandardView::bottom;
+    return std::nullopt;
+}
+
+[[nodiscard]] auto display_mode(QString name) -> std::optional<icad::desktop::DisplayMode> {
+    name = name.toLower();
+    if (name == QStringLiteral("solid")) return icad::desktop::DisplayMode::solid;
+    if (name == QStringLiteral("solid-mesh")) return icad::desktop::DisplayMode::solid_with_mesh;
+    if (name == QStringLiteral("cad-wire")) return icad::desktop::DisplayMode::cad_wireframe;
+    if (name == QStringLiteral("mesh-wire")) return icad::desktop::DisplayMode::mesh_wireframe;
     return std::nullopt;
 }
 
@@ -87,7 +98,11 @@ auto self_test(const QString& source) -> int {
     }
     std::cout << "QT_VIEWER_SELF_TEST passed parts=" << scene.scene.parts.size()
               << " triangles=" << scene.scene.indices.size() / 3U
-              << " scenes=" << scene.scene.scenes.size() << '\n';
+              << " mesh_edges=" << scene.scene.mesh_wire_indices.size() / 2U
+              << " scenes=" << scene.scene.scenes.size()
+              << " lights="
+              << (scene.scene.scenes.empty() ? 0U : scene.scene.scenes.front().lights.size())
+              << '\n';
     return 0;
 }
 
@@ -113,6 +128,10 @@ auto main(int argc, char** argv) -> int {
     QCommandLineOption view_option{QStringLiteral("view"),
                                    QStringLiteral("Initial standard 3D view."),
                                    QStringLiteral("side"), QStringLiteral("isometric")};
+    QCommandLineOption display_option{
+        QStringLiteral("display"),
+        QStringLiteral("Initial viewport shading: solid, solid-mesh, cad-wire, or mesh-wire."),
+        QStringLiteral("mode"), QStringLiteral("solid")};
     QCommandLineOption snapshot_option{
         QStringLiteral("snapshot"),
         QStringLiteral("Render the compiled viewport to a PNG and exit."),
@@ -125,8 +144,8 @@ auto main(int argc, char** argv) -> int {
         QCoreApplication application{argc, argv};
         configure_application_metadata();
         QCommandLineParser parser;
-        configure_parser(parser, self_test_option, window_test_option, view_option, snapshot_option,
-                         studio_snapshot_option);
+        configure_parser(parser, self_test_option, window_test_option, view_option, display_option,
+                         snapshot_option, studio_snapshot_option);
         parser.process(application);
         const auto positional = parser.positionalArguments();
         if (!requested_self_test)
@@ -150,12 +169,17 @@ auto main(int argc, char** argv) -> int {
     QApplication::setWindowIcon(QIcon{QStringLiteral(":/icad/icons/icad-256.png")});
 
     QCommandLineParser parser;
-    configure_parser(parser, self_test_option, window_test_option, view_option, snapshot_option,
-                     studio_snapshot_option);
+    configure_parser(parser, self_test_option, window_test_option, view_option, display_option,
+                     snapshot_option, studio_snapshot_option);
     parser.process(application);
     const auto initial_view = standard_view(parser.value(view_option));
     if (!initial_view) {
         std::cerr << "icad-viewer: --view expects isometric, front, back, left, right, top, or bottom\n";
+        return 2;
+    }
+    const auto initial_display = display_mode(parser.value(display_option));
+    if (!initial_display) {
+        std::cerr << "icad-viewer: --display expects solid, solid-mesh, cad-wire, or mesh-wire\n";
         return 2;
     }
     const auto positional = parser.positionalArguments();
@@ -185,6 +209,7 @@ auto main(int argc, char** argv) -> int {
             return 2;
     }
     window.set_standard_view(*initial_view);
+    window.set_display_mode(*initial_display);
     if (parser.isSet(window_test_option)) {
         const auto* tabs = window.findChild<QTabBar*>(QStringLiteral("documentTabs"));
         const auto* workspace = window.findChild<QTreeView*>(QStringLiteral("workspaceTree"));
@@ -193,13 +218,27 @@ auto main(int argc, char** argv) -> int {
             window.findChildren<QAction*>(), [](const QAction* action) {
                 return action->text().remove(QLatin1Char('&')) == QStringLiteral("Open Folder…");
             });
+        const bool has_frame_selected = std::ranges::any_of(
+            window.findChildren<QAction*>(), [](const QAction* action) {
+                return action->text().remove(QLatin1Char('&')) == QStringLiteral("Frame selected");
+            });
+        const bool has_mesh_mode = std::ranges::any_of(
+            window.findChildren<QAction*>(), [](const QAction* action) {
+                return action->text().remove(QLatin1Char('&')) == QStringLiteral("Triangle mesh");
+            });
+        const bool has_scene_lighting = std::ranges::any_of(
+            window.findChildren<QAction*>(), [](const QAction* action) {
+                return action->text().remove(QLatin1Char('&')) ==
+                       QStringLiteral("Use scene lighting");
+            });
         const int expected_tabs = std::max(1, static_cast<int>(positional.size()));
         if (tabs == nullptr || tabs->count() != expected_tabs ||
             tabs->height() > 40 || !tabs->isMovable() || tabs->elideMode() != Qt::ElideRight ||
             window.document_count() != static_cast<std::size_t>(expected_tabs) || workspace == nullptr ||
             workspace->model() == nullptr || window.workspace_root().empty() || model == nullptr ||
             model->selectionBehavior() != QAbstractItemView::SelectRows ||
-            model->header()->sectionResizeMode(0) != QHeaderView::Stretch || !has_open_folder) {
+            model->header()->sectionResizeMode(0) != QHeaderView::Stretch || !has_open_folder ||
+            !has_frame_selected || !has_mesh_mode || !has_scene_lighting) {
             std::cerr << "QT_VIEWER_WINDOW_TEST failed: workspace shell is incomplete\n";
             return 3;
         }

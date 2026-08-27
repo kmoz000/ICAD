@@ -4,6 +4,7 @@
 #include "scene_model.hpp"
 
 #include <QAction>
+#include <QActionGroup>
 #include <QAbstractItemView>
 #include <QApplication>
 #include <QCloseEvent>
@@ -128,6 +129,12 @@ MainWindow::MainWindow(std::filesystem::path source_path, QWidget* parent) : QMa
         if (ok)
             viewport_->select_part(static_cast<std::size_t>(raw));
     });
+    connect(model_tree_, &QTreeWidget::itemDoubleClicked, this,
+            [this] { viewport_->fit_selected(); });
+    connect(scenes_, &QListWidget::currentRowChanged, this, [this](int row) {
+        if (row >= 0)
+            viewport_->set_active_scene(static_cast<std::size_t>(row));
+    });
     connect(scenes_, &QListWidget::itemActivated, this,
             [this] { set_scene_playing(!scene_playing_); });
 
@@ -162,6 +169,10 @@ MainWindow::MainWindow(std::filesystem::path source_path, QWidget* parent) : QMa
 auto MainWindow::set_standard_view(StandardView view) -> void {
     viewport_->set_standard_view(view);
     viewport_->fit_all();
+}
+
+auto MainWindow::set_display_mode(DisplayMode mode) -> void {
+    viewport_->set_display_mode(mode);
 }
 
 auto MainWindow::open_document(const std::filesystem::path& path) -> bool {
@@ -341,15 +352,22 @@ auto MainWindow::build_actions() -> void {
     connect(compile, &QAction::triggered, this, [this] { begin_compile(); });
 
     auto* view_menu = menuBar()->addMenu(QStringLiteral("&View"));
-    auto* fit = view_menu->addAction(QStringLiteral("Fit all"));
-    fit->setShortcut(QKeySequence{QStringLiteral("F")});
-    connect(fit, &QAction::triggered, viewport_, &CadViewport::fit_all);
-    auto* projection = view_menu->addAction(QStringLiteral("Orthographic projection"));
-    projection->setCheckable(true);
-    connect(projection, &QAction::toggled, viewport_, &CadViewport::set_orthographic);
-    auto* wireframe = view_menu->addAction(QStringLiteral("Wireframe"));
-    wireframe->setCheckable(true);
-    connect(wireframe, &QAction::toggled, viewport_, &CadViewport::set_wireframe);
+    auto* display_modes = view_menu->addMenu(QStringLiteral("Viewport shading"));
+    auto* display_group = new QActionGroup{display_modes};
+    display_group->setExclusive(true);
+    const auto add_display_mode = [this, display_modes, display_group](
+                                      QString label, DisplayMode mode, bool selected = false) {
+        auto* action = display_modes->addAction(std::move(label));
+        action->setCheckable(true);
+        action->setChecked(selected);
+        display_group->addAction(action);
+        connect(action, &QAction::triggered, this,
+                [this, mode] { viewport_->set_display_mode(mode); });
+    };
+    add_display_mode(QStringLiteral("Solid"), DisplayMode::solid, true);
+    add_display_mode(QStringLiteral("Solid with mesh edges"), DisplayMode::solid_with_mesh);
+    add_display_mode(QStringLiteral("CAD wireframe"), DisplayMode::cad_wireframe);
+    add_display_mode(QStringLiteral("Triangle mesh"), DisplayMode::mesh_wireframe);
     auto* debug = view_menu->addAction(QStringLiteral("Debug overlay"));
     debug->setShortcut(QKeySequence{QStringLiteral("Ctrl+Shift+D")});
     debug->setCheckable(true);
@@ -357,7 +375,18 @@ auto MainWindow::build_actions() -> void {
     view_menu->addSeparator();
     view_menu->addAction(workspace_dock_->toggleViewAction());
     view_menu->addAction(diagnostics_dock_->toggleViewAction());
-    auto* standard_views = view_menu->addMenu(QStringLiteral("Standard View"));
+
+    auto* camera_menu = menuBar()->addMenu(QStringLiteral("&Camera"));
+    auto* fit = camera_menu->addAction(QStringLiteral("Frame all"));
+    fit->setShortcut(QKeySequence{QStringLiteral("F")});
+    connect(fit, &QAction::triggered, viewport_, &CadViewport::fit_all);
+    auto* fit_selected = camera_menu->addAction(QStringLiteral("Frame selected"));
+    fit_selected->setShortcut(QKeySequence{QStringLiteral("Shift+F")});
+    connect(fit_selected, &QAction::triggered, viewport_, &CadViewport::fit_selected);
+    auto* projection = camera_menu->addAction(QStringLiteral("Orthographic projection"));
+    projection->setCheckable(true);
+    connect(projection, &QAction::toggled, viewport_, &CadViewport::set_orthographic);
+    auto* standard_views = camera_menu->addMenu(QStringLiteral("Standard View"));
     const auto add_view = [this, standard_views](QString label, StandardView view) {
         auto* action = standard_views->addAction(std::move(label));
         connect(action, &QAction::triggered, this, [this, view] { viewport_->set_standard_view(view); });
@@ -368,6 +397,11 @@ auto MainWindow::build_actions() -> void {
     add_view(QStringLiteral("Top"), StandardView::top);
 
     auto* scene_menu = menuBar()->addMenu(QStringLiteral("&Scene"));
+    auto* scene_lighting = scene_menu->addAction(QStringLiteral("Use scene lighting"));
+    scene_lighting->setCheckable(true);
+    scene_lighting->setChecked(true);
+    connect(scene_lighting, &QAction::toggled, viewport_, &CadViewport::set_scene_lighting);
+    scene_menu->addSeparator();
     scene_play_action_ = scene_menu->addAction(QStringLiteral("Play Scene"));
     scene_play_action_->setShortcut(QKeySequence{Qt::Key_Space});
     scene_play_action_->setCheckable(true);
@@ -898,11 +932,20 @@ auto MainWindow::rebuild_model_tree() -> void {
 auto MainWindow::rebuild_scene_panel() -> void {
     scenes_->clear();
     for (const auto& scene : viewport_->scene().scenes) {
-        scenes_->addItem(QStringLiteral("▶ %1  ·  %2 s @ %3 fps")
-                             .arg(scene.name)
-                             .arg(scene.duration_seconds, 0, 'f', 2)
-                             .arg(scene.frames_per_second, 0, 'f', 0));
+        auto* item = new QListWidgetItem{
+            QStringLiteral("▶ %1 · %2s · %3 · %4L")
+                .arg(scene.name)
+                .arg(scene.duration_seconds, 0, 'f', 1)
+                .arg(scene.background)
+                .arg(static_cast<qulonglong>(scene.lights.size())),
+            scenes_};
+        item->setToolTip(QStringLiteral("%1 fps · %2 authored light%3")
+                             .arg(scene.frames_per_second, 0, 'f', 0)
+                             .arg(static_cast<qulonglong>(scene.lights.size()))
+                             .arg(scene.lights.size() == 1 ? QString{} : QStringLiteral("s")));
     }
+    if (!viewport_->scene().scenes.empty())
+        scenes_->setCurrentRow(0);
     if (viewport_->scene().scenes.empty())
         scenes_->addItem(QStringLiteral("No programmable scenes"));
 }

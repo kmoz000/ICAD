@@ -214,7 +214,10 @@ auto parse_render_scene(std::string_view source) -> SceneParseResult {
         const QVector4D render_color{color.redF(), color.greenF(), color.blueF(), color.alphaF()};
         result.scene.vertices.reserve(result.scene.vertices.size() + triangles.size() * 3U);
         result.scene.indices.reserve(result.scene.indices.size() + triangles.size() * 3U);
+        result.scene.mesh_wire_indices.reserve(result.scene.mesh_wire_indices.size() +
+                                               triangles.size() * 6U);
         for (const auto& triangle : triangles) {
+            std::array<std::uint32_t, 3> render_corners{};
             for (std::size_t corner = 0; corner < 3; ++corner) {
                 const auto local_vertex = triangle.vertices[corner];
                 QVector3D smooth_normal;
@@ -237,9 +240,14 @@ auto parse_render_scene(std::string_view source) -> SceneParseResult {
                 result.scene.vertices.push_back(
                     {positions[local_vertex], smooth_normal, render_color});
                 result.scene.indices.push_back(render_index);
+                render_corners[corner] = render_index;
                 if (first_render_index[local_vertex] == missing_index)
                     first_render_index[local_vertex] = render_index;
             }
+            result.scene.mesh_wire_indices.insert(
+                result.scene.mesh_wire_indices.end(),
+                {render_corners[0], render_corners[1], render_corners[1], render_corners[2],
+                 render_corners[2], render_corners[0]});
         }
         part.index_count = static_cast<std::uint32_t>(result.scene.indices.size()) - part.first_index;
         // A CAD wireframe shows boundaries and creases, not triangulation used
@@ -268,9 +276,33 @@ auto parse_render_scene(std::string_view source) -> SceneParseResult {
     }
     if (const auto* scenes = root.find("scenes"); scenes != nullptr && scenes->array() != nullptr) {
         for (const auto& scene : *scenes->array()) {
-            result.scene.scenes.push_back(
-                {QString::fromStdString(text(scene.find("name"))), number(scene.find("duration")),
-                 number(scene.find("fps"), 30.0)});
+            RenderSceneInfo info{QString::fromStdString(text(scene.find("name"))),
+                                 number(scene.find("duration")), number(scene.find("fps"), 30.0),
+                                 QString::fromStdString(text(scene.find("background"))), {}};
+            if (const auto* lights = scene.find("lights");
+                lights != nullptr && lights->array() != nullptr) {
+                for (const auto& light : *lights->array()) {
+                    QVector3D color{1.0F, 1.0F, 1.0F};
+                    QVector3D position;
+                    if (const auto* source_color = light.find("color");
+                        source_color == nullptr || !vector3(*source_color, color)) {
+                        result.error = QStringLiteral("Scene '%1' has an invalid light color")
+                                           .arg(info.name);
+                        return result;
+                    }
+                    if (const auto* source_position = light.find("positionMm");
+                        source_position == nullptr || !vector3(*source_position, position)) {
+                        result.error = QStringLiteral("Scene '%1' has an invalid light position")
+                                           .arg(info.name);
+                        return result;
+                    }
+                    info.lights.push_back(
+                        {QString::fromStdString(text(light.find("name"))),
+                         text(light.find("kind")) == "POINT", color,
+                         static_cast<float>(number(light.find("intensity"))), position});
+                }
+            }
+            result.scene.scenes.push_back(std::move(info));
         }
     }
     if (result.scene.empty())

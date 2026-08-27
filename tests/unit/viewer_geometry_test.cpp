@@ -15,7 +15,11 @@ constexpr std::string_view coplanar_quad = R"JSON({
   "format":"ICAD_SCENE",
   "project":"wireframe_quad",
   "materials":[],
-  "scenes":[],
+  "scenes":[{
+    "name":"inspection","duration":1,"fps":30,"background":"SKY_DAY",
+    "lights":[{"name":"key","kind":"POINT","color":[1,0.8,0.6],"intensity":3,
+                "positionMm":[2,3,4]}]
+  }],
   "parts":[{
     "name":"plate","body":"plate","material":"",
     "vertices":[[0,0,0],[1,0,0],[1,1,0],[0,1,0]],
@@ -52,7 +56,10 @@ constexpr std::string_view smooth_pair = R"JSON({
 auto main() -> int {
     const auto quad = icad::desktop::parse_render_scene(coplanar_quad);
     if (!quad.ok() || quad.scene.parts.size() != 1 || quad.scene.indices.size() != 6 ||
-        quad.scene.wire_indices.size() != 8 ||
+        quad.scene.wire_indices.size() != 8 || quad.scene.mesh_wire_indices.size() != 12 ||
+        quad.scene.scenes.size() != 1 || quad.scene.scenes[0].background != "SKY_DAY" ||
+        quad.scene.scenes[0].lights.size() != 1 || !quad.scene.scenes[0].lights[0].point ||
+        quad.scene.scenes[0].lights[0].position != QVector3D{2.0F, 3.0F, 4.0F} ||
         QVector3D::dotProduct(quad.scene.vertices[0].normal,
                               quad.scene.vertices[3].normal) < 0.999F) {
         return fail("CAD wireframe did not suppress a coplanar tessellation diagonal");
