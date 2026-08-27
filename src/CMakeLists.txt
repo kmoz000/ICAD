@@ -50,6 +50,7 @@ target_include_directories(icad_compiler
         $<INSTALL_INTERFACE:include>
 )
 target_include_directories(icad_compiler PRIVATE "${PROJECT_BINARY_DIR}/generated")
+target_compile_definitions(icad_compiler PRIVATE ICAD_VERSION="${ICAD_RELEASE_VERSION}")
 target_link_libraries(icad_compiler PUBLIC icad_project_options)
 
 add_library(icad_engine SHARED engine/session.cpp engine/c_api.cpp)
@@ -69,6 +70,7 @@ set_target_properties(icad_engine PROPERTIES
 )
 
 add_executable(icad cli/main.cpp)
+target_compile_definitions(icad PRIVATE ICAD_VERSION="${ICAD_RELEASE_VERSION}")
 target_link_libraries(icad PRIVATE ICAD::compiler icad_project_options)
 install(TARGETS icad icad_engine
         RUNTIME DESTINATION bin
@@ -93,7 +95,7 @@ if(ICAD_BUILD_DESKTOP_VIEWER)
         desktop_viewer/resources.qrc
         engine/session.cpp
     )
-    target_compile_definitions(icad-viewer PRIVATE ICAD_VERSION="${PROJECT_VERSION}")
+    target_compile_definitions(icad-viewer PRIVATE ICAD_VERSION="${ICAD_RELEASE_VERSION}")
     target_link_libraries(icad-viewer PRIVATE
         ICAD::compiler
         Qt6::Core

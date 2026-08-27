@@ -1,17 +1,38 @@
 # Releasing ICAD
 
-Release metadata must agree across CMake, the CLI/MCP servers, and the VS Code
-package. `integration.release_metadata` enforces that contract.
+Release metadata is generated once and passed to CMake, the CLI/MCP servers,
+the native viewer, the VS Code package, and the Codex plugin.
+`integration.release_metadata` enforces that contract.
 
 1. Run `make quality` from the repository root.
-2. Confirm `build/bin/icad --version` and the version in
-   `editors/vscode/package.json` match the intended tag.
-3. Push an exact semantic-version tag such as `v0.21.0`.
+2. Merge or push the tested commit to `main`. The `Release ICAD` workflow starts
+   automatically and chooses the next ordered release number.
+3. For a promoted build, run the workflow manually and select `beta` or
+   `stable`. Manual `alpha` is available when an automatic run needs replacing.
+
+GitHub release tags use a padded ordered number beginning at
+`v0.0.001-alpha`, followed by `v0.0.002-alpha`, and so on. Each successful
+main-branch release consumes the next available number. The workflow records the number of
+commits and changed files since the previous generated release in its summary
+and release notes. The channel policy is deliberately explicit: main builds
+are `alpha`; `beta` and `stable` require a manual promotion after validation.
+This prevents a large documentation-only commit from being classified as a
+stable engine release.
+
+Channel suffixes are release labels, not GitHub prerelease flags. Every
+successful channel build is published as a normal release so
+`releases/latest/download` continues to serve the command-line installers and
+automatic compiler/viewer dependency downloads, including for the first alpha.
+
+VS Code and other SemVer consumers reject padded numeric identifiers, so the
+same release is represented there without leading zeroes: GitHub
+`v0.0.001-alpha` maps to package version `0.0.1-alpha`. This mapping is produced
+by the version job rather than maintained by hand.
 
 The `Release ICAD` workflow builds and tests the CLI plus native Qt/OpenGL
 desktop viewer on Linux x86-64, Windows x86-64, Intel macOS, and
-Apple Silicon macOS. It packages the bundled VS Code extension, verifies the tag
-against its manifest, and attaches every ZIP/VSIX to the GitHub Release.
+Apple Silicon macOS. It packages the bundled VS Code extension and attaches
+every ZIP/VSIX to the generated GitHub Release.
 Each native ZIP has a companion `.sha256` file. The VS Code extension requires
 that checksum before installing the compiler and viewer into its machine-local
 extension storage.

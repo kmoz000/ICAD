@@ -31,7 +31,7 @@ parsing. `REQUIRES CAPABILITY NAME` accepts only names returned by `icad
 language` and MCP `icad.language`. Requirements are retained in the AST, must
 precede every other declaration, and produce stable `ICAD-C0001` through
 `ICAD-C0005` diagnostics for malformed, unsupported, duplicate, or late
-headers. Compiler package version `0.21.0` and language contract version `1.0`
+headers. Compiler package version `0.0.1-alpha` and language contract version `1.0`
 are intentionally separate.
 
 `PARAMETER_EXPRESSIONS_V1` adds deterministic `+`, `-`, `*`, `/`, unary signs,

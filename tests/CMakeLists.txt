@@ -131,7 +131,9 @@ add_test(
     NAME integration.release_metadata
     COMMAND ${CMAKE_COMMAND}
         -DPROJECT_ROOT=${PROJECT_SOURCE_DIR}
-        -DEXPECTED_VERSION=${PROJECT_VERSION}
+        -DICAD_EXECUTABLE=$<TARGET_FILE:icad>
+        -DEXPECTED_PROJECT_VERSION=${PROJECT_VERSION}
+        -DEXPECTED_RELEASE_VERSION=${ICAD_RELEASE_VERSION}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/integration/release_metadata.cmake
 )
 set_tests_properties(integration.release_metadata PROPERTIES LABELS "integration;release")

@@ -2,15 +2,91 @@ name: Release ICAD
 
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
   workflow_dispatch:
+    inputs:
+      channel:
+        description: Release channel; automatic main builds use alpha
+        required: true
+        default: auto
+        type: choice
+        options: [auto, alpha, beta, stable]
+
+concurrency:
+  group: icad-ordered-release
+  cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
+  version:
+    name: Generate ordered release version
+    runs-on: ubuntu-24.04
+    outputs:
+      release_tag: ${{ steps.version.outputs.release_tag }}
+      release_label: ${{ steps.version.outputs.release_label }}
+      package_version: ${{ steps.version.outputs.package_version }}
+      project_version: ${{ steps.version.outputs.project_version }}
+      channel: ${{ steps.version.outputs.channel }}
+      commit_count: ${{ steps.version.outputs.commit_count }}
+      changed_files: ${{ steps.version.outputs.changed_files }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Calculate next padded release number
+        id: version
+        shell: bash
+        env:
+          REQUESTED_CHANNEL: ${{ inputs.channel || 'auto' }}
+        run: |
+          latest_tag=$(git tag --list 'v0.0.[0-9][0-9][0-9]*' --sort=-version:refname | head -n 1)
+          latest_serial=0
+          if [[ "$latest_tag" =~ ^v0\.0\.([0-9]{3,})(-(alpha|beta|stable))?$ ]]; then
+            latest_serial=$((10#${BASH_REMATCH[1]}))
+          fi
+          next_serial=$((latest_serial + 1))
+          printf -v padded_serial '%03d' "$next_serial"
+
+          channel="$REQUESTED_CHANNEL"
+          if [[ "$channel" == auto || -z "$channel" ]]; then
+            channel=alpha
+          fi
+          case "$channel" in
+            alpha|beta|stable) ;;
+            *) echo "Unsupported release channel: $channel" >&2; exit 2 ;;
+          esac
+
+          if [[ -n "$latest_tag" ]]; then
+            commit_count=$(git rev-list --count "$latest_tag"..HEAD)
+            changed_files=$(git diff --name-only "$latest_tag"..HEAD | sed '/^$/d' | wc -l | tr -d ' ')
+          else
+            commit_count=1
+            changed_files=$(git diff-tree --no-commit-id --name-only -r HEAD | sed '/^$/d' | wc -l | tr -d ' ')
+          fi
+          release_label="0.0.${padded_serial}-${channel}"
+          package_version="0.0.${next_serial}-${channel}"
+          {
+            echo "release_tag=v${release_label}"
+            echo "release_label=${release_label}"
+            echo "package_version=${package_version}"
+            echo "project_version=0.0.${next_serial}"
+            echo "channel=${channel}"
+            echo "commit_count=${commit_count}"
+            echo "changed_files=${changed_files}"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "### ICAD release v${release_label}"
+            echo ""
+            echo "Ordered after ${latest_tag:-the start of the 0.0 release series}."
+            echo "Includes ${commit_count} commit(s) and ${changed_files} changed file(s)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
   native:
     name: ${{ matrix.asset }}
+    needs: version
     strategy:
       fail-fast: false
       matrix:
@@ -40,6 +116,8 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
           -DBUILD_TESTING=ON
           -DICAD_WARNINGS_AS_ERRORS=ON
+          -DICAD_PROJECT_VERSION=${{ needs.version.outputs.project_version }}
+          -DICAD_RELEASE_VERSION=${{ needs.version.outputs.package_version }}
           -DICAD_BUILD_DESKTOP_VIEWER=ON
       - name: Build
         run: cmake --build build --config Release --parallel
@@ -76,6 +154,7 @@ jobs:
 
   vscode:
     name: VS Code extension
+    needs: version
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
@@ -84,6 +163,9 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: editors/vscode/package-lock.json
+      - name: Apply generated package version
+        working-directory: editors/vscode
+        run: npm version "${{ needs.version.outputs.package_version }}" --no-git-tag-version --allow-same-version
       - name: Install and test extension
         working-directory: editors/vscode
         run: npm ci --ignore-scripts && npm test
@@ -96,7 +178,7 @@ jobs:
           path: build/icad-agentic-cad.vsix
           if-no-files-found: error
       - name: Publish to Visual Studio Marketplace when configured
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: needs.version.outputs.channel == 'stable'
         working-directory: editors/vscode
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
@@ -110,9 +192,18 @@ jobs:
 
   codex-plugin:
     name: Codex plugin and installers
+    needs: version
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
+      - name: Apply generated plugin version
+        env:
+          PLUGIN_VERSION: ${{ needs.version.outputs.package_version }}+codex.${{ github.run_id }}
+        run: |
+          temporary=$(mktemp)
+          jq --arg version "$PLUGIN_VERSION" '.version = $version' \
+            editors/vscode/codex-marketplace/plugins/icad-agentic-cad/.codex-plugin/plugin.json > "$temporary"
+          mv "$temporary" editors/vscode/codex-marketplace/plugins/icad-agentic-cad/.codex-plugin/plugin.json
       - name: Validate plugin metadata
         run: |
           jq -e '.name == "icad-agentic-cad" and (.version | length > 0) and .skills == "./skills/"' \
@@ -152,8 +243,7 @@ jobs:
 
   publish:
     name: GitHub Release
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [native, vscode, codex-plugin]
+    needs: [version, native, vscode, codex-plugin]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -165,9 +255,21 @@ jobs:
       - name: Create release and upload every platform package
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ needs.version.outputs.release_tag }}
+          RELEASE_LABEL: ${{ needs.version.outputs.release_label }}
+          PACKAGE_VERSION: ${{ needs.version.outputs.package_version }}
+          COMMIT_COUNT: ${{ needs.version.outputs.commit_count }}
+          CHANGED_FILES: ${{ needs.version.outputs.changed_files }}
         run: |
-          PACKAGE_VERSION=$(jq -r .version editors/vscode/package.json)
-          test "v$PACKAGE_VERSION" = "$RELEASE_TAG"
-          gh release view "$RELEASE_TAG" >/dev/null 2>&1 || gh release create "$RELEASE_TAG" --generate-notes
+          cat > release-notes.md <<EOF
+          Automated ICAD ${RELEASE_LABEL} release.
+
+          This ordered release contains ${COMMIT_COUNT} commit(s) and ${CHANGED_FILES} changed file(s).
+          The padded GitHub version maps to standards-compliant package version ${PACKAGE_VERSION}.
+          It includes the compiler, native ICAD Studio viewer, VS Code extension, Codex plugin,
+          cross-platform installers, and SHA-256 checksums.
+          EOF
+          gh release view "$RELEASE_TAG" >/dev/null 2>&1 || \
+            gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" --title "ICAD ${RELEASE_LABEL}" \
+              --notes-file release-notes.md
           find release-assets -type f -print0 | xargs -0 gh release upload "$RELEASE_TAG" --clobber

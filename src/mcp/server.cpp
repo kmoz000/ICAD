@@ -24,7 +24,7 @@ namespace icad::mcp {
 namespace {
 
 constexpr std::string_view current_protocol = "2026-07-28";
-constexpr std::string_view server_version = "0.21.0";
+constexpr std::string_view server_version = ICAD_VERSION;
 
 [[nodiscard]] auto object(std::initializer_list<json::Value::Object::value_type> values)
     -> json::Value {

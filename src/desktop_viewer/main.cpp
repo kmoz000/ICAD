@@ -4,6 +4,7 @@
 #include "icad/engine/session.hpp"
 
 #include <QAction>
+#include <QAbstractItemView>
 #include <QApplication>
 #include <QCommandLineOption>
 #include <QCommandLineParser>
@@ -12,10 +13,12 @@
 #include <QFileInfo>
 #include <QFileDialog>
 #include <QIcon>
+#include <QHeaderView>
 #include <QMessageBox>
 #include <QSurfaceFormat>
 #include <QTabBar>
 #include <QTreeView>
+#include <QTreeWidget>
 
 #include <filesystem>
 #include <iostream>
@@ -175,6 +178,7 @@ auto main(int argc, char** argv) -> int {
     if (parser.isSet(window_test_option)) {
         const auto* tabs = window.findChild<QTabBar*>(QStringLiteral("documentTabs"));
         const auto* workspace = window.findChild<QTreeView*>(QStringLiteral("workspaceTree"));
+        const auto* model = window.findChild<QTreeWidget*>(QStringLiteral("modelTree"));
         const bool has_open_folder = std::ranges::any_of(
             window.findChildren<QAction*>(), [](const QAction* action) {
                 return action->text().remove(QLatin1Char('&')) == QStringLiteral("Open Folder…");
@@ -182,7 +186,9 @@ auto main(int argc, char** argv) -> int {
         const int expected_tabs = std::max(1, static_cast<int>(positional.size()));
         if (tabs == nullptr || tabs->count() != expected_tabs ||
             window.document_count() != static_cast<std::size_t>(expected_tabs) || workspace == nullptr ||
-            workspace->model() == nullptr || !has_open_folder) {
+            workspace->model() == nullptr || window.workspace_root().empty() || model == nullptr ||
+            model->selectionBehavior() != QAbstractItemView::SelectRows ||
+            model->header()->sectionResizeMode(0) != QHeaderView::Stretch || !has_open_folder) {
             std::cerr << "QT_VIEWER_WINDOW_TEST failed: workspace shell is incomplete\n";
             return 3;
         }

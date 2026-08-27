@@ -38,6 +38,9 @@ class MainWindow final : public QMainWindow {
     [[nodiscard]] auto ready() const noexcept -> bool { return !documents_.empty(); }
     [[nodiscard]] auto error() const -> QString { return error_; }
     [[nodiscard]] auto document_count() const noexcept -> std::size_t { return documents_.size(); }
+    [[nodiscard]] auto workspace_root() const noexcept -> const std::filesystem::path& {
+        return workspace_root_;
+    }
     auto open_document(const std::filesystem::path& path) -> bool;
     auto open_workspace(const std::filesystem::path& path) -> bool;
     auto set_standard_view(StandardView view) -> void;
@@ -98,6 +101,8 @@ class MainWindow final : public QMainWindow {
     auto step_history(int direction) -> void;
     auto update_history_actions() -> void;
     auto set_scene_playing(bool enabled) -> void;
+    [[nodiscard]] static auto path_is_within(const std::filesystem::path& path,
+                                             const std::filesystem::path& directory) -> bool;
 
     std::vector<OpenDocument> documents_;
     std::uint64_t next_document_id_{1};

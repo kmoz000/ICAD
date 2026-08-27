@@ -2,7 +2,7 @@
   "name": "icad-agentic-cad",
   "displayName": "ICAD Agentic CAD",
   "description": "Language tooling, compiler commands, and viewer launch support for ICAD agentic 3D designs.",
-  "version": "0.21.0",
+  "version": "0.0.1-alpha",
   "publisher": "icad",
   "icon": "assets/icad-128.png",
   "license": "MIT",

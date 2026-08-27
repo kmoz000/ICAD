@@ -30,7 +30,7 @@
 
 namespace {
 
-constexpr std::string_view version = "0.21.0";
+constexpr std::string_view version = ICAD_VERSION;
 
 auto print_usage(std::ostream& output) -> void {
     output << "usage: icad check <source.icad>\n"

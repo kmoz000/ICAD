@@ -4,6 +4,7 @@
 #include "scene_model.hpp"
 
 #include <QAction>
+#include <QAbstractItemView>
 #include <QApplication>
 #include <QCloseEvent>
 #include <QDir>
@@ -115,14 +116,14 @@ MainWindow::MainWindow(std::filesystem::path source_path, QWidget* parent) : QMa
     viewport_->selection_changed = [this](std::optional<std::size_t> index) {
         update_selection(index);
     };
-    connect(model_tree_, &QTreeWidget::itemSelectionChanged, this, [this] {
-        const auto selected = model_tree_->selectedItems();
-        if (selected.empty()) {
+    connect(model_tree_, &QTreeWidget::currentItemChanged, this,
+            [this](QTreeWidgetItem* item) {
+        if (item == nullptr) {
             viewport_->select_part(std::nullopt);
             return;
         }
         bool ok = false;
-        const auto raw = selected.front()->data(0, Qt::UserRole).toULongLong(&ok);
+        const auto raw = item->data(0, Qt::UserRole).toULongLong(&ok);
         if (ok)
             viewport_->select_part(static_cast<std::size_t>(raw));
     });
@@ -188,6 +189,8 @@ auto MainWindow::build_ui() -> void {
     document_tabs_->setExpanding(false);
     document_tabs_->setMovable(false);
     document_tabs_->setTabsClosable(true);
+    document_tabs_->setUsesScrollButtons(true);
+    document_tabs_->setSelectionBehaviorOnRemove(QTabBar::SelectPreviousTab);
     document_tabs_->setElideMode(Qt::ElideMiddle);
     central_layout->addWidget(document_tabs_);
 
@@ -216,6 +219,7 @@ auto MainWindow::build_ui() -> void {
     workspace_tree_->setModel(workspace_model_);
     workspace_tree_->setHeaderHidden(true);
     workspace_tree_->setAnimated(true);
+    workspace_tree_->setExpandsOnDoubleClick(true);
     workspace_tree_->setIndentation(16);
     workspace_tree_->setUniformRowHeights(true);
     workspace_tree_->setTextElideMode(Qt::ElideMiddle);
@@ -235,13 +239,22 @@ auto MainWindow::build_ui() -> void {
     addDockWidget(Qt::BottomDockWidgetArea, diagnostics_dock_);
 
     model_tree_ = new QTreeWidget{this};
+    model_tree_->setObjectName(QStringLiteral("modelTree"));
     model_tree_->setHeaderLabels({QStringLiteral("Component"), QStringLiteral("Material")});
+    model_tree_->setRootIsDecorated(false);
+    model_tree_->setAlternatingRowColors(true);
+    model_tree_->setSelectionBehavior(QAbstractItemView::SelectRows);
+    model_tree_->setSelectionMode(QAbstractItemView::SingleSelection);
+    model_tree_->setUniformRowHeights(true);
+    model_tree_->setAllColumnsShowFocus(true);
+    model_tree_->header()->setMinimumSectionSize(90);
     model_tree_->header()->setStretchLastSection(false);
     model_tree_->header()->setSectionResizeMode(0, QHeaderView::Stretch);
     model_tree_->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
     auto* model_dock = new QDockWidget{QStringLiteral("Model"), this};
     model_dock->setObjectName(QStringLiteral("modelDock"));
     model_dock->setWidget(model_tree_);
+    model_dock->setMinimumWidth(300);
     addDockWidget(Qt::RightDockWidgetArea, model_dock);
 
     auto* scene_panel = new QWidget{this};
@@ -438,6 +451,7 @@ auto MainWindow::open_folder(const std::filesystem::path& path) -> bool {
     const QModelIndex root = workspace_model_->setRootPath(to_qstring(workspace_root_));
     workspace_tree_->setRootIndex(root);
     workspace_tree_->setCurrentIndex(root);
+    workspace_tree_->expandToDepth(1);
     workspace_dock_->setWindowTitle(
         QStringLiteral("Workspace — %1").arg(QFileInfo{to_qstring(workspace_root_)}.fileName()));
     QSettings{}.setValue(QStringLiteral("workspaceFolder"), to_qstring(workspace_root_));
@@ -472,7 +486,7 @@ auto MainWindow::open_source(const std::filesystem::path& path) -> bool {
     documents_.push_back(std::move(document));
     document_tabs_->addTab(QFileInfo{to_qstring(absolute)}.fileName());
     document_tabs_->setCurrentIndex(static_cast<int>(documents_.size()) - 1);
-    if (absolute.parent_path() != workspace_root_)
+    if (workspace_root_.empty() || !path_is_within(absolute, workspace_root_))
         open_folder(absolute.parent_path());
     update_recent_files(absolute);
     return true;
@@ -483,6 +497,17 @@ auto MainWindow::active_document() -> OpenDocument* {
         active_document_index_ >= static_cast<int>(documents_.size()))
         return nullptr;
     return &documents_[static_cast<std::size_t>(active_document_index_)];
+}
+
+auto MainWindow::path_is_within(const std::filesystem::path& path,
+                                const std::filesystem::path& directory) -> bool {
+    if (directory.empty())
+        return false;
+    const auto relative = path.lexically_normal().lexically_relative(directory.lexically_normal());
+    if (relative.empty())
+        return path.lexically_normal() == directory.lexically_normal();
+    const auto first = relative.begin();
+    return first != relative.end() && *first != std::filesystem::path{".."};
 }
 
 auto MainWindow::active_document() const -> const OpenDocument* {
@@ -863,6 +888,8 @@ auto MainWindow::rebuild_model_tree() -> void {
         item->setToolTip(0, part.body.isEmpty() ? part.name : part.body);
         item->setData(0, Qt::UserRole, static_cast<qulonglong>(index));
     }
+    model_tree_->header()->resizeSection(1,
+        std::max(model_tree_->header()->sectionSizeHint(1), 90));
 }
 
 auto MainWindow::rebuild_scene_panel() -> void {
@@ -886,8 +913,10 @@ auto MainWindow::update_selection(std::optional<std::size_t> index) -> void {
         return;
     }
     const auto& part = viewport_->scene().parts[*index];
-    if (auto* item = model_tree_->topLevelItem(static_cast<int>(*index)); item != nullptr)
-        item->setSelected(true);
+    if (auto* item = model_tree_->topLevelItem(static_cast<int>(*index)); item != nullptr) {
+        model_tree_->setCurrentItem(item);
+        model_tree_->scrollToItem(item, QAbstractItemView::EnsureVisible);
+    }
     properties_->setText(QStringLiteral("<b>%1</b><br>Body: %2<br>Material: %3<br>Triangles: %4<br>Bounds: [%5, %6, %7] — [%8, %9, %10] mm")
                              .arg(part.name, part.body, part.material)
                              .arg(static_cast<qulonglong>(part.index_count / 3U))

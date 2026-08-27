@@ -1,6 +1,6 @@
 {
   "name": "icad-agentic-cad",
-  "version": "0.21.0+codex.20260825001207",
+  "version": "0.0.1-alpha+codex.20260825001207",
   "description": "Blueprint-aware prompt compression, visual.json feedback, native agentic CAD design, live editing, mechanisms, standards-aware assembly, validation, animation, and manufacturing export with ICAD.",
   "author": {
     "name": "ICAD Project"

@@ -21,8 +21,9 @@ desktop CAD API.
 
 ICAD is available under the [MIT License](LICENSE).
 
-Tagged releases are built by GitHub Actions for Linux, Windows, Intel macOS,
-Apple Silicon macOS, and VS Code. See [the release guide](docs/releasing.md).
+Ordered releases are built automatically from `main` by GitHub Actions for
+Linux, Windows, Intel macOS, Apple Silicon macOS, VS Code, and Codex. Release
+tags begin at `v0.0.001-alpha`; see [the release guide](docs/releasing.md).
 
 ## Install ICAD for Codex
 
@@ -111,8 +112,8 @@ Invoke-WebRequest https://github.com/kmoz000/ICAD/releases/latest/download/insta
 & $installer -DependenciesOnly
 ```
 
-To pin all downloads to a specific release, add `--version v0.21.0` on macOS
-or Linux, or `-Version v0.21.0` on Windows.
+To pin all downloads to a specific release, add `--version v0.0.001-alpha` on
+macOS or Linux, or `-Version v0.0.001-alpha` on Windows.
 
 ### Fully manual native installation
 
