@@ -48,10 +48,16 @@ namespace {
 } // namespace
 
 Session::Session(std::filesystem::path source_path)
-    : impl_{std::make_unique<Impl>(std::move(source_path))} {}
-Session::Session(Session&&) noexcept = default;
-auto Session::operator=(Session&&) noexcept -> Session& = default;
-Session::~Session() = default;
+    : impl_{new Impl{std::move(source_path)}} {}
+Session::Session(Session&& other) noexcept : impl_{std::exchange(other.impl_, nullptr)} {}
+auto Session::operator=(Session&& other) noexcept -> Session& {
+    if (this != &other) {
+        delete impl_;
+        impl_ = std::exchange(other.impl_, nullptr);
+    }
+    return *this;
+}
+Session::~Session() { delete impl_; }
 
 auto Session::ready() const -> bool {
     const std::lock_guard lock{impl_->mutex};

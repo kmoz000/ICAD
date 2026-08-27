@@ -6,7 +6,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
-#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -70,7 +69,7 @@ class ICAD_ENGINE_API Session {
 
   private:
     class Impl;
-    std::unique_ptr<Impl> impl_;
+    Impl* impl_{};
 };
 
 } // namespace icad::engine

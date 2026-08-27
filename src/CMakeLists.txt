@@ -95,7 +95,9 @@ if(ICAD_BUILD_DESKTOP_VIEWER)
         desktop_viewer/resources.qrc
         engine/session.cpp
     )
-    target_compile_definitions(icad-viewer PRIVATE ICAD_VERSION="${ICAD_RELEASE_VERSION}")
+    target_compile_definitions(icad-viewer PRIVATE
+        ICAD_ENGINE_BUILD
+        ICAD_VERSION="${ICAD_RELEASE_VERSION}")
     target_link_libraries(icad-viewer PRIVATE
         ICAD::compiler
         Qt6::Core
