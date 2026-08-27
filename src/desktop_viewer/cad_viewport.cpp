@@ -466,8 +466,11 @@ auto CadViewport::paintGL() -> void {
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
     glDepthMask(GL_TRUE);
-    glClearDepth(1.0);
-    glDepthRange(0.0, 1.0);
+    // Use QOpenGLFunctions' portable float entry points. Calling the desktop
+    // GL symbols directly links on macOS/Linux but leaves unresolved imports
+    // in the Windows Qt build.
+    glClearDepthf(1.0F);
+    glDepthRangef(0.0F, 1.0F);
     glDisable(GL_CULL_FACE);
     QVector4D background{0.035F, 0.047F, 0.063F, 1.0F};
     if (!scene_.scenes.empty()) {
