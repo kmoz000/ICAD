@@ -8,12 +8,6 @@ package. `integration.release_metadata` enforces that contract.
    `editors/vscode/package.json` match the intended tag.
 3. Push an exact semantic-version tag such as `v0.21.0`.
 
-The four-platform native packaging matrix runs the release suite with the
-`benchmark` CTest label excluded. Model-corpus and agent benchmarks remain in
-the repository and run explicitly through `make benchmark`; unit, integration,
-release metadata, sandbox, viewer, install, and archive verification still gate
-every branch build and release package.
-
 The `Release ICAD` workflow builds and tests the CLI plus native Qt/OpenGL
 desktop viewer on Linux x86-64, Windows x86-64, Intel macOS, and
 Apple Silicon macOS. It packages the bundled VS Code extension, verifies the tag

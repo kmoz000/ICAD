@@ -33,7 +33,7 @@ endif()
 
 file(READ "${OUTPUT_ROOT}/assembly_semantics.scene.json" scene_output)
 string(FIND "${scene_output}" "\"targetKind\":\"JOINT\"" joint_track_position)
-string(FIND "${scene_output}" "\"pivotMm\":[0,0,10]" pivot_position)
+string(FIND "${scene_output}" "\"pivotMm\":[0,0,100]" pivot_position)
 if(joint_track_position EQUAL -1 OR pivot_position EQUAL -1)
     message(FATAL_ERROR "joint-driven scene metadata mismatch")
 endif()

@@ -17,10 +17,8 @@ jobs:
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON -DICAD_WARNINGS_AS_ERRORS=ON
       - name: Build
         run: cmake --build build --parallel
-      - name: Test compiler suite
-        # The model-corpus benchmarks depend on large reference fixtures and
-        # are run explicitly with `make benchmark`, not as a blocking CI gate.
-        run: ctest --test-dir build --output-on-failure -LE benchmark
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
 
   extension:
     runs-on: ubuntu-24.04
