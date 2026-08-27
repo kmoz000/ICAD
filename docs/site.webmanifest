@@ -6,5 +6,5 @@
   "display": "standalone",
   "background_color": "#08111f",
   "theme_color": "#08111f",
-  "icons": [{"src": "assets/icad-mark.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"}]
+  "icons": [{"src": "assets/icad-logo.png", "sizes": "512x512", "type": "image/png", "purpose": "any"}]
 }

@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
-  <title id="title">ICAD</title>
-  <defs><linearGradient id="g" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse"><stop stop-color="#44f2cf"/><stop offset="1" stop-color="#00a88e"/></linearGradient></defs>
-  <rect x="2" y="2" width="60" height="60" rx="17" fill="#0a1724" stroke="#264151" stroke-width="2"/>
-  <path d="m32 12 18 10.5v19L32 52 14 41.5v-19L32 12Z" fill="none" stroke="url(#g)" stroke-width="3" stroke-linejoin="round"/>
-  <path d="m14.5 22.8 17.5 10 17.5-10M32 33v19" fill="none" stroke="url(#g)" stroke-width="3" stroke-linejoin="round"/>
-  <path d="m23 27.7 9-5.2 9 5.2-9 5.2-9-5.2Z" fill="#d9fff8" opacity=".92"/>
-</svg>

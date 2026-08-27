@@ -36,6 +36,9 @@ button { font: inherit; }
 .nav { min-height: 72px; display: flex; align-items: center; justify-content: space-between; gap: 28px; }
 .brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 900; letter-spacing: -.04em; font-size: 20px; }
 .brand img { display: block; }
+.hero-logo, .cta-logo { display: block; width: 92px; height: 92px; object-fit: contain; border-radius: 20px; box-shadow: 0 18px 50px rgba(0,0,0,.28); }
+.hero-logo { margin-bottom: 22px; }
+.cta-logo { margin: 0 auto 24px; }
 .nav-links { display: flex; align-items: center; gap: 30px; margin-left: auto; }
 .nav-links a, .footer-links a { color: var(--muted); font-size: 14px; transition: color .2s ease; }
 .nav-links a:hover, .footer-links a:hover { color: var(--text); }
@@ -227,6 +230,7 @@ button { font: inherit; }
   .nav-links { display: none; }
   .nav-github span { display: none; }
   .hero { min-height: auto; gap: 50px; padding-block: 64px 72px; }
+  .hero-logo { width: 76px; height: 76px; border-radius: 17px; }
   .hero h1 { font-size: clamp(46px, 15vw, 68px); }
   .hero-lede { font-size: 16px; }
   .hero-stats { gap: 15px; }
