@@ -291,11 +291,22 @@ auto main(int argc, char** argv) -> int {
             tabs->setCurrentIndex(expected_tabs - 1);
             application.processEvents(QEventLoop::AllEvents, 20);
             QFile source_file{moved_path};
-            if (!source_file.open(QIODevice::ReadOnly) ||
-                editor->toPlainText() != QString::fromUtf8(source_file.readAll()) ||
+            QString expected_source;
+            const bool source_opened = source_file.open(QIODevice::ReadOnly);
+            if (source_opened) {
+                expected_source = QString::fromUtf8(source_file.readAll());
+                expected_source.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
+                expected_source.replace(QLatin1Char('\r'), QLatin1Char('\n'));
+            }
+            if (!source_opened || editor->toPlainText() != expected_source ||
                 !window.windowTitle().contains(QFileInfo{moved_path}.fileName()) ||
                 model->topLevelItemCount() == 0) {
-                std::cerr << "QT_VIEWER_WINDOW_TEST failed: moved tab lost its document identity\n";
+                std::cerr << "QT_VIEWER_WINDOW_TEST failed: moved tab lost its document identity"
+                          << " source_opened=" << source_opened
+                          << " source_matches=" << (editor->toPlainText() == expected_source)
+                          << " title=" << window.windowTitle().toStdString()
+                          << " expected_file=" << QFileInfo{moved_path}.fileName().toStdString()
+                          << " parts=" << model->topLevelItemCount() << '\n';
                 return 7;
             }
         }
