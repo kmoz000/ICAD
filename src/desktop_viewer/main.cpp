@@ -10,14 +10,20 @@
 #include <QCommandLineParser>
 #include <QCoreApplication>
 #include <QDir>
+#include <QElapsedTimer>
+#include <QEventLoop>
+#include <QFile>
 #include <QFileInfo>
 #include <QFileDialog>
 #include <QIcon>
 #include <QHeaderView>
+#include <QLabel>
 #include <QMessageBox>
+#include <QPlainTextEdit>
 #include <QPixmap>
 #include <QSurfaceFormat>
 #include <QTabBar>
+#include <QThread>
 #include <QTimer>
 #include <QTreeView>
 #include <QTreeWidget>
@@ -25,6 +31,7 @@
 #include <filesystem>
 #include <iostream>
 #include <algorithm>
+#include <memory>
 #include <ranges>
 #include <optional>
 #include <span>
@@ -211,9 +218,12 @@ auto main(int argc, char** argv) -> int {
     window.set_standard_view(*initial_view);
     window.set_display_mode(*initial_display);
     if (parser.isSet(window_test_option)) {
-        const auto* tabs = window.findChild<QTabBar*>(QStringLiteral("documentTabs"));
+        window.show();
+        auto* tabs = window.findChild<QTabBar*>(QStringLiteral("documentTabs"));
         const auto* workspace = window.findChild<QTreeView*>(QStringLiteral("workspaceTree"));
         const auto* model = window.findChild<QTreeWidget*>(QStringLiteral("modelTree"));
+        const auto* editor = window.findChild<QPlainTextEdit*>(QStringLiteral("sourceEditor"));
+        const auto* compile_state = window.findChild<QLabel*>(QStringLiteral("compileState"));
         const bool has_open_folder = std::ranges::any_of(
             window.findChildren<QAction*>(), [](const QAction* action) {
                 return action->text().remove(QLatin1Char('&')) == QStringLiteral("Open Folder…");
@@ -236,11 +246,58 @@ auto main(int argc, char** argv) -> int {
             tabs->height() > 40 || !tabs->isMovable() || tabs->elideMode() != Qt::ElideRight ||
             window.document_count() != static_cast<std::size_t>(expected_tabs) || workspace == nullptr ||
             workspace->model() == nullptr || window.workspace_root().empty() || model == nullptr ||
+            editor == nullptr || compile_state == nullptr ||
             model->selectionBehavior() != QAbstractItemView::SelectRows ||
             model->header()->sectionResizeMode(0) != QHeaderView::Stretch || !has_open_folder ||
             !has_frame_selected || !has_mesh_mode || !has_scene_lighting) {
             std::cerr << "QT_VIEWER_WINDOW_TEST failed: workspace shell is incomplete\n";
             return 3;
+        }
+        const auto wait_for_preview = [&application, model, compile_state] {
+            QElapsedTimer elapsed;
+            elapsed.start();
+            while (elapsed.elapsed() < 60000) {
+                application.processEvents(QEventLoop::AllEvents, 20);
+                if (model->topLevelItemCount() > 0 &&
+                    compile_state->text().startsWith(QStringLiteral("Preview"))) {
+                    return true;
+                }
+                QThread::msleep(2);
+            }
+            return false;
+        };
+        if (!wait_for_preview()) {
+            std::cerr << "QT_VIEWER_WINDOW_TEST failed: active document did not compile automatically\n";
+            return 4;
+        }
+        if (expected_tabs > 1) {
+            tabs->setCurrentIndex(0);
+            if (!wait_for_preview()) {
+                std::cerr << "QT_VIEWER_WINDOW_TEST failed: switched document did not compile automatically\n";
+                return 5;
+            }
+            tabs->setCurrentIndex(expected_tabs - 1);
+            if (model->topLevelItemCount() == 0 ||
+                !compile_state->text().startsWith(QStringLiteral("Preview"))) {
+                std::cerr << "QT_VIEWER_WINDOW_TEST failed: cached preview was not restored immediately"
+                          << " tab=" << tabs->currentIndex()
+                          << " title=" << window.windowTitle().toStdString()
+                          << " parts=" << model->topLevelItemCount()
+                          << " state=" << compile_state->text().toStdString() << '\n';
+                return 6;
+            }
+            const QString moved_path = tabs->tabToolTip(0);
+            tabs->moveTab(0, expected_tabs - 1);
+            tabs->setCurrentIndex(expected_tabs - 1);
+            application.processEvents(QEventLoop::AllEvents, 20);
+            QFile source_file{moved_path};
+            if (!source_file.open(QIODevice::ReadOnly) ||
+                editor->toPlainText() != QString::fromUtf8(source_file.readAll()) ||
+                !window.windowTitle().contains(QFileInfo{moved_path}.fileName()) ||
+                model->topLevelItemCount() == 0) {
+                std::cerr << "QT_VIEWER_WINDOW_TEST failed: moved tab lost its document identity\n";
+                return 7;
+            }
         }
         std::cout << "QT_VIEWER_WINDOW_TEST passed\n";
         return 0;
@@ -279,15 +336,31 @@ auto main(int argc, char** argv) -> int {
             std::cerr << "icad-viewer: could not create the Studio snapshot output directory\n";
             return 2;
         }
-        QTimer::singleShot(1200, &application, [&window, &application, output] {
-            const bool saved = window.grab().save(output, "PNG");
-            if (saved)
-                std::cout << "ICAD_STUDIO_SNAPSHOT " << output.toStdString() << '\n';
-            else
-                std::cerr << "icad-viewer: could not write Studio snapshot "
-                          << output.toStdString() << '\n';
-            application.exit(saved ? 0 : 3);
+        auto elapsed = std::make_shared<QElapsedTimer>();
+        elapsed->start();
+        auto* capture_timer = new QTimer{&window};
+        capture_timer->setInterval(100);
+        QObject::connect(capture_timer, &QTimer::timeout, &window,
+                         [&window, &application, output, elapsed, capture_timer] {
+            const auto* state = window.findChild<QLabel*>(QStringLiteral("compileState"));
+            const QString text = state == nullptr ? QString{} : state->text();
+            const bool progress = text == QStringLiteral("Ready") ||
+                                  text.contains(QStringLiteral("Compiling")) ||
+                                  text.contains(QStringLiteral("Updating"));
+            if (progress && elapsed->elapsed() < 60000)
+                return;
+            capture_timer->stop();
+            QTimer::singleShot(180, &window, [&window, &application, output] {
+                const bool saved = window.grab().save(output, "PNG");
+                if (saved)
+                    std::cout << "ICAD_STUDIO_SNAPSHOT " << output.toStdString() << '\n';
+                else
+                    std::cerr << "icad-viewer: could not write Studio snapshot "
+                              << output.toStdString() << '\n';
+                application.exit(saved ? 0 : 3);
+            });
         });
+        capture_timer->start();
     }
     return QApplication::exec();
 }

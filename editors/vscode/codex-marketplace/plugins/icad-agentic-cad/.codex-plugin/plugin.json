@@ -1,17 +1,32 @@
 {
   "name": "icad-agentic-cad",
-  "version": "0.0.1-alpha+codex.20260827224923",
-  "description": "Blueprint-aware prompt compression, visual.json feedback, native agentic CAD design, live editing, mechanisms, standards-aware assembly, validation, animation, and manufacturing export with ICAD.",
+  "version": "0.0.1-alpha+codex.20260828172219",
+  "description": "Engineering-brief-first prompt preparation, blueprint reasoning, visual feedback, native agentic CAD design, standards-aware assembly, validation, animation, and manufacturing export with ICAD.",
   "author": {
     "name": "Valori Systems"
   },
+  "homepage": "https://icad.valorisystems.com/",
+  "repository": "https://github.com/valorisystems/ICAD",
+  "license": "Apache-2.0",
+  "keywords": [
+    "cad",
+    "3d-modeling",
+    "engineering",
+    "manufacturing",
+    "agentic-cad"
+  ],
   "skills": "./skills/",
   "interface": {
     "displayName": "ICAD Agentic CAD",
     "shortDescription": "Design and validate programmable native 3D models.",
-    "longDescription": "Guides Codex through one blueprint-aware concept pass, ICAD-only generation, direct visual.json feedback, and validated ICAD geometry, mechanisms, standards-aware manufacturing connections, materials, scenes, drawings, and artifacts.",
+    "longDescription": "Guides Codex through a traceable engineering preparation record before ICAD generation, followed by direct visual feedback and validated geometry, mechanisms, standards-aware manufacturing connections, materials, scenes, drawings, and artifacts.",
     "developerName": "Valori Systems",
     "category": "Developer Tools",
+    "websiteURL": "https://icad.valorisystems.com/",
+    "brandColor": "#00D8AE",
+    "composerIcon": "./assets/icad-app-icon.png",
+    "logo": "./assets/icad-logo.png",
+    "logoDark": "./assets/icad-logo.png",
     "capabilities": [
       "Design",
       "Validation",
@@ -23,7 +38,7 @@
       "Prompt Compression"
     ],
     "defaultPrompt": [
-      "Compress my request, conceptualize once, and create an ICAD model using visual.json feedback.",
+      "Prepare an engineering brief, conceptualize once, and create a professional ICAD model with visual feedback.",
       "Inspect this ICAD design and fix compiler diagnostics.",
       "Build an animated ICAD assembly and verify every export."
     ]

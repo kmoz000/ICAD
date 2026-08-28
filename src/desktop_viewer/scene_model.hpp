@@ -6,6 +6,7 @@
 #include <QVector4D>
 
 #include <cstdint>
+#include <cstddef>
 #include <string_view>
 #include <vector>
 
@@ -64,6 +65,7 @@ struct RenderScene {
 struct SceneParseResult {
     RenderScene scene;
     QString error;
+    std::size_t discarded_degenerate_triangles{};
 
     [[nodiscard]] auto ok() const noexcept -> bool { return error.isEmpty(); }
 };

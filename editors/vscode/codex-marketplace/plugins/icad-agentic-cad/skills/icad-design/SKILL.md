@@ -40,14 +40,26 @@ agent can inspect and revise.
 
 ## Raw prompt protocol
 
-1. Call MCP `icad.agent.conceptualize` exactly once for a new request. Treat its compressed tokens and blueprint plan as the internal brief.
-2. Expand the brief into hierarchy, envelope, dimensions, materials, kinematics, constraints, manufacturing intent, required views, and a scene.
-3. Emit only grammar advertised by the running `icad language` tool—no Markdown,
+1. Call MCP `icad.agent.conceptualize` exactly once for a new request.
+2. Expand its `engineeringPreparation` contract into a design preparation
+   record before choosing geometry. Separate given facts, derived dimensions,
+   reversible assumptions, and open decisions. Do not author source until the
+   record covers function, envelope, BOM, per-part construction, interfaces,
+   kinematics, tolerances, visual intent, deliverables, and measurable
+   acceptance. Ask only when an open decision changes safety, external fit, or
+   architecture; otherwise expose the assumption as a named parameter.
+3. Create a requirement-to-entity traceability map. Every important requirement
+   must lead to a planned parameter/body/feature/interface/joint and a visual or
+   numeric check.
+4. Emit only grammar advertised by the running `icad language` tool—no Markdown,
    prose, pseudocode, future syntax, or foreign CAD syntax. Design unfamiliar
    mechanism topology directly instead of forcing a maintained template.
-4. Compile, then call `icad.visualize`. Use only its direct `icad.visual.snapshot.v1` object as visual feedback. Read the legend/body bounds, front, right, top, isometric rasters, and joints.
-5. Revise named ICAD entities from the visual evidence without a second concept pass. Use `icad.compare` only after two independently acceptable candidates exist.
+5. Compile, then call `icad.visualize`. Use only its direct `icad.visual.snapshot.v1` object as visual feedback. Read the legend/body bounds, front, right, top, isometric rasters, and joints.
+6. Revise named ICAD entities from the visual evidence without a second concept pass. Use `icad.compare` only after two independently acceptable candidates exist.
 
+Read [references/design-preparation.md](references/design-preparation.md) for
+every new prompt-driven model. It defines the mandatory engineering brief,
+traceability gate, and anti-placeholder quality rules.
 Read [references/blueprint-concept-pass.md](references/blueprint-concept-pass.md) for image, drawing, and underspecified mechanical requests.
 Read [references/modeling-contract.md](references/modeling-contract.md) before
 authoring a manufactured part or articulated assembly. It defines the mandatory

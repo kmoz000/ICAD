@@ -4,12 +4,14 @@ Use these references together, with a strict authority order:
 
 1. The running compiler's `icad.language` response defines accepted syntax.
 2. `icad-grammar.ebnf` is the packaged, offline grammar snapshot.
-3. `modeling-contract.md` defines the sketch-to-assembly modeling discipline.
-4. `blueprint-concept-pass.md` is the token-efficient operational extraction.
-5. `blueprint-reading-complete.pdf` is the page-preserving source reference.
+3. `design-preparation.md` defines the engineering brief and traceability gate.
+4. `modeling-contract.md` defines the sketch-to-assembly modeling discipline.
+5. `blueprint-concept-pass.md` is the token-efficient operational extraction.
+6. `blueprint-reading-complete.pdf` is the page-preserving source reference.
 
-For ordinary ICAD generation, read the Markdown concept pass and modeling
-contract, then consult the EBNF for exact productions. Do not inject the full
+For ordinary ICAD generation, complete the design preparation record, read the
+Markdown concept pass and modeling contract, then consult the EBNF for exact
+productions. Do not inject the full
 PDF into every prompt. Consult the PDF only for drawing conventions, view
 selection, title blocks, dimensions, tolerances, sections, auxiliary views, or
 other page-level evidence not represented in the compressed guide.

@@ -210,6 +210,8 @@ auto main() -> int {
         !serialized.contains("\"schema\":\"icad.visual.snapshot.v1\"") ||
         !serialized.contains("\"schema\":\"icad.agent.comparison.v2\"") ||
         !serialized.contains("\"schema\":\"icad.agent.concept.v1\"") ||
+        !serialized.contains("\"schema\":\"icad.agent.engineering-preparation.v1\"") ||
+        !serialized.contains("\"requiredBeforeSource\":true") ||
         !serialized.contains("\"format\":\"ICAD_GRAMMAR_ONLY\"") ||
         !serialized.contains("\"firstOnlyBodies\":[\"part\"]") ||
         !serialized.contains("\"viewDelta\":{") ||

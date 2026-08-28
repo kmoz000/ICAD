@@ -51,6 +51,13 @@ class MainWindow final : public QMainWindow {
     auto closeEvent(QCloseEvent* event) -> void override;
 
   private:
+    struct DocumentPreview {
+        QString source;
+        engine::PreviewResult result;
+        std::optional<RenderScene> scene;
+        QString scene_error;
+    };
+
     struct OpenDocument {
         std::uint64_t id{};
         std::filesystem::path path;
@@ -58,6 +65,7 @@ class MainWindow final : public QMainWindow {
         QString source;
         QString saved_source;
         std::vector<QString> edit_history;
+        std::optional<DocumentPreview> preview;
         int history_index{-1};
         bool modified{false};
     };
@@ -75,8 +83,11 @@ class MainWindow final : public QMainWindow {
     auto open_folder_dialog() -> void;
     auto open_folder(const std::filesystem::path& path) -> bool;
     auto open_source(const std::filesystem::path& path) -> bool;
-    auto switch_document(int index) -> void;
-    auto close_document(int index) -> void;
+    auto switch_document(int tab_index) -> void;
+    auto close_document(int tab_index) -> void;
+    [[nodiscard]] auto document_index_for_id(std::uint64_t id) const -> int;
+    [[nodiscard]] auto document_index_for_tab(int tab_index) const -> int;
+    [[nodiscard]] auto tab_index_for_document_id(std::uint64_t id) const -> int;
     [[nodiscard]] auto confirm_close_document(int index) -> bool;
     [[nodiscard]] auto save_document(int index) -> bool;
     [[nodiscard]] auto active_document() -> OpenDocument*;
@@ -89,6 +100,9 @@ class MainWindow final : public QMainWindow {
     auto schedule_compile() -> void;
     auto begin_compile() -> void;
     auto finish_compile() -> void;
+    auto clear_preview_panels() -> void;
+    auto apply_preview(const DocumentPreview& preview) -> void;
+    auto restore_document_preview(const OpenDocument& document) -> void;
     auto update_diagnostics(const engine::PreviewResult& result) -> void;
     auto rebuild_model_tree() -> void;
     auto rebuild_scene_panel() -> void;

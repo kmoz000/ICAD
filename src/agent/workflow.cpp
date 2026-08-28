@@ -321,10 +321,48 @@ auto conceptualize_json(std::string_view prompt) -> std::string {
                                "use section view for hidden internal detail",
                                "use auxiliary view for true inclined-surface shape"})},
          })},
+        {"engineeringPreparation", object({
+             {"schema", "icad.agent.engineering-preparation.v1"},
+             {"status", "REQUIRES_AGENT_COMPLETION"},
+             {"requiredBeforeSource", true},
+             {"evidenceClasses", array({"given", "derived", "assumed", "open"})},
+             {"requiredSections", array({
+                  "purpose, operating conditions, loads, duty cycle, and failure modes",
+                  "units, coordinate system, envelope, keep-outs, datums, and clearances",
+                  "component BOM, quantities, roles, ownership, and grounded body",
+                  "per-part material, process, stock, construction history, and critical features",
+                  "two-sided interfaces, standards, hardware, engagement, access, and assembly direction",
+                  "kinematic graph, joint anchors, axes, limits, home state, and collision envelope",
+                  "general and critical tolerances, fits, hole sizes, edge distances, and inspection dimensions",
+                  "identifying silhouette, required views, connectors, cable paths, and appearance",
+                  "deliverables plus measurable geometry, interface, motion, interference, and read-back acceptance",
+             })},
+             {"decisionPolicy", object({
+                  {"askWhen", array({"safety changes", "external fit changes",
+                                      "component architecture changes",
+                                      "manufacturing process cannot be inferred safely"})},
+                  {"assumeWhen", "The missing choice is non-critical, reversible, and exposed as an editable named parameter"},
+                  {"prohibit", array({"invented safety or fit facts",
+                                       "untraceable standards or materials",
+                                       "vague adjectives used as dimensions"})},
+             })},
+             {"traceability", object({
+                  {"required", true},
+                  {"mapping", "requirement -> named ICAD entity -> visual or numeric verification"},
+                  {"entityKinds", array({"PARAMETER", "BODY", "FEATURE", "INTERFACE", "JOINT", "SCENE"})},
+             })},
+             {"professionalGeometry", array({
+                  "Model details that control fit, manufacture, assembly, function, or recognizable silhouette",
+                  "Never shrink, flatten, hide, or substitute real hardware to pass interference checks",
+                  "Keep part files and repeated assembly definitions dimensionally consistent",
+                  "Require useful nonzero geometry and a successful four-view render for every intended body",
+             })},
+         })},
         {"conceptualRequest",
-         "Expand the compressed tokens once into a complete component hierarchy, spatial envelope, "
-         "size/location dimensions, materials, kinematic graph, constraints, manufacturing intent, "
-         "and inspection scene. Then emit only dependency-ordered ICAD grammar."},
+         "Complete engineeringPreparation once, including evidence labels and requirement traceability. "
+         "Then expand it into a complete component hierarchy, spatial envelope, size/location dimensions, "
+         "materials, kinematic graph, constraints, manufacturing intent, and inspection scene before "
+         "emitting dependency-ordered ICAD grammar."},
         {"outputContract", object({
              {"format", "ICAD_GRAMMAR_ONLY"},
              {"allowMarkdown", false},
@@ -340,6 +378,8 @@ auto conceptualize_json(std::string_view prompt) -> std::string {
                                     {"next", "Compile source and call icad.visualize directly"}})},
         {"iterationProtocol", array({
              "Run this conceptualization pass exactly once",
+             "Complete the engineering preparation record and resolve architecture-critical open decisions",
+             "Map every important requirement to a named ICAD entity and verification check",
              "Emit one complete ICAD source document only",
              "Compile and repair stable diagnostics without reconceptualizing",
              "Call icad.visualize and consume icad.visual.snapshot.v1",

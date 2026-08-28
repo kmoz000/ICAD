@@ -21,6 +21,10 @@ auto main() -> int {
     if (!concept_json.contains("\"schema\":\"icad.agent.concept.v1\"") ||
         !concept_json.contains("\"conceptualIterations\":1") ||
         !concept_json.contains("DOMAIN:ROBOTIC_MANIPULATOR") ||
+        !concept_json.contains("\"schema\":\"icad.agent.engineering-preparation.v1\"") ||
+        !concept_json.contains("\"requiredBeforeSource\":true") ||
+        !concept_json.contains("requirement -> named ICAD entity -> visual or numeric verification") ||
+        !concept_json.contains("Never shrink, flatten, hide, or substitute real hardware") ||
         !concept_json.contains("\"format\":\"ICAD_GRAMMAR_ONLY\"") ||
         !concept_json.contains("\"requiredSchema\":\"icad.visual.snapshot.v1\"") ||
         !concept_json.contains("\"available\":false")) {

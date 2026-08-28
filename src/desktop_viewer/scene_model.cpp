@@ -172,9 +172,15 @@ auto parse_render_scene(std::string_view source) -> SceneParseResult {
             const QVector3D first_edge = positions[local[1]] - positions[local[0]];
             const QVector3D second_edge = positions[local[2]] - positions[local[0]];
             QVector3D normal = QVector3D::crossProduct(first_edge, second_edge);
-            if (qFuzzyIsNull(normal.lengthSquared())) {
-                result.error = QStringLiteral("Part '%1' has a degenerate triangle").arg(part.name);
-                return result;
+            // qFuzzyIsNull(float) uses a tolerance that is far too large for
+            // millimetre CAD meshes. It incorrectly rejected small but valid
+            // chamfer, thread, and bolt-clearance facets and blanked the whole
+            // viewport. Only discard triangles that are genuinely collapsed
+            // at the precision used by the GPU.
+            const float area_squared = normal.lengthSquared();
+            if (!std::isfinite(area_squared) || area_squared <= 1.0e-18F) {
+                ++result.discarded_degenerate_triangles;
+                continue;
             }
             normal.normalize();
             SourceTriangle triangle{{local[0], local[1], local[2]}, normal, {}};

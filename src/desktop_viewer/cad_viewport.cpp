@@ -48,7 +48,7 @@ uniform float scene_radius;
 out vec4 fragment;
 void main() {
     vec3 n = normalize(gl_FrontFacing ? eye_normal : -eye_normal);
-    vec3 illumination = vec3(0.18);
+    vec3 illumination = vec3(0.24);
     if (light_count == 0) {
         vec3 key = normalize(vec3(0.35, 0.55, 0.75));
         vec3 fill = normalize(vec3(-0.7, 0.1, 0.4));
@@ -70,6 +70,13 @@ void main() {
         }
     }
     vec3 color = base_color.rgb * min(illumination, vec3(1.4));
+    // Dark plastics, rubber, and carbon finishes still need readable form on
+    // the dark Studio background. A restrained neutral Fresnel fill behaves
+    // like an environment reflection and does not rewrite the authored color.
+    vec3 view_direction = normalize(-eye_position);
+    float rim = pow(1.0 - clamp(abs(dot(n, view_direction)), 0.0, 1.0), 2.0);
+    color = max(color, base_color.rgb * 0.46);
+    color += vec3(0.070, 0.082, 0.095) * (0.50 + rim * 1.25);
     color = mix(color, vec3(0.12, 0.72, 1.0), selected * 0.48);
     fragment = vec4(color, 1.0);
 }

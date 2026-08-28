@@ -33,11 +33,14 @@
 #include <QTabBar>
 #include <QTreeView>
 #include <QTreeWidget>
+#include <QVariant>
 #include <QVBoxLayout>
 #include <QtConcurrent/QtConcurrentRun>
 
 #include <algorithm>
 #include <chrono>
+#include <iterator>
+#include <ranges>
 #include <string>
 #include <utility>
 
@@ -159,7 +162,8 @@ MainWindow::MainWindow(std::filesystem::path source_path, QWidget* parent) : QMa
     documents_.push_back(std::move(initial));
     {
         const QSignalBlocker blocker{document_tabs_};
-        document_tabs_->addTab(QFileInfo{to_qstring(absolute_path)}.fileName());
+        const int tab = document_tabs_->addTab(QFileInfo{to_qstring(absolute_path)}.fileName());
+        document_tabs_->setTabData(tab, QVariant::fromValue<qulonglong>(documents_.front().id));
     }
     switch_document(0);
     open_folder(absolute_path.parent_path());
@@ -295,6 +299,7 @@ auto MainWindow::build_ui() -> void {
     scene_dock->raise();
 
     compile_state_ = new QLabel{QStringLiteral("Ready"), this};
+    compile_state_->setObjectName(QStringLiteral("compileState"));
     metrics_ = new QLabel{this};
     statusBar()->addWidget(compile_state_);
     statusBar()->addPermanentWidget(metrics_);
@@ -323,7 +328,7 @@ auto MainWindow::build_actions() -> void {
     file_menu->addSeparator();
     auto* close = file_menu->addAction(QStringLiteral("Close Tab"), QKeySequence::Close);
     connect(close, &QAction::triggered, this,
-            [this] { close_document(active_document_index_); });
+            [this] { close_document(document_tabs_->currentIndex()); });
     close->setMenuRole(QAction::NoRole);
     auto* quit = file_menu->addAction(QStringLiteral("Quit ICAD Studio"), QKeySequence::Quit,
                                       this, &QWidget::close);
@@ -439,8 +444,12 @@ auto MainWindow::apply_theme() -> void {
         QTabBar#documentTabs::tab { background:#292a2e; color:#aeb0b6; border:0; border-radius:7px 7px 0 0; min-width:104px; max-width:210px; height:31px; padding:0 10px; margin-right:3px; }
         QTabBar#documentTabs::tab:hover { background:#35363b; color:#f2f2f7; }
         QTabBar#documentTabs::tab:selected { background:#3a3b40; color:#ffffff; border-bottom:2px solid #0a84ff; }
-        QTabBar#documentTabs QToolButton { background:transparent; border:0; border-radius:4px; padding:0; margin:0 5px 0 2px; min-width:16px; max-width:16px; min-height:16px; max-height:16px; qproperty-iconSize:10px 10px; }
-        QTabBar#documentTabs QToolButton:hover { background:#55565c; }
+        QTabBar#documentTabs::close-button { background:transparent; border:0; border-radius:4px; width:16px; height:16px; margin:0 4px 0 2px; }
+        QTabBar#documentTabs::close-button:hover { background:#55565c; }
+        QTabBar#documentTabs QToolButton#ScrollLeftButton,
+        QTabBar#documentTabs QToolButton#ScrollRightButton { background:#292a2e; border:0; border-radius:4px; padding:0; margin:3px 1px; min-width:22px; max-width:22px; min-height:30px; max-height:30px; }
+        QTabBar#documentTabs QToolButton#ScrollLeftButton:hover,
+        QTabBar#documentTabs QToolButton#ScrollRightButton:hover { background:#45464b; }
         QStatusBar { background:#202124; border-top:1px solid #36373b; }
         QSlider::groove:horizontal { background:#45464b; height:5px; border-radius:3px; }
         QSlider::handle:horizontal { background:#0a84ff; width:14px; margin:-5px 0; border-radius:7px; }
@@ -500,9 +509,9 @@ auto MainWindow::open_folder(const std::filesystem::path& path) -> bool {
 
 auto MainWindow::open_source(const std::filesystem::path& path) -> bool {
     const auto absolute = std::filesystem::absolute(path).lexically_normal();
-    for (std::size_t index = 0; index < documents_.size(); ++index) {
-        if (documents_[index].path == absolute) {
-            document_tabs_->setCurrentIndex(static_cast<int>(index));
+    for (const auto& document : documents_) {
+        if (document.path == absolute) {
+            document_tabs_->setCurrentIndex(tab_index_for_document_id(document.id));
             return true;
         }
     }
@@ -521,12 +530,39 @@ auto MainWindow::open_source(const std::filesystem::path& path) -> bool {
     document.edit_history.push_back(document.source);
     document.history_index = 0;
     documents_.push_back(std::move(document));
-    document_tabs_->addTab(QFileInfo{to_qstring(absolute)}.fileName());
-    document_tabs_->setCurrentIndex(static_cast<int>(documents_.size()) - 1);
+    const auto& opened = documents_.back();
+    const int tab = document_tabs_->addTab(QFileInfo{to_qstring(absolute)}.fileName());
+    document_tabs_->setTabData(tab, QVariant::fromValue<qulonglong>(opened.id));
+    document_tabs_->setCurrentIndex(tab);
     if (workspace_root_.empty() || !path_is_within(absolute, workspace_root_))
         open_folder(absolute.parent_path());
     update_recent_files(absolute);
     return true;
+}
+
+auto MainWindow::document_index_for_id(std::uint64_t id) const -> int {
+    const auto found = std::ranges::find(documents_, id, &OpenDocument::id);
+    return found == documents_.end()
+               ? -1
+               : static_cast<int>(std::distance(documents_.begin(), found));
+}
+
+auto MainWindow::document_index_for_tab(int tab_index) const -> int {
+    if (tab_index < 0 || tab_index >= document_tabs_->count())
+        return -1;
+    bool ok = false;
+    const auto id = document_tabs_->tabData(tab_index).toULongLong(&ok);
+    return ok ? document_index_for_id(static_cast<std::uint64_t>(id)) : -1;
+}
+
+auto MainWindow::tab_index_for_document_id(std::uint64_t id) const -> int {
+    for (int tab = 0; tab < document_tabs_->count(); ++tab) {
+        bool ok = false;
+        const auto candidate = document_tabs_->tabData(tab).toULongLong(&ok);
+        if (ok && candidate == id)
+            return tab;
+    }
+    return -1;
 }
 
 auto MainWindow::active_document() -> OpenDocument* {
@@ -559,59 +595,63 @@ auto MainWindow::active_source_path() const -> std::filesystem::path {
     return document == nullptr ? std::filesystem::path{} : document->path;
 }
 
-auto MainWindow::switch_document(int index) -> void {
-    if (index < 0 || index >= static_cast<int>(documents_.size()) ||
-        index == active_document_index_)
+auto MainWindow::switch_document(int tab_index) -> void {
+    const int document_index = document_index_for_tab(tab_index);
+    if (document_index < 0 || document_index == active_document_index_)
         return;
     compile_timer_.stop();
     history_timer_.stop();
     set_scene_playing(false);
-    active_document_index_ = index;
-    auto& document = documents_[static_cast<std::size_t>(index)];
+    active_document_index_ = document_index;
+    auto& document = documents_[static_cast<std::size_t>(document_index)];
     restoring_history_ = true;
     editor_->setPlainText(document.source);
     restoring_history_ = false;
-    viewport_->clear_scene();
-    diagnostics_->clear();
-    model_tree_->clear();
-    scenes_->clear();
-    properties_->setText(QStringLiteral("No component selected"));
-    metrics_->clear();
     {
         const QSignalBlocker blocker{document_tabs_};
-        document_tabs_->setCurrentIndex(index);
+        document_tabs_->setCurrentIndex(tab_index);
     }
     update_document_chrome();
     update_history_actions();
+    restore_document_preview(document);
     pending_source_ = document.source;
-    compile_pending_ = true;
-    begin_compile();
+    if (!document.preview || document.preview->source != document.source) {
+        // Defer compilation through the live-edit timer. During startup several
+        // positional files are opened synchronously; compiling the first one
+        // immediately made the final active tab wait behind an invisible job
+        // and left its viewport blank. Restarting the timer on each activation
+        // makes the settled active tab compile first.
+        schedule_compile();
+    } else {
+        compile_pending_ = false;
+    }
     editor_->setFocus();
 }
 
-auto MainWindow::close_document(int index) -> void {
-    if (index < 0 || index >= static_cast<int>(documents_.size()) ||
-        !confirm_close_document(index))
+auto MainWindow::close_document(int tab_index) -> void {
+    const int document_index = document_index_for_tab(tab_index);
+    if (document_index < 0 || !confirm_close_document(document_index))
         return;
-    const bool was_active = index == active_document_index_;
-    documents_.erase(documents_.begin() + index);
+    const bool was_active = document_index == active_document_index_;
+    const auto active_id = active_document() == nullptr ? 0U : active_document()->id;
+    documents_.erase(documents_.begin() + document_index);
     {
         const QSignalBlocker blocker{document_tabs_};
-        document_tabs_->removeTab(index);
+        document_tabs_->removeTab(tab_index);
     }
     if (documents_.empty()) {
         active_document_index_ = -1;
         close();
         return;
     }
-    if (index < active_document_index_)
-        --active_document_index_;
     if (was_active) {
         active_document_index_ = -1;
-        switch_document(std::min(index, static_cast<int>(documents_.size()) - 1));
+        const int next_tab = std::min(tab_index, document_tabs_->count() - 1);
+        switch_document(next_tab);
     } else {
+        active_document_index_ = document_index_for_id(active_id);
         const QSignalBlocker blocker{document_tabs_};
-        document_tabs_->setCurrentIndex(active_document_index_);
+        document_tabs_->setCurrentIndex(tab_index_for_document_id(active_id));
     }
 }
 
@@ -655,12 +695,15 @@ auto MainWindow::update_document_chrome() -> void {
     const auto* document = active_document();
     if (document == nullptr)
         return;
-    for (std::size_t index = 0; index < documents_.size(); ++index) {
-        const auto& candidate = documents_[index];
+    for (int tab = 0; tab < document_tabs_->count(); ++tab) {
+        const int document_index = document_index_for_tab(tab);
+        if (document_index < 0)
+            continue;
+        const auto& candidate = documents_[static_cast<std::size_t>(document_index)];
         const QString marker = candidate.modified ? QStringLiteral(" •") : QString{};
-        document_tabs_->setTabText(static_cast<int>(index),
+        document_tabs_->setTabText(tab,
                                    QFileInfo{to_qstring(candidate.path)}.fileName() + marker);
-        document_tabs_->setTabToolTip(static_cast<int>(index), to_qstring(candidate.path));
+        document_tabs_->setTabToolTip(tab, to_qstring(candidate.path));
     }
     setWindowModified(document->modified);
     const QString suffix = document->modified ? QStringLiteral("[*]") : QString{};
@@ -828,51 +871,95 @@ auto MainWindow::begin_compile() -> void {
     }));
 }
 
-auto MainWindow::finish_compile() -> void {
-    const auto task = compile_watcher_.result();
-    const auto* document = active_document();
-    const bool belongs_to_active_document =
-        document != nullptr && document->id == task.document_id && document->source == task.source;
-    if (!belongs_to_active_document) {
-        if (compile_pending_ || (document != nullptr && pending_source_ != document->source)) {
-            pending_source_ = document == nullptr ? QString{} : document->source;
-            compile_pending_ = false;
-            begin_compile();
-        }
+auto MainWindow::clear_preview_panels() -> void {
+    viewport_->clear_scene();
+    diagnostics_->clear();
+    model_tree_->clear();
+    scenes_->clear();
+    properties_->setText(QStringLiteral("No component selected"));
+    metrics_->clear();
+}
+
+auto MainWindow::apply_preview(const DocumentPreview& preview) -> void {
+    clear_preview_panels();
+    update_diagnostics(preview.result);
+    if (!preview.result.success) {
+        compile_state_->setText(QString::fromStdString(preview.result.message));
+        compile_state_->setStyleSheet(QStringLiteral("color:#fb7185"));
         return;
     }
-    const auto& result = task.preview;
+    if (!preview.scene_error.isEmpty()) {
+        auto* item = new QListWidgetItem{
+            QStringLiteral("ICAD-R0001 · %1").arg(preview.scene_error), diagnostics_};
+        item->setForeground(QColor{"#fb7185"});
+        compile_state_->setText(preview.scene_error);
+        compile_state_->setStyleSheet(QStringLiteral("color:#fb7185"));
+        return;
+    }
+    if (!preview.scene) {
+        compile_state_->setText(QStringLiteral("Compiled model contains no render scene"));
+        compile_state_->setStyleSheet(QStringLiteral("color:#fb7185"));
+        return;
+    }
+    viewport_->set_scene(*preview.scene);
+    rebuild_model_tree();
+    rebuild_scene_panel();
+    if (preview.result.unchanged) {
+        compile_state_->setText(QStringLiteral("Preview reused"));
+    } else {
+        compile_state_->setText(QStringLiteral("Preview ready"));
+    }
+    compile_state_->setStyleSheet(QStringLiteral("color:#4ade80"));
+    metrics_->setText(QStringLiteral("%1 bodies · %2 ms · %3 reused / %4 rebuilt · %5 workers")
+                          .arg(static_cast<qulonglong>(preview.result.bodies))
+                          .arg(preview.result.milliseconds, 0, 'f', 1)
+                          .arg(static_cast<qulonglong>(preview.result.reused_bodies))
+                          .arg(static_cast<qulonglong>(preview.result.recomputed_bodies))
+                          .arg(static_cast<qulonglong>(preview.result.parallel_workers)));
+}
+
+auto MainWindow::restore_document_preview(const OpenDocument& document) -> void {
+    if (!document.preview) {
+        clear_preview_panels();
+        compile_state_->setText(QStringLiteral("Compiling live preview…"));
+        compile_state_->setStyleSheet(QStringLiteral("color:#fbbf24"));
+        return;
+    }
+    apply_preview(*document.preview);
+    if (document.preview->source != document.source) {
+        compile_state_->setText(QStringLiteral("Updating live preview…"));
+        compile_state_->setStyleSheet(QStringLiteral("color:#fbbf24"));
+    }
+}
+
+auto MainWindow::finish_compile() -> void {
+    auto task = compile_watcher_.result();
+    const int completed_index = document_index_for_id(task.document_id);
+    bool applied_to_active = false;
     bool scene_ready = false;
-    update_diagnostics(result);
-    if (result.success) {
-        if (!result.model_json.empty()) {
-            auto parsed = parse_render_scene(result.model_json);
-            if (parsed.ok()) {
-                viewport_->set_scene(std::move(parsed.scene));
-                rebuild_model_tree();
-                rebuild_scene_panel();
-                scene_ready = true;
-            } else {
-                compile_state_->setText(parsed.error);
-                compile_state_->setStyleSheet(QStringLiteral("color:#fb7185"));
+    if (completed_index >= 0) {
+        auto& completed = documents_[static_cast<std::size_t>(completed_index)];
+        if (completed.source == task.source) {
+            DocumentPreview preview;
+            preview.source = task.source;
+            preview.result = std::move(task.preview);
+            if (preview.result.success && !preview.result.model_json.empty()) {
+                auto parsed = parse_render_scene(preview.result.model_json);
+                if (parsed.ok())
+                    preview.scene = std::move(parsed.scene);
+                else
+                    preview.scene_error = std::move(parsed.error);
+            }
+            completed.preview = std::move(preview);
+            if (completed_index == active_document_index_) {
+                apply_preview(*completed.preview);
+                applied_to_active = true;
+                scene_ready = completed.preview->scene.has_value() &&
+                              completed.preview->scene_error.isEmpty();
             }
         }
-        if (result.success) {
-            compile_state_->setText(result.unchanged ? QStringLiteral("Preview reused")
-                                                     : QStringLiteral("Preview ready"));
-            compile_state_->setStyleSheet(QStringLiteral("color:#4ade80"));
-            metrics_->setText(QStringLiteral("%1 bodies · %2 ms · %3 reused / %4 rebuilt · %5 workers")
-                                  .arg(static_cast<qulonglong>(result.bodies))
-                                  .arg(result.milliseconds, 0, 'f', 1)
-                                  .arg(static_cast<qulonglong>(result.reused_bodies))
-                                  .arg(static_cast<qulonglong>(result.recomputed_bodies))
-                                  .arg(static_cast<qulonglong>(result.parallel_workers)));
-        }
-    } else {
-        compile_state_->setText(QString::fromStdString(result.message));
-        compile_state_->setStyleSheet(QStringLiteral("color:#fb7185"));
     }
-    if (!pending_snapshot_path_.isEmpty()) {
+    if (applied_to_active && !pending_snapshot_path_.isEmpty()) {
         const QString output_path = std::exchange(pending_snapshot_path_, QString{});
         auto completion = std::exchange(snapshot_completion_, {});
         QTimer::singleShot(180, this,
@@ -888,7 +975,10 @@ auto MainWindow::finish_compile() -> void {
                 completion(saved);
         });
     }
-    if (compile_pending_ || pending_source_ != document->source) {
+    const auto* document = active_document();
+    const bool active_preview_is_current =
+        document != nullptr && document->preview && document->preview->source == document->source;
+    if (document != nullptr && (compile_pending_ || !active_preview_is_current)) {
         pending_source_ = document->source;
         compile_pending_ = false;
         begin_compile();

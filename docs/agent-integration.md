@@ -26,7 +26,18 @@ schemas unchanged to any model API that supports tool calling.
 
 ## Recommended design loop
 
-Start with exactly one `icad.agent.conceptualize` call to compress the raw request and form a blueprint-aware internal brief. Emit ICAD grammar only and keep declarations in dependency order. After compilation, call `icad.visualize` and use its direct `icad.visual.snapshot.v1` object as `visual.json` feedback. Revise named parameters and entities without another concept pass. `icad.compare` is for final A/B evaluation; its output is not visual feedback.
+Start with exactly one `icad.agent.conceptualize` call. Before authoring, complete
+its `icad.agent.engineering-preparation.v1` record: separate given facts,
+derived dimensions, reversible assumptions, and open decisions; define the
+envelope, BOM, construction, two-sided interfaces, hardware, kinematics,
+tolerances, visual intent, deliverables, and acceptance checks; then map each
+important requirement to a named ICAD entity and verification method. Ask only
+when a missing decision changes safety, external fit, or architecture. Emit
+ICAD grammar only and keep declarations in dependency order. After compilation,
+call `icad.visualize` and use its direct `icad.visual.snapshot.v1` object as
+`visual.json` feedback. Revise named parameters and entities without another
+concept pass. `icad.compare` is for final A/B evaluation; its output is not
+visual feedback.
 
 For each manufactured part, prefer an explicit body-local construction
 history. Begin with `SKETCH name ON PLANE XY|XZ|YZ`, create material using

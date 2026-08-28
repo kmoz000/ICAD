@@ -51,6 +51,18 @@ constexpr std::string_view smooth_pair = R"JSON({
   }]
 })JSON";
 
+constexpr std::string_view small_and_degenerate_triangles = R"JSON({
+  "format":"ICAD_SCENE",
+  "project":"small_features",
+  "materials":[],
+  "scenes":[],
+  "parts":[{
+    "name":"precision_part","body":"precision_part","material":"",
+    "vertices":[[0,0,0],[0.001,0,0],[0,0.001,0],[2,0,0]],
+    "triangles":[[0,1,2],[0,1,3]]
+  }]
+})JSON";
+
 } // namespace
 
 auto main() -> int {
@@ -76,6 +88,11 @@ auto main() -> int {
         QVector3D::dotProduct(smooth.scene.vertices[0].normal,
                               smooth.scene.vertices[3].normal) < 0.999F) {
         return fail("CAD renderer did not share angle-weighted normals across a smooth bend");
+    }
+    const auto precision = icad::desktop::parse_render_scene(small_and_degenerate_triangles);
+    if (!precision.ok() || precision.scene.indices.size() != 3 ||
+        precision.discarded_degenerate_triangles != 1) {
+        return fail("CAD renderer rejected a valid small feature or retained a collapsed triangle");
     }
     return 0;
 }
