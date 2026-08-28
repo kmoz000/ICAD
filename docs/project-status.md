@@ -179,7 +179,8 @@ and synchronized direct geometry picking.
 
 Agent visual feedback now has its own deterministic compiler product. The
 `visual-json` command and `icad.visualize` MCP tool rasterize the current
-delivery model into depth-resolved 64x32 front, right, top, and isometric grids
+delivery model into ordered 512x512 lossless front, right, and top PNG model
+inputs, plus depth-resolved 64x32 front, right, top, and isometric grids
 with a stable body legend, bounds, triangle counts, and current joint state.
 The maintained robot benchmark requires these views and recognizable detailed
 gripper/gear components, so model acceptance is no longer based only on counts.

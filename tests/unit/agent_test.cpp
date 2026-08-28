@@ -23,6 +23,17 @@ auto fail(std::string_view message) -> int {
     return 1;
 }
 
+[[nodiscard]] auto occurrence_count(std::string_view text, std::string_view needle)
+    -> std::size_t {
+    std::size_t count = 0;
+    std::size_t offset = 0;
+    while ((offset = text.find(needle, offset)) != std::string_view::npos) {
+        ++count;
+        offset += needle.size();
+    }
+    return count;
+}
+
 } // namespace
 
 auto main() -> int {
@@ -39,6 +50,12 @@ auto main() -> int {
     }
     const auto visual = icad::ai::visual_snapshot_json(*compilation.ir_project);
     if (!visual.contains("\"schema\":\"icad.visual.snapshot.v1\"") ||
+        !visual.contains("\"representation\":\"lossless-orthographic-png+deterministic-depth-raster\"") ||
+        !visual.contains("\"imageOrder\":[\"front\",\"right\",\"top\"]") ||
+        !visual.contains("\"imageSize\":{\"width\":512,\"height\":512}") ||
+        occurrence_count(visual, "\"type\":\"image_url\"") != 3U ||
+        occurrence_count(visual, "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAgAAAAI") != 3U ||
+        occurrence_count(visual, "\"detail\":\"low\"") != 3U ||
         !visual.contains("\"name\":\"front\"") ||
         !visual.contains("\"name\":\"right\"") ||
         !visual.contains("\"name\":\"top\"") ||

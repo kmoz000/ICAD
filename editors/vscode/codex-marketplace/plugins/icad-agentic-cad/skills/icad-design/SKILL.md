@@ -54,7 +54,7 @@ agent can inspect and revise.
 4. Emit only grammar advertised by the running `icad language` tool—no Markdown,
    prose, pseudocode, future syntax, or foreign CAD syntax. Design unfamiliar
    mechanism topology directly instead of forcing a maintained template.
-5. Compile, then call `icad.visualize`. Use only its direct `icad.visual.snapshot.v1` object as visual feedback. Read the legend/body bounds, front, right, top, isometric rasters, and joints.
+5. Compile, then call `icad.visualize`. Use only its direct `icad.visual.snapshot.v1` object as visual feedback. Inspect its three 512x512 lossless PNG inputs in `imageOrder` (`front`, `right`, `top`) with model vision, then correlate them with the legend/body bounds, depth rasters, and joints.
 6. Revise named ICAD entities from the visual evidence without a second concept pass. Use `icad.compare` only after two independently acceptable candidates exist.
 
 Read [references/design-preparation.md](references/design-preparation.md) for
@@ -174,8 +174,9 @@ topology JSON.
   with its method and standard. Delivery requires zero unintended penetrations;
   never excuse anonymous overlap as joint hardware.
 - After every geometry or pose edit, call `icad.visualize` through MCP (or
-  `icad visual-json`) and inspect all four depth rasters. Reject a poor
-  silhouette, misplaced component, or unexpected occlusion before building.
+  `icad visual-json`) and inspect all three ordered 512x512 lossless PNGs with
+  model vision. Use the depth rasters and legend to resolve identity. Reject a
+  poor silhouette, misplaced component, or unexpected occlusion before building.
 - For mechanisms, reject count-only success. Verify every joint anchor lies on
   both the parent and child component envelope, verify the base is grounded,
   and sample the first/middle/last scene frames. A scene that moves the entire

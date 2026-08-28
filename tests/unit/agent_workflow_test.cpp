@@ -51,6 +51,8 @@ auto main() -> int {
     }
     const auto visual = icad::ai::visual_snapshot_json(*compilation.ir_project);
     if (!visual.contains("\"schema\":\"icad.visual.snapshot.v1\"") ||
+        !visual.contains("\"imageOrder\":[\"front\",\"right\",\"top\"]") ||
+        !visual.contains("data:image/png;base64,iVBORw0KGgo") ||
         !visual.contains("\"name\":\"front\""))
         return fail("direct visual.json feedback is unavailable after compilation");
     const auto review = icad::agent::review_json(robotic.source);

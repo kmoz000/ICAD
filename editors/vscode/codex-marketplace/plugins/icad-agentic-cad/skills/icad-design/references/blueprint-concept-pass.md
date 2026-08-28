@@ -16,10 +16,12 @@ unwritten intuition:
 Then output only dependency-ordered ICAD grammar. Compile it and consume the direct `icad.visual.snapshot.v1` object from `icad.visualize`:
 
 - `legend` and body bounds establish component identity, size, and placement.
+- The ordered 512x512 lossless `front`, `right`, and `top` PNGs are direct
+  multimodal inputs; inspect their actual pixels rather than inferring a view
+  from source text.
 - `front` establishes principal silhouette and working reach.
 - `right` exposes depth and unintended overlap.
 - `top` exposes footprint and lateral alignment.
-- `isometric` confirms assembly identity and mechanical character.
 - `joints` confirms anchors, axes, limits, and state.
 - `featureHistory` maps each visible result back to its sketch plane, supporting feature and face, and additive or subtractive operation.
 

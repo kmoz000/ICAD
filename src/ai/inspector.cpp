@@ -15,6 +15,7 @@
 #include <array>
 #include <cctype>
 #include <cmath>
+#include <cstdint>
 #include <iomanip>
 #include <iterator>
 #include <limits>
@@ -222,6 +223,8 @@ constexpr std::array snapshot_views{
 
 constexpr std::size_t snapshot_width = 64;
 constexpr std::size_t snapshot_height = 32;
+constexpr std::size_t vision_image_width = 512;
+constexpr std::size_t vision_image_height = 512;
 constexpr std::string_view snapshot_symbols =
     "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
@@ -230,6 +233,93 @@ struct SnapshotRaster {
     std::vector<char> pixels;
     std::size_t occupied_cells{};
 };
+
+struct VisionRaster {
+    std::vector<std::uint8_t> pixels;
+};
+
+auto append_u32_be(std::string& bytes, std::uint32_t value) -> void {
+    bytes.push_back(static_cast<char>((value >> 24U) & 0xffU));
+    bytes.push_back(static_cast<char>((value >> 16U) & 0xffU));
+    bytes.push_back(static_cast<char>((value >> 8U) & 0xffU));
+    bytes.push_back(static_cast<char>(value & 0xffU));
+}
+
+[[nodiscard]] auto crc32(std::string_view value) -> std::uint32_t {
+    std::uint32_t crc = 0xffffffffU;
+    for (const char character : value) {
+        crc ^= static_cast<unsigned char>(character);
+        for (std::size_t bit = 0; bit < 8; ++bit)
+            crc = (crc >> 1U) ^ (0xedb88320U & (0U - (crc & 1U)));
+    }
+    return ~crc;
+}
+
+[[nodiscard]] auto adler32(std::string_view value) -> std::uint32_t {
+    constexpr std::uint32_t modulus = 65521U;
+    std::uint32_t first = 1U;
+    std::uint32_t second = 0U;
+    for (const char character : value) {
+        first = (first + static_cast<unsigned char>(character)) % modulus;
+        second = (second + first) % modulus;
+    }
+    return (second << 16U) | first;
+}
+
+auto append_png_chunk(std::string& png, std::string_view type, std::string_view data) -> void {
+    append_u32_be(png, static_cast<std::uint32_t>(data.size()));
+    png.append(type);
+    png.append(data);
+    std::string crc_input{type};
+    crc_input.append(data);
+    append_u32_be(png, crc32(crc_input));
+}
+
+[[nodiscard]] auto stored_zlib(std::string_view raw) -> std::string {
+    std::string result;
+    result.reserve(raw.size() + raw.size() / 65535U * 5U + 8U);
+    result.push_back(static_cast<char>(0x78));
+    result.push_back(static_cast<char>(0x01));
+    std::size_t offset = 0;
+    while (offset < raw.size()) {
+        const auto block_size = static_cast<std::uint16_t>(
+            std::min<std::size_t>(65535U, raw.size() - offset));
+        const bool final = offset + block_size == raw.size();
+        result.push_back(static_cast<char>(final ? 0x01 : 0x00));
+        result.push_back(static_cast<char>(block_size & 0xffU));
+        result.push_back(static_cast<char>((block_size >> 8U) & 0xffU));
+        const auto inverse = static_cast<std::uint16_t>(~block_size);
+        result.push_back(static_cast<char>(inverse & 0xffU));
+        result.push_back(static_cast<char>((inverse >> 8U) & 0xffU));
+        result.append(raw.substr(offset, block_size));
+        offset += block_size;
+    }
+    append_u32_be(result, adler32(raw));
+    return result;
+}
+
+[[nodiscard]] auto base64_encode(std::string_view bytes) -> std::string {
+    constexpr std::string_view alphabet =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string result;
+    result.reserve(((bytes.size() + 2U) / 3U) * 4U);
+    for (std::size_t offset = 0; offset < bytes.size(); offset += 3U) {
+        const auto first = static_cast<unsigned char>(bytes[offset]);
+        const auto second = offset + 1U < bytes.size()
+                                ? static_cast<unsigned char>(bytes[offset + 1U])
+                                : 0U;
+        const auto third = offset + 2U < bytes.size()
+                               ? static_cast<unsigned char>(bytes[offset + 2U])
+                               : 0U;
+        const std::uint32_t value = (static_cast<std::uint32_t>(first) << 16U) |
+                                    (static_cast<std::uint32_t>(second) << 8U) | third;
+        result.push_back(alphabet[(value >> 18U) & 0x3fU]);
+        result.push_back(alphabet[(value >> 12U) & 0x3fU]);
+        result.push_back(offset + 1U < bytes.size() ? alphabet[(value >> 6U) & 0x3fU] : '=');
+        result.push_back(offset + 2U < bytes.size() ? alphabet[value & 0x3fU] : '=');
+    }
+    return result;
+}
 
 [[nodiscard]] auto project_point(const cad::Point3& point, const SnapshotView& view)
     -> ProjectedPoint {
@@ -295,6 +385,155 @@ struct SnapshotRaster {
     minimum_v -= span_v * 0.03;
     maximum_v += span_v * 0.03;
     return {minimum_u, minimum_v, maximum_u, maximum_v};
+}
+
+[[nodiscard]] auto square_snapshot_bounds(const cad::Model& model, const SnapshotView& view)
+    -> std::array<double, 4> {
+    auto bounds = snapshot_bounds(model, view);
+    const double span_u = bounds[2] - bounds[0];
+    const double span_v = bounds[3] - bounds[1];
+    if (span_u < span_v) {
+        const double padding = (span_v - span_u) * 0.5;
+        bounds[0] -= padding;
+        bounds[2] += padding;
+    } else {
+        const double padding = (span_u - span_v) * 0.5;
+        bounds[1] -= padding;
+        bounds[3] += padding;
+    }
+    return bounds;
+}
+
+[[nodiscard]] auto rasterize_vision_image(const cad::Model& model,
+                                          const std::vector<std::string>& bodies,
+                                          const SnapshotView& view) -> VisionRaster {
+    const auto bounds = square_snapshot_bounds(model, view);
+    const double minimum_u = bounds[0];
+    const double minimum_v = bounds[1];
+    const double cell_u = (bounds[2] - minimum_u) / static_cast<double>(vision_image_width);
+    const double cell_v = (bounds[3] - minimum_v) / static_cast<double>(vision_image_height);
+    std::vector<std::uint8_t> body_pixels(vision_image_width * vision_image_height, 0U);
+    std::vector<double> depths(vision_image_width * vision_image_height,
+                               std::numeric_limits<double>::lowest());
+    std::unordered_map<std::string_view, std::size_t> body_indices;
+    body_indices.reserve(bodies.size());
+    for (std::size_t index = 0; index < bodies.size(); ++index)
+        body_indices.emplace(bodies[index], index);
+
+    for (const auto& part : model.parts) {
+        const auto body = body_indices.find(part.body);
+        if (body == body_indices.end())
+            continue;
+        const auto palette_index = static_cast<std::uint8_t>(2U + body->second % 14U);
+        for (const auto& triangle : part.triangles) {
+            const auto first = project_point(part.vertices[triangle[0]], view);
+            const auto second = project_point(part.vertices[triangle[1]], view);
+            const auto third = project_point(part.vertices[triangle[2]], view);
+            const double triangle_min_u = std::min({first.u, second.u, third.u});
+            const double triangle_max_u = std::max({first.u, second.u, third.u});
+            const double triangle_min_v = std::min({first.v, second.v, third.v});
+            const double triangle_max_v = std::max({first.v, second.v, third.v});
+            const auto min_column = static_cast<std::size_t>(std::clamp(
+                std::floor((triangle_min_u - minimum_u) / cell_u), 0.0,
+                static_cast<double>(vision_image_width - 1U)));
+            const auto max_column = static_cast<std::size_t>(std::clamp(
+                std::floor((triangle_max_u - minimum_u) / cell_u), 0.0,
+                static_cast<double>(vision_image_width - 1U)));
+            const auto min_row_from_bottom = static_cast<std::size_t>(std::clamp(
+                std::floor((triangle_min_v - minimum_v) / cell_v), 0.0,
+                static_cast<double>(vision_image_height - 1U)));
+            const auto max_row_from_bottom = static_cast<std::size_t>(std::clamp(
+                std::floor((triangle_max_v - minimum_v) / cell_v), 0.0,
+                static_cast<double>(vision_image_height - 1U)));
+            for (std::size_t row_from_bottom = min_row_from_bottom;
+                 row_from_bottom <= max_row_from_bottom; ++row_from_bottom) {
+                for (std::size_t column = min_column; column <= max_column; ++column) {
+                    const double u = minimum_u + (static_cast<double>(column) + 0.5) * cell_u;
+                    const double v = minimum_v +
+                                     (static_cast<double>(row_from_bottom) + 0.5) * cell_v;
+                    std::array<double, 3> weights{};
+                    if (!inside_triangle(u, v, first, second, third, weights))
+                        continue;
+                    const double depth = weights[0] * first.depth + weights[1] * second.depth +
+                                         weights[2] * third.depth;
+                    const std::size_t row = vision_image_height - row_from_bottom - 1U;
+                    const std::size_t pixel = row * vision_image_width + column;
+                    if (depth >= depths[pixel]) {
+                        depths[pixel] = depth;
+                        body_pixels[pixel] = palette_index;
+                    }
+                }
+            }
+        }
+    }
+
+    auto pixels = body_pixels;
+    for (std::size_t row = 0; row < vision_image_height; ++row) {
+        for (std::size_t column = 0; column < vision_image_width; ++column) {
+            const std::size_t pixel = row * vision_image_width + column;
+            if (body_pixels[pixel] == 0U)
+                continue;
+            const auto differs = [&](std::size_t neighbor) {
+                return body_pixels[neighbor] != body_pixels[pixel];
+            };
+            if ((row == 0U || differs(pixel - vision_image_width)) ||
+                (row + 1U == vision_image_height || differs(pixel + vision_image_width)) ||
+                (column == 0U || differs(pixel - 1U)) ||
+                (column + 1U == vision_image_width || differs(pixel + 1U))) {
+                pixels[pixel] = 1U;
+            }
+        }
+    }
+    return {std::move(pixels)};
+}
+
+[[nodiscard]] auto vision_png(const VisionRaster& raster) -> std::string {
+    std::string raw;
+    raw.reserve(vision_image_height * (1U + vision_image_width / 2U));
+    for (std::size_t row = 0; row < vision_image_height; ++row) {
+        raw.push_back('\0');
+        for (std::size_t column = 0; column < vision_image_width; column += 2U) {
+            const auto high = raster.pixels[row * vision_image_width + column] & 0x0fU;
+            const auto low = raster.pixels[row * vision_image_width + column + 1U] & 0x0fU;
+            raw.push_back(static_cast<char>((high << 4U) | low));
+        }
+    }
+
+    std::string header;
+    append_u32_be(header, static_cast<std::uint32_t>(vision_image_width));
+    append_u32_be(header, static_cast<std::uint32_t>(vision_image_height));
+    header.push_back(static_cast<char>(4));
+    header.push_back(static_cast<char>(3));
+    header.append(3U, '\0');
+
+    constexpr std::array<std::array<std::uint8_t, 3>, 16> palette{{
+        {{246, 249, 252}}, {{20, 31, 43}},  {{0, 171, 209}},  {{0, 194, 154}},
+        {{245, 158, 11}},  {{239, 68, 68}}, {{139, 92, 246}}, {{59, 130, 246}},
+        {{236, 72, 153}},  {{34, 197, 94}}, {{234, 179, 8}},  {{14, 116, 144}},
+        {{190, 24, 93}},   {{124, 58, 237}},{{5, 150, 105}},  {{194, 65, 12}},
+    }};
+    std::string palette_bytes;
+    palette_bytes.reserve(palette.size() * 3U);
+    for (const auto& color : palette) {
+        palette_bytes.push_back(static_cast<char>(color[0]));
+        palette_bytes.push_back(static_cast<char>(color[1]));
+        palette_bytes.push_back(static_cast<char>(color[2]));
+    }
+
+    std::string png{"\x89PNG\r\n\x1a\n", 8U};
+    append_png_chunk(png, "IHDR", header);
+    append_png_chunk(png, "PLTE", palette_bytes);
+    const auto compressed = stored_zlib(raw);
+    append_png_chunk(png, "IDAT", compressed);
+    append_png_chunk(png, "IEND", {});
+    return png;
+}
+
+[[nodiscard]] auto vision_data_url(const cad::Model& model,
+                                   const std::vector<std::string>& bodies,
+                                   const SnapshotView& view) -> std::string {
+    return "data:image/png;base64," +
+           base64_encode(vision_png(rasterize_vision_image(model, bodies, view)));
 }
 
 [[nodiscard]] auto rasterize_snapshot(const cad::Model& model,
@@ -977,7 +1216,18 @@ auto visual_snapshot_json(const compiler::ir::Project& project) -> std::string {
            << "{\"schema\":\"icad.visual.snapshot.v1\",\"project\":"
            << quoted(project.name) << ",\"revision\":"
            << quoted(document::revision_id(document::fingerprint(project)))
-           << ",\"representation\":\"deterministic-depth-raster\",\"legend\":[";
+           << ",\"representation\":\"lossless-orthographic-png+deterministic-depth-raster\""
+              ",\"imageOrder\":[\"front\",\"right\",\"top\"]"
+              ",\"imageSize\":{\"width\":512,\"height\":512},\"imageMime\":\"image/png\""
+              ",\"images\":[";
+    for (std::size_t index = 0; index < 3U; ++index) {
+        if (index != 0U)
+            output << ',';
+        output << "{\"type\":\"image_url\",\"image_url\":{\"url\":"
+               << quoted(vision_data_url(model, bodies, snapshot_views[index]))
+               << ",\"detail\":\"low\"}}";
+    }
+    output << "],\"legend\":[";
     for (std::size_t index = 0; index < bodies.size(); ++index) {
         if (index != 0)
             output << ',';

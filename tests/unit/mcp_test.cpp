@@ -208,6 +208,12 @@ auto main() -> int {
         !serialized.contains("\"schema\":\"icad.section.v1\"") ||
         !serialized.contains("\"schema\":\"icad.topology.v1\"") ||
         !serialized.contains("\"schema\":\"icad.visual.snapshot.v1\"") ||
+        !serialized.contains("\"imageOrder\":[\"front\",\"right\",\"top\"]") ||
+        !serialized.contains("\"type\":\"image_url\"") ||
+        !serialized.contains("\"url\":\"data:image/png;base64,iVBORw0KGgo") ||
+        !serialized.contains("\"type\":\"image\"") ||
+        !serialized.contains("\"data\":\"iVBORw0KGgo") ||
+        !serialized.contains("\"mimeType\":\"image/png\"") ||
         !serialized.contains("\"schema\":\"icad.agent.comparison.v2\"") ||
         !serialized.contains("\"schema\":\"icad.agent.concept.v1\"") ||
         !serialized.contains("\"schema\":\"icad.agent.engineering-preparation.v1\"") ||

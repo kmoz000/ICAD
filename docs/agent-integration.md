@@ -61,11 +61,11 @@ feedback.
 2. For a new design class, call `icad.agent.bootstrap`. It returns valid source,
    explicit acceptance criteria, a named-parameter strategy, and the shortest
    next-tool sequence.
-3. Make topology-level changes in source and call `icad.visualize`. Its four
-   deterministic, depth-resolved orthographic/isometric grids let the model
-   check component silhouette, placement, occlusion, and current joint state
-   without interpreting a binary mesh. Revise until the view matches the
-   design intent, then call `icad.agent.review`. This one
+3. Make topology-level changes in source and call `icad.visualize`. Its three
+   deterministic 512x512 lossless orthographic PNGs let the model directly
+   check component silhouette, placement, occlusion, and current joint state;
+   the depth-resolved grids remain available for identity checks. Revise until
+   the view matches the design intent, then call `icad.agent.review`. This one
    response combines compilation, constraints, manufacturing, topology,
    metrics, and interference, so the model only sees actionable failures. Read
    its `designMap` in order: overall bounds, body centers/sizes, named points and
@@ -128,11 +128,16 @@ rejects cycles, and exposes both the resolved value and expression provenance
 to inspection. Constraint targets may reuse compatible named parameters or
 `ANGLE` values, avoiding duplicated numeric values.
 
-`icad.visualize` returns a `icad.visual.snapshot.v1` document with a stable
-symbol-to-body legend, body bounds and triangle counts, current joint values,
-and 64x32 front/right/top/isometric depth rasters. Call it after every geometry
-or joint edit. A view is an agent reasoning aid rather than a substitute for
-topology, manufacturing, or interference validation.
+`icad.visualize` returns a `icad.visual.snapshot.v1` document whose `images`
+array contains exactly three OpenAI-compatible `image_url` objects in
+`front`, `right`, `top` order. Each data URL is a deterministic, lossless
+512x512 PNG; MCP callers also receive the same views as native image content
+blocks so a multimodal model can inspect them directly. The stable
+symbol-to-body legend, body bounds, triangle counts, current joint values, and
+legacy 64x32 depth rasters remain available for numeric and compatibility
+reasoning. Call it after every geometry or joint edit. A view is an agent
+reasoning aid rather than a substitute for topology, manufacturing, or
+interference validation.
 
 `icad.compare` returns `icad.agent.comparison.v2`. The comparison is
 deterministic and symmetric in evidence (each side retains its own complete

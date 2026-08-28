@@ -323,9 +323,10 @@ The deterministic tool catalog contains source-text tools:
 - `icad.validate`: constraints and manufacturing validation;
 - `icad.measure`: area, volume, and bounds;
 - `icad.inspect`: canonical IR counts, revision, ownership, and metrics;
-- `icad.visualize`: deterministic 64x32 front, right, top, and isometric
-  depth rasters with a component legend, per-body bounds/triangle counts, and
-  current joint state, giving an agent a compact visual check after every edit;
+- `icad.visualize`: three ordered 512x512 lossless PNG `image_url` inputs
+  (front, right, top), also returned as native MCP image blocks for direct model
+  vision, plus deterministic depth rasters, a component legend, per-body
+  bounds/triangle counts, and current joint state;
 - `icad.compare`: two complete source documents compared by body and mechanism
   graph, per-body spatial envelopes/roles/materials, scene programs, topology
   cost, and two embedded four-view snapshots. Shared-world-bounds difference

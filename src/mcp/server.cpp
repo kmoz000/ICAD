@@ -13,6 +13,8 @@
 #include "icad/materials/library.hpp"
 #include "icad/project/builder.hpp"
 
+#include <algorithm>
+#include <array>
 #include <cctype>
 #include <filesystem>
 #include <istream>
@@ -68,6 +70,37 @@ auto send(std::ostream& output, const json::Value& message) -> void {
                    {"content", array({object({{"type", "text"}, {"text", text}})})},
                    {"structuredContent", std::move(structured)},
                    {"isError", is_error}});
+}
+
+[[nodiscard]] auto visual_tool_result(json::Value structured) -> json::Value {
+    constexpr std::string_view data_url_prefix = "data:image/png;base64,";
+    constexpr std::array<std::string_view, 3> view_names{"front", "right", "top"};
+    json::Value::Array content;
+    content.emplace_back(object(
+        {{"type", "text"},
+         {"text", "ICAD 512x512 lossless orthographic views in front, right, top order. "
+                  "The same OpenAI image_url objects are available in structuredContent.images."}}));
+    const auto* images_value = structured.find("images");
+    const auto* images = images_value == nullptr ? nullptr : images_value->array();
+    if (images != nullptr) {
+        const auto count = std::min(images->size(), view_names.size());
+        for (std::size_t index = 0; index < count; ++index) {
+            const auto* image_url = (*images)[index].find("image_url");
+            const auto* url_value = image_url == nullptr ? nullptr : image_url->find("url");
+            const auto* url = url_value == nullptr ? nullptr : url_value->string();
+            if (url == nullptr || !url->starts_with(data_url_prefix))
+                continue;
+            content.emplace_back(
+                object({{"type", "text"}, {"text", std::string{view_names[index]} + " view"}}));
+            content.emplace_back(object({{"type", "image"},
+                                         {"data", url->substr(data_url_prefix.size())},
+                                         {"mimeType", "image/png"}}));
+        }
+    }
+    return object({{"resultType", "complete"},
+                   {"content", json::Value{std::move(content)}},
+                   {"structuredContent", std::move(structured)},
+                   {"isError", false}});
 }
 
 [[nodiscard]] auto tool_error(std::string code, std::string message,
@@ -160,7 +193,7 @@ auto send(std::ostream& output, const json::Value& message) -> void {
     if (!compilation.ok()) {
         return tool_result(parsed_value(ai::diagnostics_json(*source)), true);
     }
-    return tool_result(parsed_value(ai::visual_snapshot_json(*compilation.ir_project)));
+    return visual_tool_result(parsed_value(ai::visual_snapshot_json(*compilation.ir_project)));
 }
 
 [[nodiscard]] auto comparison_source(const json::Value* arguments) -> json::Value {
@@ -419,8 +452,9 @@ auto send(std::ostream& output, const json::Value& message) -> void {
         "Close every block with END. For a new raw request, call icad.agent.conceptualize exactly "
         "once, complete its engineeringPreparation record and requirement traceability before "
         "authoring, emit ICAD grammar only, and do not reconceptualize during repair. Call icad.compile, "
-        "then icad.visualize and use its direct icad.visual.snapshot.v1 result to inspect front, "
-        "right, top, and isometric depth rasters with a body legend. Reject unintended overlap "
+        "then icad.visualize and use its direct icad.visual.snapshot.v1 result to inspect the "
+        "three ordered 512x512 lossless PNG image_url inputs (front, right, top), plus the "
+        "depth rasters and body legend. Reject unintended overlap "
         "or a poor silhouette. Use icad.compare when choosing between structurally different "
         "designs; it reports body-set, topology, material, scene, and raster differences but is "
         "not the visual feedback format. Then "
@@ -814,7 +848,7 @@ auto send(std::ostream& output, const json::Value& message) -> void {
 {"name":"icad.validate","title":"Validate engineering rules","description":"Compile ICAD source and evaluate geometric constraints and manufacturing rules.","inputSchema":{"type":"object","properties":{"source":{"type":"string"}},"required":["source"],"additionalProperties":false},"annotations":{"readOnlyHint":true}},
 {"name":"icad.measure","title":"Measure ICAD design","description":"Return surface area, volume, and world bounds for compiled ICAD source.","inputSchema":{"type":"object","properties":{"source":{"type":"string"}},"required":["source"],"additionalProperties":false},"annotations":{"readOnlyHint":true}},
 {"name":"icad.inspect","title":"Inspect ICAD design","description":"Return canonical design counts, revision fingerprint, body ownership, metrics, and validation state.","inputSchema":{"type":"object","properties":{"source":{"type":"string"}},"required":["source"],"additionalProperties":false},"annotations":{"readOnlyHint":true}},
-{"name":"icad.visualize","title":"Visualize ICAD design for an agent","description":"Return deterministic front, right, top, and isometric depth rasters with a body legend, bounds, triangle counts, and joint state so an agent can evaluate silhouette and placement after every edit.","inputSchema":{"type":"object","properties":{"source":{"type":"string"}},"required":["source"],"additionalProperties":false},"annotations":{"readOnlyHint":true}},
+{"name":"icad.visualize","title":"Visualize ICAD design for an agent","description":"Return three ordered 512x512 lossless PNG image_url inputs (front, right, top) and native MCP image blocks for direct model vision, plus deterministic depth rasters, body legend, bounds, triangle counts, and joint state.","inputSchema":{"type":"object","properties":{"source":{"type":"string"}},"required":["source"],"additionalProperties":false},"annotations":{"readOnlyHint":true}},
 {"name":"icad.compare","title":"Compare two agentic ICAD designs","description":"Return deterministic body and mechanism graph changes, shared-bounds silhouette/identity difference rasters, spatial envelopes, materials, scenes, and an intent-aware optimization matrix for two substantially different candidates.","inputSchema":{"type":"object","properties":{"firstSource":{"type":"string"},"secondSource":{"type":"string"}},"required":["firstSource","secondSource"],"additionalProperties":false},"annotations":{"readOnlyHint":true}},
 {"name":"icad.topology","title":"Inspect exact ICAD topology","description":"Return stable solid, shell, face, edge, and vertex IDs with analytic curve and surface kinds for agent references.","inputSchema":{"type":"object","properties":{"source":{"type":"string"}},"required":["source"],"additionalProperties":false},"annotations":{"readOnlyHint":true}},
 {"name":"icad.distance","title":"Query body distance","description":"Return exact-polyhedral minimum distance and closest points between two named bodies.","inputSchema":{"type":"object","properties":{"source":{"type":"string"},"firstBody":{"type":"string"},"secondBody":{"type":"string"}},"required":["source","firstBody","secondBody"],"additionalProperties":false},"annotations":{"readOnlyHint":true}},
