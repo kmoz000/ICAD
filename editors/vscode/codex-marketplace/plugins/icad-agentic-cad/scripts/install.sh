@@ -98,9 +98,10 @@ if [ "$install_plugin" -eq 1 ]; then
     mv "$marketplace_source" "$marketplace_root.new"
     rm -rf "$marketplace_root"
     mv "$marketplace_root.new" "$marketplace_root"
-    if ! codex plugin marketplace list | awk 'NR > 1 { print $1 }' | grep -qx icad; then
-        codex plugin marketplace add "$marketplace_root" --json >/dev/null
+    if codex plugin marketplace list | awk 'NR > 1 { print $1 }' | grep -qx icad; then
+        codex plugin marketplace remove icad --json >/dev/null
     fi
+    codex plugin marketplace add "$marketplace_root" --json >/dev/null
     codex plugin add icad-agentic-cad@icad --json >/dev/null
     printf 'Installed ICAD Agentic CAD plugin %s.\n' "$release_tag"
 fi

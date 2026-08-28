@@ -50,10 +50,12 @@ try {
         New-Item -ItemType Directory -Force -Path $DataRoot | Out-Null
         Move-Item $MarketplaceSource $MarketplaceRoot
         $Marketplaces = (& codex plugin marketplace list | Out-String)
-        if ($Marketplaces -notmatch "(?m)^icad\s") {
-            & codex plugin marketplace add $MarketplaceRoot --json | Out-Null
-            if ($LASTEXITCODE -ne 0) { throw "Could not register the ICAD marketplace." }
+        if ($Marketplaces -match "(?m)^icad\s") {
+            & codex plugin marketplace remove icad --json | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "Could not replace the existing ICAD marketplace." }
         }
+        & codex plugin marketplace add $MarketplaceRoot --json | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "Could not register the ICAD release marketplace." }
         & codex plugin add "icad-agentic-cad@icad" --json | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "Could not install the ICAD plugin." }
         Write-Host "Installed ICAD Agentic CAD plugin $Version."
