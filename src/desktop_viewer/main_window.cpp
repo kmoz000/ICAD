@@ -38,6 +38,7 @@
 #include <QtConcurrent/QtConcurrentRun>
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <iterator>
 #include <ranges>
@@ -101,6 +102,15 @@ MainWindow::MainWindow(std::filesystem::path source_path, QWidget* parent) : QMa
     });
     connect(document_tabs_, &QTabBar::currentChanged, this,
             [this](int index) { switch_document(index); });
+    connect(document_tabs_, &QTabBar::tabMoved, this, [this](int, int) {
+        // Resolve the settled tab through its stable document id. QTabBar may
+        // report intermediate positional indices while a tab is moving.
+        const int current_tab = document_tabs_->currentIndex();
+        if (document_index_for_tab(current_tab) < 0)
+            return;
+        active_document_index_ = -1;
+        switch_document(current_tab);
+    });
     connect(document_tabs_, &QTabBar::tabCloseRequested, this,
             [this](int index) { close_document(index); });
     connect(workspace_tree_, &QTreeView::doubleClicked, this, [this](const QModelIndex& index) {
@@ -184,7 +194,38 @@ auto MainWindow::open_document(const std::filesystem::path& path) -> bool {
 }
 
 auto MainWindow::open_workspace(const std::filesystem::path& path) -> bool {
-    return open_folder(path);
+    const auto absolute = std::filesystem::absolute(path).lexically_normal();
+    if (!open_folder(absolute))
+        return false;
+
+    std::error_code error;
+    auto entry = absolute / "main.icad";
+    if (!std::filesystem::is_regular_file(entry, error)) {
+        std::vector<std::filesystem::path> sources;
+        error.clear();
+        for (std::filesystem::recursive_directory_iterator iterator{
+                 absolute, std::filesystem::directory_options::skip_permission_denied, error},
+             end;
+             iterator != end; iterator.increment(error)) {
+            if (error) {
+                error.clear();
+                continue;
+            }
+            if (iterator->is_regular_file(error) &&
+                QFileInfo{to_qstring(iterator->path())}.suffix().compare(
+                    QStringLiteral("icad"), Qt::CaseInsensitive) == 0) {
+                sources.push_back(iterator->path());
+            }
+        }
+        std::ranges::sort(sources);
+        if (sources.empty()) {
+            QMessageBox::critical(this, QStringLiteral("Open folder failed"),
+                                  QStringLiteral("The selected folder contains no ICAD sources."));
+            return false;
+        }
+        entry = sources.front();
+    }
+    return open_source(entry);
 }
 
 MainWindow::~MainWindow() {
@@ -482,7 +523,7 @@ auto MainWindow::open_folder_dialog() -> void {
         this, QStringLiteral("Open ICAD workspace"), to_qstring(workspace_root_),
         QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
     if (!selected.isEmpty())
-        open_folder(std::filesystem::path{selected.toStdString()});
+        open_workspace(std::filesystem::path{selected.toStdString()});
 }
 
 auto MainWindow::open_folder(const std::filesystem::path& path) -> bool {

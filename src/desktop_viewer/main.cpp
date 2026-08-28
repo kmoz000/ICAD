@@ -36,6 +36,7 @@
 #include <optional>
 #include <span>
 #include <string_view>
+#include <vector>
 
 namespace {
 
@@ -55,9 +56,51 @@ auto configure_parser(QCommandLineParser& parser, QCommandLineOption& self_test_
     parser.addOption(display_option);
     parser.addOption(snapshot_option);
     parser.addOption(studio_snapshot_option);
-    parser.addPositionalArgument(QStringLiteral("source.icad"),
-                                 QStringLiteral("One or more ICAD source files to edit and preview."),
-                                 QStringLiteral("[source.icad…]"));
+    parser.addPositionalArgument(
+        QStringLiteral("source.icad|workspace"),
+        QStringLiteral("One or more ICAD source files, or one workspace folder, to edit and preview."),
+        QStringLiteral("[source.icad…|workspace]"));
+}
+
+[[nodiscard]] auto workspace_entry_source(const std::filesystem::path& directory)
+    -> std::optional<QString> {
+    std::error_code error;
+    const auto absolute = std::filesystem::absolute(directory).lexically_normal();
+    const auto main_source = absolute / "main.icad";
+    if (std::filesystem::is_regular_file(main_source, error))
+        return QFileInfo{QString::fromStdString(main_source.string())}.absoluteFilePath();
+
+    std::vector<std::filesystem::path> sources;
+    error.clear();
+    for (std::filesystem::recursive_directory_iterator iterator{
+             absolute, std::filesystem::directory_options::skip_permission_denied, error},
+         end;
+         iterator != end; iterator.increment(error)) {
+        if (error) {
+            error.clear();
+            continue;
+        }
+        if (iterator->is_regular_file(error) &&
+            QFileInfo{QString::fromStdString(iterator->path().string())}.suffix().compare(
+                QStringLiteral("icad"), Qt::CaseInsensitive) == 0) {
+            sources.push_back(iterator->path());
+        }
+    }
+    std::ranges::sort(sources);
+    if (sources.empty())
+        return std::nullopt;
+    return QFileInfo{QString::fromStdString(sources.front().string())}.absoluteFilePath();
+}
+
+[[nodiscard]] auto source_argument(const QString& argument) -> std::optional<QString> {
+    const QFileInfo info{argument};
+    if (info.isDir())
+        return workspace_entry_source(std::filesystem::path{info.absoluteFilePath().toStdString()});
+    if (info.isFile() &&
+        info.suffix().compare(QStringLiteral("icad"), Qt::CaseInsensitive) == 0) {
+        return info.absoluteFilePath();
+    }
+    return std::nullopt;
 }
 
 [[nodiscard]] auto standard_view(QString name) -> std::optional<icad::desktop::StandardView> {
@@ -159,7 +202,12 @@ auto main(int argc, char** argv) -> int {
             return 0;
         if (positional.size() != 1)
             parser.showHelp(2);
-        return self_test(QFileInfo{positional.front()}.absoluteFilePath());
+        const auto resolved = source_argument(positional.front());
+        if (!resolved) {
+            std::cerr << "icad-viewer: expected an ICAD source or workspace folder\n";
+            return 2;
+        }
+        return self_test(*resolved);
     }
 
     QSurfaceFormat format;
@@ -190,29 +238,44 @@ auto main(int argc, char** argv) -> int {
         return 2;
     }
     const auto positional = parser.positionalArguments();
+    QStringList sources;
+    std::optional<std::filesystem::path> workspace;
     QString source;
     if (positional.empty()) {
         source = QFileDialog::getOpenFileName(nullptr, QStringLiteral("Open ICAD source"), QString{},
                                               QStringLiteral("ICAD source (*.icad)"));
         if (source.isEmpty())
             return 0;
+        sources.push_back(QFileInfo{source}.absoluteFilePath());
     } else {
-        source = QFileInfo{positional.front()}.absoluteFilePath();
-    }
-    for (const QString& candidate : positional) {
-        if (QFileInfo{candidate}.suffix().compare(QStringLiteral("icad"), Qt::CaseInsensitive) != 0) {
-            std::cerr << "icad-viewer: expected .icad source files\n";
-            return 2;
+        for (const QString& candidate : positional) {
+            const QFileInfo info{candidate};
+            if (info.isDir()) {
+                if (positional.size() != 1) {
+                    std::cerr << "icad-viewer: a workspace folder cannot be combined with source files\n";
+                    return 2;
+                }
+                workspace = std::filesystem::path{info.absoluteFilePath().toStdString()};
+            }
+            const auto resolved = source_argument(candidate);
+            if (!resolved) {
+                std::cerr << "icad-viewer: expected an ICAD source or workspace folder\n";
+                return 2;
+            }
+            sources.push_back(*resolved);
         }
+        source = sources.front();
     }
     icad::desktop::MainWindow window{std::filesystem::path{source.toStdString()}};
     if (!window.ready()) {
         QMessageBox::critical(nullptr, QStringLiteral("ICAD Studio"), window.error());
         return 2;
     }
-    for (qsizetype index = 1; index < positional.size(); ++index) {
+    if (workspace && !window.open_workspace(*workspace))
+        return 2;
+    for (qsizetype index = 1; index < sources.size(); ++index) {
         if (!window.open_document(
-                std::filesystem::path{QFileInfo{positional[index]}.absoluteFilePath().toStdString()}))
+                std::filesystem::path{sources[index].toStdString()}))
             return 2;
     }
     window.set_standard_view(*initial_view);
@@ -220,7 +283,7 @@ auto main(int argc, char** argv) -> int {
     if (parser.isSet(window_test_option)) {
         window.show();
         auto* tabs = window.findChild<QTabBar*>(QStringLiteral("documentTabs"));
-        const auto* workspace = window.findChild<QTreeView*>(QStringLiteral("workspaceTree"));
+        const auto* workspace_tree = window.findChild<QTreeView*>(QStringLiteral("workspaceTree"));
         const auto* model = window.findChild<QTreeWidget*>(QStringLiteral("modelTree"));
         const auto* editor = window.findChild<QPlainTextEdit*>(QStringLiteral("sourceEditor"));
         const auto* compile_state = window.findChild<QLabel*>(QStringLiteral("compileState"));
@@ -241,11 +304,12 @@ auto main(int argc, char** argv) -> int {
                 return action->text().remove(QLatin1Char('&')) ==
                        QStringLiteral("Use scene lighting");
             });
-        const int expected_tabs = std::max(1, static_cast<int>(positional.size()));
+        const int expected_tabs = std::max(1, static_cast<int>(sources.size()));
         if (tabs == nullptr || tabs->count() != expected_tabs ||
             tabs->height() > 40 || !tabs->isMovable() || tabs->elideMode() != Qt::ElideRight ||
-            window.document_count() != static_cast<std::size_t>(expected_tabs) || workspace == nullptr ||
-            workspace->model() == nullptr || window.workspace_root().empty() || model == nullptr ||
+            window.document_count() != static_cast<std::size_t>(expected_tabs) ||
+            workspace_tree == nullptr || workspace_tree->model() == nullptr ||
+            window.workspace_root().empty() || model == nullptr ||
             editor == nullptr || compile_state == nullptr ||
             model->selectionBehavior() != QAbstractItemView::SelectRows ||
             model->header()->sectionResizeMode(0) != QHeaderView::Stretch || !has_open_folder ||
@@ -267,7 +331,11 @@ auto main(int argc, char** argv) -> int {
             return false;
         };
         if (!wait_for_preview()) {
-            std::cerr << "QT_VIEWER_WINDOW_TEST failed: active document did not compile automatically\n";
+            std::cerr << "QT_VIEWER_WINDOW_TEST failed: active document did not compile automatically"
+                      << " title=" << window.windowTitle().toStdString()
+                      << " parts=" << model->topLevelItemCount()
+                      << " state=" << compile_state->text().toStdString()
+                      << " current_tab=" << tabs->currentIndex() << '\n';
             return 4;
         }
         if (expected_tabs > 1) {
@@ -306,7 +374,9 @@ auto main(int argc, char** argv) -> int {
                           << " source_matches=" << (editor->toPlainText() == expected_source)
                           << " title=" << window.windowTitle().toStdString()
                           << " expected_file=" << QFileInfo{moved_path}.fileName().toStdString()
-                          << " parts=" << model->topLevelItemCount() << '\n';
+                          << " parts=" << model->topLevelItemCount()
+                          << " state=" << compile_state->text().toStdString()
+                          << " current_tab=" << tabs->currentIndex() << '\n';
                 return 7;
             }
         }

@@ -209,6 +209,10 @@ open build/bin/icad-viewer.app --args --view isometric examples/advanced.icad # 
 # Open several sources as independent tabs in one native workspace:
 open build/bin/icad-viewer.app --args examples/advanced.icad examples/assembly_semantics.icad
 
+# Open a workspace folder; main.icad is selected automatically and the full
+# folder remains available in the file tree:
+open build/bin/icad-viewer.app --args ../test-icad
+
 # Headless automation using the exact native Qt/OpenGL viewport:
 build/bin/icad-viewer.app/Contents/MacOS/icad-viewer \
   --view isometric --snapshot build/advanced.png examples/advanced.icad
@@ -233,6 +237,10 @@ radial triangle bands on smooth revolved and filleted solids. Use
 viewport, and exits with a nonzero status if compilation or image writing fails.
 `--studio-snapshot output.png` captures the complete rendered workbench after
 its source tabs finish compiling, making release screenshots reproducible.
+Passing a workspace directory opens its `main.icad` entry point (or the first
+`.icad` source when no `main.icad` exists) and roots the file tree at that
+directory. Per-document source, diagnostics, model tree, scene, and render cache
+follow stable tab identities even after tabs are reordered.
 
 The advanced build produces:
 

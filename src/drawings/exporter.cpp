@@ -4,13 +4,195 @@
 #include "../cad/model.hpp"
 
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <fstream>
 #include <iomanip>
 #include <iterator>
+#include <limits>
+#include <map>
 #include <set>
+#include <sstream>
 #include <string_view>
+#include <vector>
 
 namespace icad::drawings {
+namespace {
+
+constexpr double sheet_width = 1600.0;
+constexpr double sheet_height = 1200.0;
+
+[[nodiscard]] auto xml(std::string_view value) -> std::string {
+    std::string escaped;
+    escaped.reserve(value.size());
+    for (const char character : value) {
+        switch (character) {
+        case '&': escaped += "&amp;"; break;
+        case '<': escaped += "&lt;"; break;
+        case '>': escaped += "&gt;"; break;
+        case '"': escaped += "&quot;"; break;
+        case '\'': escaped += "&apos;"; break;
+        default: escaped.push_back(character); break;
+        }
+    }
+    return escaped;
+}
+
+[[nodiscard]] auto number(double value, int precision = 3) -> std::string {
+    std::ostringstream output;
+    output << std::fixed << std::setprecision(precision) << value;
+    auto result = output.str();
+    while (result.contains('.') && result.ends_with('0'))
+        result.pop_back();
+    if (result.ends_with('.'))
+        result.pop_back();
+    return result;
+}
+
+[[nodiscard]] auto coordinate(const cad::Point3& point, std::size_t axis) -> double {
+    if (axis == 0)
+        return point.x;
+    if (axis == 1)
+        return point.y;
+    return point.z;
+}
+
+[[nodiscard]] auto triangle_normal(const cad::Point3& first, const cad::Point3& second,
+                                   const cad::Point3& third) -> std::array<double, 3> {
+    const std::array first_edge{second.x - first.x, second.y - first.y, second.z - first.z};
+    const std::array second_edge{third.x - first.x, third.y - first.y, third.z - first.z};
+    std::array normal{first_edge[1] * second_edge[2] - first_edge[2] * second_edge[1],
+                      first_edge[2] * second_edge[0] - first_edge[0] * second_edge[2],
+                      first_edge[0] * second_edge[1] - first_edge[1] * second_edge[0]};
+    const double length = std::hypot(normal[0], normal[1], normal[2]);
+    if (length > 1.0e-12) {
+        for (auto& component : normal)
+            component /= length;
+    }
+    return normal;
+}
+
+[[nodiscard]] auto drawing_bounds(const std::vector<const cad::Part*>& parts) -> cad::Bounds {
+    const double high = std::numeric_limits<double>::max();
+    const double low = std::numeric_limits<double>::lowest();
+    cad::Bounds bounds{{high, high, high}, {low, low, low}};
+    for (const auto* part : parts) {
+        for (const auto& vertex : part->vertices) {
+            const std::array values{vertex.x, vertex.y, vertex.z};
+            for (std::size_t axis = 0; axis < values.size(); ++axis) {
+                bounds.minimum[axis] = std::min(bounds.minimum[axis], values[axis]);
+                bounds.maximum[axis] = std::max(bounds.maximum[axis], values[axis]);
+            }
+        }
+    }
+    if (parts.empty() || bounds.minimum[0] == high)
+        return {{0.0, 0.0, 0.0}, {1.0, 1.0, 1.0}};
+    return bounds;
+}
+
+auto projected_view(std::ostream& stream, const std::vector<const cad::Part*>& parts,
+                    const cad::Bounds& bounds, std::size_t horizontal_axis,
+                    std::size_t vertical_axis, double x, double y, double width, double height,
+                    std::string_view label) -> void {
+    const double horizontal_extent =
+        std::max(bounds.maximum[horizontal_axis] - bounds.minimum[horizontal_axis], 0.001);
+    const double vertical_extent =
+        std::max(bounds.maximum[vertical_axis] - bounds.minimum[vertical_axis], 0.001);
+    const double scale = std::min((width - 34.0) / horizontal_extent,
+                                  (height - 52.0) / vertical_extent);
+    const double horizontal_center =
+        (bounds.minimum[horizontal_axis] + bounds.maximum[horizontal_axis]) * 0.5;
+    const double vertical_center =
+        (bounds.minimum[vertical_axis] + bounds.maximum[vertical_axis]) * 0.5;
+    const double center_x = x + width * 0.5;
+    const double center_y = y + height * 0.5 + 8.0;
+    const std::size_t view_axis = 3U - horizontal_axis - vertical_axis;
+
+    stream << "<g class=\"view\"><rect x=\"" << x << "\" y=\"" << y
+           << "\" width=\"" << width << "\" height=\"" << height
+           << "\"/><text class=\"view-label\" x=\"" << x + 12.0 << "\" y=\""
+           << y + 22.0 << "\">" << label << "</text>\n";
+    for (const auto* part : parts) {
+        stream << "<path data-part=\"" << xml(part->name) << "\" d=\"";
+        std::map<std::pair<std::size_t, std::size_t>, std::vector<std::array<double, 3>>> edges;
+        for (const auto& triangle : part->triangles) {
+            const auto normal = triangle_normal(part->vertices[triangle[0]],
+                                                part->vertices[triangle[1]],
+                                                part->vertices[triangle[2]]);
+            for (std::size_t edge = 0; edge < 3; ++edge) {
+                edges[{std::min(triangle[edge], triangle[(edge + 1) % 3]),
+                       std::max(triangle[edge], triangle[(edge + 1) % 3])}]
+                    .push_back(normal);
+            }
+        }
+        for (const auto& [edge, normals] : edges) {
+            bool draw = normals.size() != 2U;
+            if (normals.size() == 2U) {
+                const double normal_dot = normals[0][0] * normals[1][0] +
+                                          normals[0][1] * normals[1][1] +
+                                          normals[0][2] * normals[1][2];
+                constexpr double crease_cosine = 0.9659258262890683; // 15 degrees
+                constexpr double facing_epsilon = 1.0e-6;
+                const double first_facing = normals[0][view_axis];
+                const double second_facing = normals[1][view_axis];
+                const bool silhouette =
+                    (first_facing > facing_epsilon && second_facing < -facing_epsilon) ||
+                    (first_facing < -facing_epsilon && second_facing > facing_epsilon);
+                draw = normal_dot < crease_cosine || silhouette;
+            }
+            if (!draw)
+                continue;
+            const auto [first, second] = edge;
+            const auto& a = part->vertices[first];
+            const auto& b = part->vertices[second];
+            stream << 'M' << center_x + (coordinate(a, horizontal_axis) - horizontal_center) * scale
+                   << ',' << center_y - (coordinate(a, vertical_axis) - vertical_center) * scale
+                   << 'L' << center_x + (coordinate(b, horizontal_axis) - horizontal_center) * scale
+                   << ',' << center_y - (coordinate(b, vertical_axis) - vertical_center) * scale;
+        }
+        stream << "\"/>\n";
+    }
+    stream << "</g>\n";
+}
+
+auto dimension(std::ostream& stream, double x, double y, double length,
+               std::string_view label) -> void {
+    stream << "<g class=\"dimension\"><line x1=\"" << x << "\" y1=\"" << y
+           << "\" x2=\"" << x + length << "\" y2=\"" << y
+           << "\"/><line x1=\"" << x << "\" y1=\"" << y - 7.0 << "\" x2=\""
+           << x << "\" y2=\"" << y + 7.0 << "\"/><line x1=\"" << x + length
+           << "\" y1=\"" << y - 7.0 << "\" x2=\"" << x + length << "\" y2=\""
+           << y + 7.0 << "\"/><text x=\"" << x + length * 0.5 << "\" y=\"" << y - 7.0
+           << "\">" << xml(label) << "</text></g>\n";
+}
+
+[[nodiscard]] auto definition_for_occurrence(const compiler::ir::Project& project,
+                                             std::string_view occurrence) -> std::string_view {
+    const auto instance = std::ranges::find(project.instances, occurrence,
+                                            &compiler::ir::ComponentInstance::name);
+    return instance == project.instances.end() ? occurrence : std::string_view{instance->body};
+}
+
+[[nodiscard]] auto operation_name(compiler::ir::FeatureOperation operation) -> std::string_view {
+    switch (operation) {
+    case compiler::ir::FeatureOperation::create: return "NEW";
+    case compiler::ir::FeatureOperation::unite: return "ADD";
+    case compiler::ir::FeatureOperation::cut: return "CUT";
+    case compiler::ir::FeatureOperation::intersect: return "INTERSECT";
+    }
+    return "UNKNOWN";
+}
+
+[[nodiscard]] auto solve_status_name(compiler::ir::SketchSolveStatus status) -> std::string_view {
+    switch (status) {
+    case compiler::ir::SketchSolveStatus::fully_constrained: return "FULLY CONSTRAINED";
+    case compiler::ir::SketchSolveStatus::under_constrained: return "UNDER CONSTRAINED";
+    case compiler::ir::SketchSolveStatus::inconsistent: return "INCONSISTENT";
+    }
+    return "UNKNOWN";
+}
+
+} // namespace
 
 auto write_svg(const compiler::ir::Project& project, const std::filesystem::path& output)
     -> ExportResult {
@@ -23,61 +205,243 @@ auto write_svg(const compiler::ir::Project& project, const std::filesystem::path
     if (!stream) {
         return {false, "cannot open SVG drawing output"};
     }
-    const double x_extent = analysis.bounds.maximum[0] - analysis.bounds.minimum[0];
-    const double y_extent = analysis.bounds.maximum[1] - analysis.bounds.minimum[1];
-    const double z_extent = analysis.bounds.maximum[2] - analysis.bounds.minimum[2];
-    const double scale = std::min({320.0 / std::max(x_extent, 1.0),
-                                   260.0 / std::max(y_extent, 1.0),
-                                   260.0 / std::max(z_extent, 1.0)});
-    stream << std::setprecision(12)
-           << "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1200\" height=\"800\" "
-              "viewBox=\"0 0 1200 800\"><rect width=\"1200\" height=\"800\" fill=\"white\"/>"
-              "<g fill=\"none\" stroke=\"#102030\" stroke-width=\"1\">";
-    for (const auto& part : model.parts) {
-        std::set<std::pair<std::size_t, std::size_t>> edges;
-        for (const auto& triangle : part.triangles) {
-            for (std::size_t edge = 0; edge < 3; ++edge) {
-                edges.emplace(std::min(triangle[edge], triangle[(edge + 1) % 3]),
-                              std::max(triangle[edge], triangle[(edge + 1) % 3]));
+    const std::size_t sheet_count = project.bodies.size() + 1U;
+    const double drawing_height = sheet_height * static_cast<double>(sheet_count);
+    stream << std::setprecision(12) << "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\""
+           << sheet_width << "\" height=\"" << drawing_height << "\" viewBox=\"0 0 "
+           << sheet_width << ' ' << drawing_height << "\"><style>"
+              ".sheet{fill:#fff;stroke:#102030;stroke-width:1}.view rect{fill:#fbfdff;stroke:#8090a0}"
+              ".view path{fill:none;stroke:#102030;stroke-width:.7;vector-effect:non-scaling-stroke}"
+              "text{font-family:Arial,sans-serif;fill:#102030}.title{font-size:28px;font-weight:700}"
+              ".subtitle{font-size:13px;fill:#526273}.view-label{font-size:13px;font-weight:700}"
+              ".dimension{fill:none;stroke:#2563eb;stroke-width:1}.dimension text{fill:#1d4ed8;"
+              "stroke:none;font-size:12px;text-anchor:middle}.section{font-size:15px;font-weight:700}"
+              ".row{font-size:12px}.small{font-size:10px}.rule{stroke:#a8b3bd;stroke-width:.7}"
+              "@media print{.sheet-group{break-after:page}}</style>\n";
+
+    std::size_t sheet_index = 0;
+    for (const auto& body : project.bodies) {
+        const double offset = sheet_height * static_cast<double>(sheet_index);
+        std::vector<const cad::Part*> parts;
+        for (const auto& part : model.parts) {
+            if (part.body == body.name)
+                parts.push_back(&part);
+        }
+        const auto bounds = drawing_bounds(parts);
+        const std::array extent{bounds.maximum[0] - bounds.minimum[0],
+                                bounds.maximum[1] - bounds.minimum[1],
+                                bounds.maximum[2] - bounds.minimum[2]};
+        std::size_t quantity = 1;
+        quantity += static_cast<std::size_t>(std::ranges::count(project.instances, body.name,
+                                                               &compiler::ir::ComponentInstance::body));
+        double surface_area = 0.0;
+        double volume = 0.0;
+        for (const auto& part : analysis.parts) {
+            if (part.body == body.name) {
+                surface_area += part.surface_area_mm2;
+                volume += part.volume_mm3;
             }
         }
-        for (const auto& [first, second] : edges) {
-            const auto& a = part.vertices[first];
-            const auto& b = part.vertices[second];
-            stream << "<line x1=\"" << 80 + (a.x - analysis.bounds.minimum[0]) * scale
-                   << "\" y1=\"" << 340 - (a.y - analysis.bounds.minimum[1]) * scale
-                   << "\" x2=\"" << 80 + (b.x - analysis.bounds.minimum[0]) * scale
-                   << "\" y2=\"" << 340 - (b.y - analysis.bounds.minimum[1]) * scale << "\"/>"
-                   << "<line x1=\"" << 450 + (a.x - analysis.bounds.minimum[0]) * scale
-                   << "\" y1=\"" << 340 - (a.z - analysis.bounds.minimum[2]) * scale
-                   << "\" x2=\"" << 450 + (b.x - analysis.bounds.minimum[0]) * scale
-                   << "\" y2=\"" << 340 - (b.z - analysis.bounds.minimum[2]) * scale << "\"/>"
-                   << "<line x1=\"" << 850 + (a.y - analysis.bounds.minimum[1]) * scale
-                   << "\" y1=\"" << 340 - (a.z - analysis.bounds.minimum[2]) * scale
-                   << "\" x2=\"" << 850 + (b.y - analysis.bounds.minimum[1]) * scale
-                   << "\" y2=\"" << 340 - (b.z - analysis.bounds.minimum[2]) * scale << "\"/>";
+
+        stream << "<g class=\"sheet-group\" id=\"part-sheet-" << sheet_index + 1U
+               << "\" data-sheet-kind=\"part\" transform=\"translate(0 " << offset
+               << ")\"><rect class=\"sheet\" x=\"20\" y=\"20\" width=\"1560\" height=\"1160\"/>"
+                  "<text class=\"title\" x=\"50\" y=\"62\">PART DETAIL — "
+               << xml(body.name) << "</text><text class=\"subtitle\" x=\"50\" y=\"87\">"
+               << xml(project.name) << " · Third-angle projected native edges · Sheet "
+               << sheet_index + 1U << " of " << sheet_count << "</text>";
+        projected_view(stream, parts, bounds, 0, 1, 50, 115, 470, 330, "TOP (X/Y)");
+        projected_view(stream, parts, bounds, 0, 2, 565, 115, 470, 330, "FRONT (X/Z)");
+        projected_view(stream, parts, bounds, 1, 2, 1080, 115, 470, 330, "RIGHT (Y/Z)");
+        dimension(stream, 65, 478, 420, "X OVERALL " + number(extent[0]) + " mm");
+        dimension(stream, 580, 478, 420, "Y OVERALL " + number(extent[1]) + " mm");
+        dimension(stream, 1095, 478, 420, "Z OVERALL " + number(extent[2]) + " mm");
+
+        stream << "<text class=\"section\" x=\"50\" y=\"535\">MANUFACTURING DEFINITION</text>"
+                  "<text class=\"row\" x=\"50\" y=\"560\">MATERIAL: "
+               << xml(body.material) << "</text><text class=\"row\" x=\"310\" y=\"560\">QUANTITY: "
+               << quantity << "</text><text class=\"row\" x=\"470\" y=\"560\">SOLIDS: "
+               << parts.size() << "</text><text class=\"row\" x=\"610\" y=\"560\">VOLUME: "
+               << number(volume) << " mm³</text><text class=\"row\" x=\"890\" y=\"560\">AREA: "
+               << number(surface_area) << " mm²</text><text class=\"row\" x=\"1190\" y=\"560\">"
+                  "TOLERANCE: ±"
+               << number(project.tolerance.linear_mm) << " mm / ±"
+               << number(project.tolerance.angular_degrees) << "°</text>"
+                  "<text class=\"section\" x=\"50\" y=\"610\">FEATURE AND PARAMETER SCHEDULE</text>";
+        double row_y = 635.0;
+        std::size_t feature_rows = 0;
+        for (const auto& feature : body.features) {
+            if (feature_rows >= 6U)
+                break;
+            std::string properties;
+            for (const auto& property : feature.properties) {
+                if (!properties.empty())
+                    properties += " · ";
+                properties += property.name + "=" + number(property.value.value) + property.value.unit;
+            }
+            stream << "<text class=\"row\" x=\"50\" y=\"" << row_y << "\">"
+                   << feature_rows + 1U << ". " << xml(feature.name) << " | "
+                   << xml(feature.source_keyword) << '/' << xml(feature.type) << " | "
+                   << operation_name(feature.operation) << " | " << xml(properties) << "</text>";
+            row_y += 21.0;
+            ++feature_rows;
         }
+        if (body.features.size() > feature_rows) {
+            stream << "<text class=\"small\" x=\"50\" y=\"" << row_y
+                   << "\">+ " << body.features.size() - feature_rows
+                   << " additional feature operations in authoritative ICAD source</text>";
+            row_y += 18.0;
+        }
+
+        row_y += 18.0;
+        stream << "<text class=\"section\" x=\"50\" y=\"" << row_y
+               << "\">SKETCH / PROFILE SCHEDULE</text>";
+        row_y += 22.0;
+        std::size_t sketch_rows = 0;
+        for (const auto& sketch : project.sketches) {
+            if (sketch.body != body.name || sketch_rows >= 10U)
+                continue;
+            stream << "<text class=\"small\" x=\"50\" y=\"" << row_y << "\">SKETCH "
+                   << xml(sketch.name) << " | PLANE " << xml(sketch.plane) << " | "
+                   << solve_status_name(sketch.status) << " | DOF " << sketch.degrees_of_freedom
+                   << " | MAX RESIDUAL " << number(sketch.maximum_residual, 6) << "</text>";
+            row_y += 18.0;
+            ++sketch_rows;
+            for (const auto& shape : sketch.shapes) {
+                if (sketch_rows >= 10U)
+                    break;
+                std::string circular_sizes;
+                for (const auto& entity_name : shape.entities) {
+                    const auto entity = std::ranges::find(sketch.entities, entity_name,
+                                                          &compiler::ir::SketchEntity::name);
+                    if (entity == sketch.entities.end() || !entity->full_circle)
+                        continue;
+                    if (!circular_sizes.empty())
+                        circular_sizes += ", ";
+                    circular_sizes += "DIA " + number(entity->radius_mm * 2.0) + " mm";
+                }
+                stream << "<text class=\"small\" x=\"70\" y=\"" << row_y << "\">SHAPE "
+                       << xml(shape.name) << " | " << xml(shape.role) << " | AREA "
+                       << number(shape.area_mm2) << " mm²";
+                if (!shape.containing_shape.empty())
+                    stream << " | IN " << xml(shape.containing_shape);
+                if (!circular_sizes.empty())
+                    stream << " | " << circular_sizes;
+                stream << "</text>";
+                row_y += 18.0;
+                ++sketch_rows;
+            }
+        }
+        if (sketch_rows == 0U)
+            stream << "<text class=\"small\" x=\"50\" y=\"" << row_y
+                   << "\">No authored sketch workspace; inspect low-level feature properties above.</text>";
+
+        stream << "<text class=\"section\" x=\"850\" y=\"610\">INTERFACES / INSPECTION</text>";
+        double interface_y = 635.0;
+        std::size_t interface_count = 0;
+        for (const auto& interface : project.interfaces) {
+            if (definition_for_occurrence(project, interface.occurrence) != body.name)
+                continue;
+            stream << "<text class=\"row\" x=\"850\" y=\"" << interface_y << "\">"
+                   << xml(interface.name) << " | " << xml(interface.kind) << " | AT "
+                   << xml(interface.point) << " | AXIS " << xml(interface.axis);
+            if (interface.has_size)
+                stream << " | SIZE " << number(interface.size_mm) << " mm";
+            stream << "</text>";
+            interface_y += 21.0;
+            ++interface_count;
+        }
+        if (interface_count == 0U)
+            stream << "<text class=\"row\" x=\"850\" y=\"635\">No named assembly interfaces on this definition.</text>";
+
+        const auto body_sketches = static_cast<std::size_t>(std::ranges::count(
+            project.sketches, body.name, &compiler::ir::Sketch::body));
+        stream << "<text class=\"section\" x=\"50\" y=\"930\">RELEASE NOTES</text>"
+                  "<text class=\"row\" x=\"50\" y=\"955\">DATUM A: primary XY support · DATUM B: XZ orientation · DATUM C: YZ orientation</text>"
+                  "<text class=\"row\" x=\"50\" y=\"978\">SKETCH WORKSPACES: "
+               << body_sketches << " · FEATURE OPERATIONS: " << body.features.size()
+               << " · Verify all named holes, fits, edge treatments, and mating faces against source.</text>"
+                  "<text class=\"row\" x=\"50\" y=\"1001\">GENERAL: deburr edges; preserve authored material and units; do not scale geometry; inspect critical interfaces before assembly.</text>"
+                  "<rect x=\"1040\" y=\"1040\" width=\"510\" height=\"110\" fill=\"none\" stroke=\"#102030\"/>"
+                  "<text class=\"row\" x=\"1055\" y=\"1066\">TITLE: "
+               << xml(body.name) << "</text><text class=\"row\" x=\"1055\" y=\"1091\">UNITS: "
+               << xml(project.canonical_length_unit) << " · SCALE: AUTO · PROJECTION: THIRD ANGLE</text>"
+                  "<text class=\"row\" x=\"1055\" y=\"1116\">DATUMS: A | B | C · STATUS: MANUFACTURING DETAIL</text>"
+                  "<text class=\"row\" x=\"1055\" y=\"1141\">SOURCE OF TRUTH: declarative ICAD model</text></g>\n";
+        ++sheet_index;
     }
-    stream << "</g><g stroke=\"#2563eb\" fill=\"none\"><line x1=\"80\" y1=\"420\" x2=\""
-           << 80 + x_extent * scale << "\" y2=\"420\"/><line x1=\"80\" y1=\"414\" x2=\"80\" y2=\"426\"/>"
-           << "<line x1=\"" << 80 + x_extent * scale << "\" y1=\"414\" x2=\""
-           << 80 + x_extent * scale << "\" y2=\"426\"/></g>"
-              "<g font-family=\"system-ui\" fill=\"#102030\">"
-              "<text x=\"80\" y=\"55\" font-size=\"26\">"
-           << project.name
-           << "</text><text x=\"80\" y=\"380\">TOP</text>"
-              "<text x=\"450\" y=\"380\">FRONT</text><text x=\"850\" y=\"380\">RIGHT</text>"
-              "<text x=\"80\" y=\"445\">OVERALL WIDTH: "
-           << x_extent << " mm</text><text x=\"80\" y=\"740\">Units: mm | Third-angle projected native edges</text>"
-              "<text x=\"735\" y=\"625\" font-size=\"18\">TITLE: " << project.name
-           << "</text><text x=\"735\" y=\"650\">SCALE: AUTO</text>"
-              "<text x=\"900\" y=\"650\">DATUMS: A | B | C</text>"
-              "<text x=\"735\" y=\"675\">GENERAL TOLERANCE: ±" << project.tolerance.linear_mm
-           << " mm</text><text x=\"735\" y=\"700\">BOM ITEMS: " << project.bodies.size()
-           << "</text></g><rect x=\"720\" y=\"600\" width=\"440\" height=\"125\" fill=\"none\" stroke=\"#102030\"/>"
-              "<rect x=\"20\" y=\"20\" width=\"1160\" height=\"760\" fill=\"none\" "
-              "stroke=\"#102030\"/></svg>";
-    return {static_cast<bool>(stream), "SVG drawing export complete"};
+
+    const double assembly_offset = sheet_height * static_cast<double>(sheet_index);
+    std::vector<const cad::Part*> assembly_parts;
+    assembly_parts.reserve(model.parts.size());
+    for (const auto& part : model.parts)
+        assembly_parts.push_back(&part);
+    const auto assembly_bounds = drawing_bounds(assembly_parts);
+    stream << "<g class=\"sheet-group\" id=\"assembly-sheet\" data-sheet-kind=\"assembly\" transform=\"translate(0 "
+           << assembly_offset
+           << ")\"><rect class=\"sheet\" x=\"20\" y=\"20\" width=\"1560\" height=\"1160\"/>"
+              "<text class=\"title\" x=\"50\" y=\"62\">ASSEMBLY SHEET — "
+           << xml(project.name) << "</text><text class=\"subtitle\" x=\"50\" y=\"87\">Final assembly after all part detail sheets · Sheet "
+           << sheet_count << " of " << sheet_count << "</text>";
+    projected_view(stream, assembly_parts, assembly_bounds, 0, 1, 50, 115, 470, 330, "ASSEMBLY TOP");
+    projected_view(stream, assembly_parts, assembly_bounds, 0, 2, 565, 115, 470, 330, "ASSEMBLY FRONT");
+    projected_view(stream, assembly_parts, assembly_bounds, 1, 2, 1080, 115, 470, 330, "ASSEMBLY RIGHT");
+    stream << "<text class=\"section\" x=\"50\" y=\"495\">BILL OF MATERIALS</text>"
+              "<text class=\"small\" x=\"50\" y=\"518\">ITEM</text><text class=\"small\" x=\"105\" y=\"518\">DEFINITION</text>"
+              "<text class=\"small\" x=\"390\" y=\"518\">QTY</text><text class=\"small\" x=\"445\" y=\"518\">MATERIAL</text>";
+    double bom_y = 541.0;
+    for (std::size_t index = 0; index < project.bodies.size(); ++index) {
+        const auto& body = project.bodies[index];
+        const auto quantity = 1U + static_cast<unsigned int>(std::ranges::count(
+                                       project.instances, body.name,
+                                       &compiler::ir::ComponentInstance::body));
+        stream << "<text class=\"row\" x=\"50\" y=\"" << bom_y << "\">" << index + 1U
+               << "</text><text class=\"row\" x=\"105\" y=\"" << bom_y << "\">"
+               << xml(body.name) << "</text><text class=\"row\" x=\"390\" y=\"" << bom_y
+               << "\">" << quantity << "</text><text class=\"row\" x=\"445\" y=\"" << bom_y
+               << "\">" << xml(body.material) << "</text>";
+        bom_y += 22.0;
+    }
+
+    stream << "<text class=\"section\" x=\"760\" y=\"495\">ASSEMBLY CONNECTION SCHEDULE</text>";
+    double connection_y = 520.0;
+    for (const auto& connection : project.connections) {
+        stream << "<text class=\"small\" x=\"760\" y=\"" << connection_y << "\">"
+               << xml(connection.name) << " | " << xml(connection.first_interface) << " ↔ "
+               << xml(connection.second_interface) << " | " << xml(connection.method) << " | "
+               << xml(connection.standard);
+        if (!connection.fastener.empty())
+            stream << " | FASTENER " << xml(connection.fastener);
+        if (!connection.fit.empty())
+            stream << " | FIT " << xml(connection.fit);
+        stream << " | CLR " << number(connection.clearance_mm) << " mm | GAP "
+               << number(connection.interface_gap_mm) << " mm</text>";
+        connection_y += 18.0;
+    }
+    if (project.connections.empty())
+        stream << "<text class=\"row\" x=\"760\" y=\"520\">No authored assembly connections.</text>";
+
+    const double notes_y = std::max({780.0, bom_y + 25.0, connection_y + 25.0});
+    stream << "<text class=\"section\" x=\"50\" y=\"" << notes_y << "\">ASSEMBLY / INSPECTION NOTES</text>"
+              "<text class=\"row\" x=\"50\" y=\"" << notes_y + 25.0
+           << "\">1. Manufacture and inspect every preceding part sheet before assembly.</text>"
+              "<text class=\"row\" x=\"50\" y=\"" << notes_y + 48.0
+           << "\">2. Seat named interfaces to authored gap, axis alignment, fit, fastener, and standard requirements.</text>"
+              "<text class=\"row\" x=\"50\" y=\"" << notes_y + 71.0
+           << "\">3. Verify zero unintended penetration, joint limits, overall envelope, and first/middle/last inspection frames.</text>"
+              "<text class=\"row\" x=\"50\" y=\"" << notes_y + 94.0
+           << "\">4. General tolerance: ±" << number(project.tolerance.linear_mm) << " mm linear / ±"
+           << number(project.tolerance.angular_degrees) << "° angular unless individually specified.</text>"
+              "<rect x=\"1040\" y=\"1040\" width=\"510\" height=\"110\" fill=\"none\" stroke=\"#102030\"/>"
+              "<text class=\"row\" x=\"1055\" y=\"1066\">TITLE: " << xml(project.name)
+           << " ASSEMBLY</text><text class=\"row\" x=\"1055\" y=\"1091\">BOM ITEMS: "
+           << project.bodies.size() << " · CONNECTIONS: " << project.connections.size()
+           << " · JOINTS: " << project.joints.size() << "</text>"
+              "<text class=\"row\" x=\"1055\" y=\"1116\">DATUMS: A | B | C · STATUS: ASSEMBLY RELEASE</text>"
+              "<text class=\"row\" x=\"1055\" y=\"1141\">UNITS: "
+           << xml(project.canonical_length_unit) << " · SCALE: AUTO</text></g>\n</svg>\n";
+    return {static_cast<bool>(stream),
+            "SVG manufacturing drawing set complete: part details followed by assembly"};
 }
 
 namespace {

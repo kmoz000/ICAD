@@ -96,6 +96,12 @@ auto main() -> int {
         !contents(report_path).contains("\"passed\":true") ||
         !contents(report_path).contains("\"checkedRules\":8") ||
         !contents(drawing_path).contains("<svg") ||
+        !contents(drawing_path).contains("data-sheet-kind=\"part\"") ||
+        !contents(drawing_path).contains("PART DETAIL") ||
+        !contents(drawing_path).contains("FEATURE AND PARAMETER SCHEDULE") ||
+        !contents(drawing_path).contains("SKETCH / PROFILE SCHEDULE") ||
+        !contents(drawing_path).contains("data-sheet-kind=\"assembly\"") ||
+        !contents(drawing_path).contains("ASSEMBLY CONNECTION SCHEDULE") ||
         !contents(drawing_path).contains("Third-angle projected native edges") ||
         !contents(drawing_path).contains("DATUMS: A | B | C") ||
         !contents(dxf_path).contains("VISIBLE_TOP") ||
