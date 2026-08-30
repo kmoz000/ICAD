@@ -49,3 +49,4 @@ editors/vscode/dist/
 # Local logs and scratch files
 *.log
 *.tmp
+fix.md
