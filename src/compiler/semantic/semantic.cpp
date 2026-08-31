@@ -1792,6 +1792,21 @@ auto analyze(const ast::Program& program) -> SemanticResult {
                               feature.location);
                 }
             }
+            if (feature.type == "CONE") {
+                const auto first_radius = std::ranges::find(
+                    lowered_feature.properties, "RADIUS1", &ir::Property::name);
+                const auto second_radius = std::ranges::find(
+                    lowered_feature.properties, "RADIUS2", &ir::Property::name);
+                if (first_radius != lowered_feature.properties.end() &&
+                    second_radius != lowered_feature.properties.end() &&
+                    (first_radius->value.value < 0.0 || second_radius->value.value < 0.0 ||
+                     (first_radius->value.value <= 1e-9 &&
+                      second_radius->value.value <= 1e-9))) {
+                    add_error(result, "ICAD-S0003",
+                              "CONE radii must be non-negative and at least one must be greater than zero",
+                              feature.location);
+                }
+            }
             const bool profile_feature = feature.type == "EXTRUDE" || feature.type == "REVOLVE" ||
                                          sweep_feature || loft_feature || freeform_feature;
             if (profile_feature && lowered_feature.profile.empty()) {

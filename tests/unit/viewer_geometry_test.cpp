@@ -15,6 +15,11 @@ constexpr std::string_view coplanar_quad = R"JSON({
   "format":"ICAD_SCENE",
   "project":"wireframe_quad",
   "materials":[],
+  "joints":[{"name":"plate_mount","type":"FIXED","parent":"WORLD","child":"plate",
+              "pivotMm":[0,0,0],"axisUnit":[0,0,1]}],
+  "connections":[{"name":"plate_fit","method":"BOLTED","standard":"ISO_4017",
+                    "firstBody":"plate","secondBody":"fixture","pointMm":[1,1,0],
+                    "clearanceMm":0.2,"gapMm":0.05,"aligned":true}],
   "scenes":[{
     "name":"inspection","duration":1,"fps":30,"background":"SKY_DAY",
     "lights":[{"name":"key","kind":"POINT","color":[1,0.8,0.6],"intensity":3,
@@ -72,6 +77,10 @@ auto main() -> int {
         quad.scene.scenes.size() != 1 || quad.scene.scenes[0].background != "SKY_DAY" ||
         quad.scene.scenes[0].lights.size() != 1 || !quad.scene.scenes[0].lights[0].point ||
         quad.scene.scenes[0].lights[0].position != QVector3D{2.0F, 3.0F, 4.0F} ||
+        quad.scene.joints.size() != 1 || quad.scene.joints[0].type != "FIXED" ||
+        quad.scene.connections.size() != 1 || !quad.scene.connections[0].aligned ||
+        quad.scene.connections[0].method != "BOLTED" ||
+        std::abs(quad.scene.connections[0].gap_mm - 0.05F) > 1.0e-6F ||
         QVector3D::dotProduct(quad.scene.vertices[0].normal,
                               quad.scene.vertices[3].normal) < 0.999F) {
         return fail("CAD wireframe did not suppress a coplanar tessellation diagonal");

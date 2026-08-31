@@ -92,6 +92,8 @@ if(ICAD_BUILD_DESKTOP_VIEWER)
         desktop_viewer/scene_model.hpp
         desktop_viewer/icad_highlighter.cpp
         desktop_viewer/icad_highlighter.hpp
+        desktop_viewer/icad_editor.cpp
+        desktop_viewer/icad_editor.hpp
         desktop_viewer/resources.qrc
         engine/session.cpp
     )

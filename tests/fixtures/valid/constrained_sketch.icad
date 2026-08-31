@@ -1,9 +1,10 @@
-# A fully constrained 2D mounting pattern solved from approximate seed points.
+# Canonical fully constrained benchmark plate. Keep mutable examples out of
+# deterministic test inputs so a user's design experiment cannot alter the gate.
 PROJECT constrained_sketch
 UNITS mm
 
-PARAMETER plate_width 1000 mm
-PARAMETER plate_height 2500 mm
+PARAMETER plate_width 40 mm
+PARAMETER plate_height 25 mm
 ANGLE corner_angle 90 deg
 
 SKETCH mounting_outline
@@ -22,12 +23,12 @@ CONSTRAINT height_left DISTANCE upper_left origin plate_height
 CONSTRAINT square_corner ANGLE origin lower_right upper_right corner_angle
 END
 
-MATERIAL plate_material PLASTIC
+MATERIAL plate_material ALUMINUM
 BODY plate
 MATERIAL plate_material
 FEATURE stock
 TYPE EXTRUDE
 PROFILE mounting_outline
-HEIGHT 20 mm
+HEIGHT 4 mm
 END
 END

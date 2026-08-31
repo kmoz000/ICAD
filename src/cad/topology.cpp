@@ -337,6 +337,46 @@ auto apply_transform(SolidTopology& solid, const Transform& transform) -> void {
     solid.feature = feature.name;
     solid.feature_type = feature.type;
     solid.shell.id = prefix + "/shell.outer";
+    const bool bottom_apex = bottom_radius <= tolerance;
+    const bool top_apex = top_radius <= tolerance;
+    if (bottom_apex || top_apex) {
+        const bool apex_at_bottom = bottom_apex;
+        const double ring_radius = apex_at_bottom ? top_radius : bottom_radius;
+        const double ring_z = apex_at_bottom ? height : 0.0;
+        const double apex_z = apex_at_bottom ? 0.0 : height;
+        const auto apex = add_vertex(solid, apex_at_bottom ? "bottom.apex" : "top.apex",
+                                     {0.0, 0.0, apex_z});
+        const auto ring_vertex = add_vertex(
+            solid, apex_at_bottom ? "top.seam" : "bottom.seam",
+            {ring_radius, 0.0, ring_z});
+        const auto ring = add_edge(
+            solid, apex_at_bottom ? "top.ring" : "bottom.ring", ring_vertex, ring_vertex,
+            circle_curve({0.0, 0.0, ring_z}, {0.0, 0.0, 1.0}, ring_radius), true);
+        const auto seam = add_edge(
+            solid, "side.seam", apex_at_bottom ? apex : ring_vertex,
+            apex_at_bottom ? ring_vertex : apex,
+            line_curve(apex_at_bottom ? Point3{0.0, 0.0, apex_z}
+                                      : Point3{ring_radius, 0.0, ring_z},
+                       apex_at_bottom ? Point3{ring_radius, 0.0, ring_z}
+                                      : Point3{0.0, 0.0, apex_z}));
+        add_face(solid, apex_at_bottom ? "top" : "bottom",
+                 {SurfaceKind::plane, {0.0, 0.0, ring_z},
+                  {0.0, 0.0, apex_at_bottom ? 1.0 : -1.0}},
+                 {{ring, !apex_at_bottom}});
+        const double analytic_apex_z =
+            -bottom_radius * height / (top_radius - bottom_radius);
+        const AnalyticSurface side{SurfaceKind::cone,
+                                   {0.0, 0.0, analytic_apex_z},
+                                   {0.0, 0.0, 1.0},
+                                   0.0,
+                                   std::atan(std::abs(top_radius - bottom_radius) / height)};
+        add_face(solid, "side", side,
+                 apex_at_bottom
+                     ? std::vector<OrientedEdge>{{seam, false}, {ring, true}, {seam, true}}
+                     : std::vector<OrientedEdge>{{ring, false}, {seam, false}, {seam, true}});
+        apply_transform(solid, feature_transform(feature));
+        return solid;
+    }
     const auto bottom = add_vertex(solid, "bottom.seam", {bottom_radius, 0.0, 0.0});
     const auto top = add_vertex(solid, "top.seam", {top_radius, 0.0, height});
     const auto bottom_ring =

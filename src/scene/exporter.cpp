@@ -405,6 +405,36 @@ auto write_mechanism(std::ostream& output, const compiler::ir::Project& project)
                << "],\"axisUnit\":[" << frame.axis.x << ',' << frame.axis.y << ','
                << frame.axis.z << "]}";
     }
+    output << "],\"connections\":[";
+    for (std::size_t index = 0; index < project.connections.size(); ++index) {
+        if (index != 0)
+            output << ',';
+        const auto& connection = project.connections[index];
+        const auto first = std::ranges::find(project.interfaces, connection.first_interface,
+                                             &compiler::ir::ComponentInterface::name);
+        const auto second = std::ranges::find(project.interfaces, connection.second_interface,
+                                              &compiler::ir::ComponentInterface::name);
+        const auto point = first == project.interfaces.end()
+                               ? project.points.end()
+                               : std::ranges::find(project.points, first->point,
+                                                   &compiler::ir::SpatialPoint::name);
+        output << "{\"name\":" << json_string(connection.name)
+               << ",\"method\":" << json_string(connection.method)
+               << ",\"standard\":" << json_string(connection.standard)
+               << ",\"firstBody\":"
+               << json_string(first == project.interfaces.end() ? "" : first->occurrence)
+               << ",\"secondBody\":"
+               << json_string(second == project.interfaces.end() ? "" : second->occurrence)
+               << ",\"pointMm\":[";
+        if (point == project.points.end())
+            output << "0,0,0";
+        else
+            output << point->position_mm[0] << ',' << point->position_mm[1] << ','
+                   << point->position_mm[2];
+        output << "],\"clearanceMm\":" << connection.clearance_mm
+               << ",\"gapMm\":" << connection.interface_gap_mm
+               << ",\"aligned\":" << (connection.aligned ? "true" : "false") << '}';
+    }
     output << ']';
 }
 

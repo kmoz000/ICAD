@@ -88,6 +88,14 @@ auto LiveSession::preview(std::string_view source) -> PreviewResult {
         result.reused_bodies = result.bodies;
         result.recomputed_bodies = 0;
         result.milliseconds = 0.0;
+        result.compile_ms = 0.0;
+        result.frontend_ms = 0.0;
+        result.fingerprint_ms = 0.0;
+        result.geometry_ms = 0.0;
+        result.merge_ms = 0.0;
+        result.analysis_ms = 0.0;
+        result.validation_ms = 0.0;
+        result.serialization_ms = 0.0;
         result.message = "unchanged live preview reused";
         return result;
     }
@@ -95,6 +103,14 @@ auto LiveSession::preview(std::string_view source) -> PreviewResult {
         source, compiler::CompileOptions{.build_topology = false,
                                          .imports = {.source_path = source_path_,
                                                      .project_root = source_path_.parent_path()}});
+    const auto compiled_at = std::chrono::steady_clock::now();
+    result.compile_ms =
+        std::chrono::duration<double, std::milli>(compiled_at - started).count();
+    result.frontend_ms = incremental.incremental.frontend_ms;
+    result.fingerprint_ms = incremental.incremental.fingerprint_ms;
+    result.geometry_ms = incremental.incremental.geometry_ms;
+    result.merge_ms = incremental.incremental.merge_ms;
+    result.body_timings = incremental.incremental.body_timings;
     auto& compilation = incremental.compilation;
     if (!compilation.ok()) {
         result.message = std::to_string(compilation.diagnostics.size()) +
@@ -113,11 +129,19 @@ auto LiveSession::preview(std::string_view source) -> PreviewResult {
     }
     const auto& project = *compilation.ir_project;
     const auto analysis = cad::analyze(project, *incremental.model);
+    const auto analyzed_at = std::chrono::steady_clock::now();
+    result.analysis_ms =
+        std::chrono::duration<double, std::milli>(analyzed_at - compiled_at).count();
     const auto constraint_results = constraints::validate(project, analysis);
-    const auto intersections =
-        cad::analyze_intersections(project, *incremental.model, project.tolerance.linear_mm);
+    // Interactive preview must deliver geometry promptly. Full all-pairs solid
+    // interference remains an explicit validate/export gate; running it before
+    // every frame made large assemblies appear frozen. The fast pass still
+    // checks dimensions, materials, constraints, and interface attachment.
     const auto manufacturing =
-        manufacturing::validate(project, analysis, intersections);
+        manufacturing::validate(project, analysis, cad::IntersectionAnalysis{});
+    const auto validated_at = std::chrono::steady_clock::now();
+    result.validation_ms =
+        std::chrono::duration<double, std::milli>(validated_at - analyzed_at).count();
     for (const auto& constraint : constraint_results) {
         if (constraint.passed)
             continue;
@@ -137,14 +161,11 @@ auto LiveSession::preview(std::string_view source) -> PreviewResult {
                        : compiler::DiagnosticSeverity::note,
              issue.code, issue.message, declaration_location(source, issue.subject)});
     }
-    if (!constraints::all_passed(constraint_results) || !manufacturing.passed) {
-        result.message = "engineering validation failed; last valid preview preserved";
-        result.milliseconds = std::chrono::duration<double, std::milli>(
-                                  std::chrono::steady_clock::now() - started)
-                                  .count();
-        return result;
-    }
+    result.engineering_valid = constraints::all_passed(constraint_results) && manufacturing.passed;
     result.model_json = scene::render_model_json(*compilation.ir_project, *incremental.model);
+    const auto serialized_at = std::chrono::steady_clock::now();
+    result.serialization_ms =
+        std::chrono::duration<double, std::milli>(serialized_at - validated_at).count();
     if (result.model_json.empty()) {
         result.message = "live preview model serialization failed";
         return result;
@@ -152,7 +173,8 @@ auto LiveSession::preview(std::string_view source) -> PreviewResult {
 
     ++revision_;
     result.success = true;
-    result.message = "live preview compiled";
+    result.message = result.engineering_valid ? "live preview compiled"
+                                              : "live preview compiled with engineering issues";
     result.revision = revision_;
     result.bodies = compilation.ir_project->bodies.size() +
                     compilation.ir_project->instances.size();

@@ -78,6 +78,14 @@ auto main() -> int {
     if (icad::manufacturing::validate(incompatible, sheet_rules).passed) {
         return fail("sheet-metal rules accepted an incompatible material");
     }
+    const auto conical_hole = icad::compiler::compile(
+        "PROJECT conical_hole\nUNITS mm\nMATERIAL alloy ALUMINUM\nBODY nozzle\n"
+        "MATERIAL alloy\nFEATURE stock\nTYPE CYLINDER\nRADIUS 5 mm\nHEIGHT 10 mm\nEND\n"
+        "FEATURE bore\nTYPE CONE\nOPERATION CUT\nRADIUS1 1 mm\nRADIUS2 2 mm\n"
+        "HEIGHT 12 mm\nORIGIN_Z -1 mm\nEND\nEND\n");
+    if (!conical_hole.ok() ||
+        !icad::manufacturing::validate(*conical_hole.ir_project).passed)
+        return fail("manufacturing rules treated a valid conical bore as zero diameter");
 
     const auto output_root = std::filesystem::current_path() / "engineering-test-output";
     std::filesystem::create_directories(output_root);
@@ -101,6 +109,12 @@ auto main() -> int {
         !contents(drawing_path).contains("FEATURE AND PARAMETER SCHEDULE") ||
         !contents(drawing_path).contains("SKETCH / PROFILE SCHEDULE") ||
         !contents(drawing_path).contains("data-sheet-kind=\"assembly\"") ||
+        !contents(drawing_path).contains("GENERAL ARRANGEMENT") ||
+        !contents(drawing_path).contains("LONGITUDINAL SECTION A-A") ||
+        !contents(drawing_path).contains("class=\"centerline\"") ||
+        !contents(drawing_path).contains("ISO 129-1") ||
+        !contents(drawing_path).contains("ISO 5456-2") ||
+        !contents(drawing_path).contains("ISO 7200") ||
         !contents(drawing_path).contains("ASSEMBLY CONNECTION SCHEDULE") ||
         !contents(drawing_path).contains("Third-angle projected native edges") ||
         !contents(drawing_path).contains("DATUMS: A | B | C") ||

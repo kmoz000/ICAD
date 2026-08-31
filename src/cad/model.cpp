@@ -3,6 +3,7 @@
 #include "boolean.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <iterator>
 #include <limits>
@@ -10,10 +11,20 @@
 #include <numbers>
 #include <numeric>
 #include <string_view>
+#include <thread>
 #include <utility>
 
 namespace icad::cad {
 namespace {
+
+constexpr std::size_t radial_segments = 32;
+constexpr std::size_t sphere_latitude_segments = 16;
+constexpr std::size_t sphere_longitude_segments = 32;
+
+[[nodiscard]] auto radial_segments_for(double radius) -> std::size_t {
+    static_cast<void>(radius);
+    return radial_segments;
+}
 
 [[nodiscard]] auto property(const compiler::ir::Feature& feature, std::string_view name,
                             double fallback = 0.0) -> double {
@@ -56,66 +67,91 @@ auto add_triangle(Part& part, std::size_t first, std::size_t second, std::size_t
 
 [[nodiscard]] auto make_frustum(const compiler::ir::Feature& feature, double bottom_radius,
                                 double top_radius) -> Part {
-    constexpr std::size_t segments = 32;
     const double height = property(feature, "HEIGHT");
     Part part;
+    const bool bottom_apex = bottom_radius <= 1e-9;
+    const bool top_apex = top_radius <= 1e-9;
+    const std::size_t segments = radial_segments_for(std::max(bottom_radius, top_radius));
     part.vertices.reserve(segments * 2 + 2);
-    for (std::size_t index = 0; index < segments; ++index) {
-        const double angle =
-            2.0 * std::numbers::pi * static_cast<double>(index) / static_cast<double>(segments);
-        part.vertices.push_back(
-            {bottom_radius * std::cos(angle), bottom_radius * std::sin(angle), 0.0});
+    if (bottom_apex) {
+        part.vertices.push_back({0.0, 0.0, 0.0});
+    } else {
+        for (std::size_t index = 0; index < segments; ++index) {
+            const double angle = 2.0 * std::numbers::pi * static_cast<double>(index) /
+                                 static_cast<double>(segments);
+            part.vertices.push_back(
+                {bottom_radius * std::cos(angle), bottom_radius * std::sin(angle), 0.0});
+        }
     }
-    for (std::size_t index = 0; index < segments; ++index) {
-        const double angle =
-            2.0 * std::numbers::pi * static_cast<double>(index) / static_cast<double>(segments);
-        part.vertices.push_back(
-            {top_radius * std::cos(angle), top_radius * std::sin(angle), height});
+    const std::size_t top_start = part.vertices.size();
+    if (top_apex) {
+        part.vertices.push_back({0.0, 0.0, height});
+    } else {
+        for (std::size_t index = 0; index < segments; ++index) {
+            const double angle = 2.0 * std::numbers::pi * static_cast<double>(index) /
+                                 static_cast<double>(segments);
+            part.vertices.push_back(
+                {top_radius * std::cos(angle), top_radius * std::sin(angle), height});
+        }
     }
     const std::size_t bottom_center = part.vertices.size();
-    part.vertices.push_back({0, 0, 0});
+    if (!bottom_apex)
+        part.vertices.push_back({0, 0, 0});
     const std::size_t top_center = part.vertices.size();
-    part.vertices.push_back({0, 0, height});
+    if (!top_apex)
+        part.vertices.push_back({0, 0, height});
     for (std::size_t index = 0; index < segments; ++index) {
         const std::size_t next = (index + 1) % segments;
-        add_triangle(part, index, segments + next, segments + index);
-        add_triangle(part, index, next, segments + next);
-        add_triangle(part, bottom_center, next, index);
-        add_triangle(part, top_center, segments + index, segments + next);
+        if (bottom_apex) {
+            add_triangle(part, 0, top_start + next, top_start + index);
+        } else if (top_apex) {
+            add_triangle(part, index, next, top_start);
+        } else {
+            add_triangle(part, index, top_start + next, top_start + index);
+            add_triangle(part, index, next, top_start + next);
+        }
+        if (!bottom_apex)
+            add_triangle(part, bottom_center, next, index);
+        if (!top_apex)
+            add_triangle(part, top_center, top_start + index, top_start + next);
     }
     return part;
 }
 
 [[nodiscard]] auto make_sphere(const compiler::ir::Feature& feature) -> Part {
-    constexpr std::size_t latitude_segments = 16;
-    constexpr std::size_t longitude_segments = 32;
     const double radius = property(feature, "RADIUS");
     Part part;
     part.vertices.push_back({0, 0, radius});
-    for (std::size_t latitude = 1; latitude < latitude_segments; ++latitude) {
-        const double polar = std::numbers::pi * static_cast<double>(latitude) /
-                             static_cast<double>(latitude_segments);
-        for (std::size_t longitude = 0; longitude < longitude_segments; ++longitude) {
-            const double azimuth = 2.0 * std::numbers::pi * static_cast<double>(longitude) /
-                                   static_cast<double>(longitude_segments);
-            part.vertices.push_back({radius * std::sin(polar) * std::cos(azimuth),
-                                     radius * std::sin(polar) * std::sin(azimuth),
-                                     radius * std::cos(polar)});
+    for (std::size_t latitude = 1; latitude < sphere_latitude_segments; ++latitude) {
+        const double phi = std::numbers::pi * static_cast<double>(latitude) /
+                           static_cast<double>(sphere_latitude_segments);
+        for (std::size_t longitude = 0; longitude < sphere_longitude_segments; ++longitude) {
+            const double theta = 2.0 * std::numbers::pi * static_cast<double>(longitude) /
+                                 static_cast<double>(sphere_longitude_segments);
+            part.vertices.push_back({radius * std::sin(phi) * std::cos(theta),
+                                     radius * std::sin(phi) * std::sin(theta),
+                                     radius * std::cos(phi)});
         }
     }
     const std::size_t south = part.vertices.size();
     part.vertices.push_back({0, 0, -radius});
-    for (std::size_t longitude = 0; longitude < longitude_segments; ++longitude) {
-        const std::size_t next = (longitude + 1) % longitude_segments;
+    for (std::size_t longitude = 0; longitude < sphere_longitude_segments; ++longitude) {
+        const std::size_t next = (longitude + 1) % sphere_longitude_segments;
         add_triangle(part, 0, 1 + longitude, 1 + next);
-        for (std::size_t latitude = 0; latitude + 2 < latitude_segments; ++latitude) {
-            const std::size_t row = 1 + latitude * longitude_segments;
-            const std::size_t next_row = row + longitude_segments;
-            add_triangle(part, row + longitude, next_row + longitude, next_row + next);
-            add_triangle(part, row + longitude, next_row + next, row + next);
+        for (std::size_t latitude = 1; latitude + 1 < sphere_latitude_segments; ++latitude) {
+            const std::size_t first = 1 + (latitude - 1) * sphere_longitude_segments + longitude;
+            const std::size_t first_next =
+                1 + (latitude - 1) * sphere_longitude_segments + next;
+            const std::size_t second = 1 + latitude * sphere_longitude_segments + longitude;
+            const std::size_t second_next = 1 + latitude * sphere_longitude_segments + next;
+            add_triangle(part, first, second, second_next);
+            add_triangle(part, first, second_next, first_next);
         }
-        const std::size_t last_row = 1 + (latitude_segments - 2) * longitude_segments;
-        add_triangle(part, south, last_row + next, last_row + longitude);
+        const std::size_t last =
+            1 + (sphere_latitude_segments - 2) * sphere_longitude_segments + longitude;
+        const std::size_t last_next =
+            1 + (sphere_latitude_segments - 2) * sphere_longitude_segments + next;
+        add_triangle(part, south, last_next, last);
     }
     return part;
 }
@@ -204,7 +240,7 @@ auto add_triangle(Part& part, std::size_t first, std::size_t second, std::size_t
 }
 
 [[nodiscard]] auto make_revolve(const compiler::ir::Profile& profile,
-                                std::size_t segments = 32) -> Part {
+                                std::size_t segments = radial_segments) -> Part {
     const std::size_t points = profile.points.size();
     Part part;
     part.vertices.reserve(segments * points);
@@ -624,12 +660,29 @@ auto append_geometry(Part& destination, const Part& source) -> void {
 
 [[nodiscard]] auto compatible_cut_batch(const compiler::ir::Feature& first,
                                         const compiler::ir::Feature& second) -> bool {
-    return first.operation == compiler::ir::FeatureOperation::cut &&
-           second.operation == compiler::ir::FeatureOperation::cut &&
-           first.type == "EXTRUDE" && second.type == "EXTRUDE" &&
-           first.sketch_plane == second.sketch_plane &&
-           first.support_feature == second.support_feature &&
-           first.support_face == second.support_face;
+    // A BSP subtraction can consume a disconnected cutter set in one pass.
+    // Keep face-attached history in one support frame, but batch primitive,
+    // profile, and transformed radial cutters instead of rebuilding the
+    // increasingly complex result after every hole.
+    if (first.operation != compiler::ir::FeatureOperation::cut ||
+        second.operation != compiler::ir::FeatureOperation::cut || first.type != second.type ||
+        first.sketch_plane != second.sketch_plane ||
+        first.support_feature != second.support_feature ||
+        first.support_face != second.support_face) {
+        return false;
+    }
+    constexpr double tolerance = 1e-9;
+    const auto equivalent = [&](std::string_view name) {
+        return std::abs(property(first, name) - property(second, name)) <= tolerance;
+    };
+    if (first.type == "CYLINDER") {
+        return equivalent("RADIUS") && equivalent("HEIGHT");
+    }
+    if (first.type == "CONE")
+        return equivalent("RADIUS1") && equivalent("RADIUS2") && equivalent("HEIGHT");
+    if (first.type == "BOX")
+        return equivalent("WIDTH") && equivalent("DEPTH") && equivalent("HEIGHT");
+    return first.type == "EXTRUDE" || first.type == "LOFT" || first.type == "FREEFORM";
 }
 
 [[nodiscard]] auto triangle_area_twice(const Part& part, const Triangle& triangle) -> double {
@@ -1026,8 +1079,64 @@ enum class PrincipalAxis { x, y, z };
         }
         std::ranges::sort(component);
     }
-    if (component_triangles.size() == 1)
-        return {part};
+    const auto orient_consistently = [](Part& component) {
+        struct EdgeUse {
+            std::size_t triangle{};
+            bool forward{};
+        };
+        std::map<std::pair<std::size_t, std::size_t>, std::vector<EdgeUse>> uses;
+        for (std::size_t triangle_index = 0; triangle_index < component.triangles.size();
+             ++triangle_index) {
+            const auto& triangle = component.triangles[triangle_index];
+            for (std::size_t edge_index = 0; edge_index < triangle.size(); ++edge_index) {
+                const auto first = triangle[edge_index];
+                const auto second = triangle[(edge_index + 1) % triangle.size()];
+                uses[{std::min(first, second), std::max(first, second)}].push_back(
+                    {triangle_index, first < second});
+            }
+        }
+        std::vector<int> flipped(component.triangles.size(), -1);
+        std::vector<std::size_t> pending;
+        for (std::size_t seed = 0; seed < component.triangles.size(); ++seed) {
+            if (flipped[seed] >= 0)
+                continue;
+            flipped[seed] = 0;
+            pending.push_back(seed);
+            while (!pending.empty()) {
+                const auto current = pending.back();
+                pending.pop_back();
+                const auto& triangle = component.triangles[current];
+                for (std::size_t edge_index = 0; edge_index < triangle.size(); ++edge_index) {
+                    const auto first = triangle[edge_index];
+                    const auto second = triangle[(edge_index + 1) % triangle.size()];
+                    const auto found = uses.find(
+                        {std::min(first, second), std::max(first, second)});
+                    if (found == uses.end() || found->second.size() != 2)
+                        continue;
+                    const auto current_use = std::ranges::find(
+                        found->second, current, &EdgeUse::triangle);
+                    const auto neighbour_use =
+                        current_use == found->second.begin() ? std::next(current_use)
+                                                             : found->second.begin();
+                    const int required =
+                        flipped[current] ^ (current_use->forward == neighbour_use->forward ? 1 : 0);
+                    if (flipped[neighbour_use->triangle] < 0) {
+                        flipped[neighbour_use->triangle] = required;
+                        pending.push_back(neighbour_use->triangle);
+                    }
+                }
+            }
+        }
+        for (std::size_t index = 0; index < component.triangles.size(); ++index) {
+            if (flipped[index] == 1)
+                std::swap(component.triangles[index][1], component.triangles[index][2]);
+        }
+    };
+    if (component_triangles.size() == 1) {
+        Part result = part;
+        orient_consistently(result);
+        return {std::move(result)};
+    }
 
     std::vector<Part> result;
     result.reserve(component_triangles.size());
@@ -1060,7 +1169,89 @@ enum class PrincipalAxis { x, y, z };
             }
             component.triangles.push_back(triangle);
         }
+        orient_consistently(component);
         result.push_back(std::move(component));
+    }
+    return result;
+}
+
+[[nodiscard]] auto build_body_parts(const compiler::ir::Project& project,
+                                    const compiler::ir::Body& body) -> std::vector<Part> {
+    std::vector<Part> body_parts;
+    for (std::size_t feature_index = 0; feature_index < body.features.size(); ++feature_index) {
+        const auto& feature = body.features[feature_index];
+        const bool modifier = feature.type == "CHAMFER" || feature.type == "FILLET" ||
+                              feature.type == "LINEAR_PATTERN" || feature.type == "MIRROR";
+        if (modifier) {
+            if (body_parts.empty()) {
+                Part invalid;
+                invalid.name = body.name + "_" + feature.name;
+                invalid.body = body.name;
+                body_parts.push_back(std::move(invalid));
+                continue;
+            }
+            Part modified = feature.type == "LINEAR_PATTERN"
+                                ? linear_pattern(body_parts.back(), project, feature)
+                                : feature.type == "MIRROR"
+                                      ? mirrored(body_parts.back(), project, feature)
+                                      : edge_modified(body_parts.back(), project, feature);
+            modified.name = body.name + "_" + feature.name;
+            modified.body = body.name;
+            modified.material = body.material;
+            modified.feature_type = feature.type;
+            modified.faceted_result = true;
+            body_parts.back() = std::move(modified);
+            continue;
+        }
+        Part part =
+            make_region_part(project, feature, body_parts.empty() ? nullptr : &body_parts.back());
+        part.name = body.name + "_" + feature.name;
+        part.body = body.name;
+        part.material = body.material;
+        part.feature_type = feature.type;
+        if (feature.operation == compiler::ir::FeatureOperation::create) {
+            body_parts.push_back(std::move(part));
+            continue;
+        }
+        if (body_parts.empty()) {
+            part.vertices.clear();
+            part.triangles.clear();
+            body_parts.push_back(std::move(part));
+            continue;
+        }
+        std::size_t batch_end = feature_index + 1;
+        std::string result_name = body.name + "_" + feature.name;
+        if (feature.operation == compiler::ir::FeatureOperation::cut) {
+            while (batch_end < body.features.size() &&
+                   compatible_cut_batch(feature, body.features[batch_end])) {
+                const auto& batched_feature = body.features[batch_end];
+                auto cutter = make_region_part(project, batched_feature, &body_parts.back());
+                append_geometry(part, cutter);
+                result_name = body.name + "_" + batched_feature.name;
+                ++batch_end;
+            }
+        }
+        auto boolean =
+            apply_boolean(body_parts.back(), part, feature.operation, std::move(result_name));
+        boolean.part.boolean_result = true;
+        boolean.part.feature_type = "BOOLEAN";
+        boolean.part.repairs = std::move(boolean.repairs);
+        if (batch_end > feature_index + 1) {
+            boolean.part.repairs.push_back(
+                "batched " + std::to_string(batch_end - feature_index) +
+                " compatible cut features into one boolean transaction");
+            feature_index = batch_end - 1;
+        }
+        body_parts.back() = std::move(boolean.part);
+    }
+    const auto pose = std::ranges::find(project.poses, body.name, &compiler::ir::BodyPose::body);
+    std::vector<Part> result;
+    for (auto& part : body_parts) {
+        if (pose != project.poses.end())
+            apply_transform(part, pose->transform);
+        auto components = connected_components(part);
+        result.insert(result.end(), std::make_move_iterator(components.begin()),
+                      std::make_move_iterator(components.end()));
     }
     return result;
 }
@@ -1085,84 +1276,31 @@ auto Model::triangle_count() const -> std::size_t {
 
 auto build_model(const compiler::ir::Project& project) -> Model {
     Model model;
-    for (const auto& body : project.bodies) {
-        std::vector<Part> body_parts;
-        for (std::size_t feature_index = 0; feature_index < body.features.size();
-             ++feature_index) {
-            const auto& feature = body.features[feature_index];
-            const bool modifier = feature.type == "CHAMFER" || feature.type == "FILLET" ||
-                                  feature.type == "LINEAR_PATTERN" || feature.type == "MIRROR";
-            if (modifier) {
-                if (body_parts.empty()) {
-                    Part invalid;
-                    invalid.name = body.name + "_" + feature.name;
-                    invalid.body = body.name;
-                    body_parts.push_back(std::move(invalid));
-                    continue;
+    std::vector<std::vector<Part>> body_results(project.bodies.size());
+    if (!project.bodies.empty()) {
+        constexpr std::size_t max_workers = 8;
+        const auto hardware = std::max(1U, std::thread::hardware_concurrency());
+        const auto worker_count =
+            std::min({project.bodies.size(), static_cast<std::size_t>(hardware), max_workers});
+        std::atomic_size_t next_body{};
+        std::vector<std::thread> workers;
+        workers.reserve(worker_count);
+        for (std::size_t worker = 0; worker < worker_count; ++worker) {
+            workers.emplace_back([&] {
+                while (true) {
+                    const auto index = next_body.fetch_add(1, std::memory_order_relaxed);
+                    if (index >= project.bodies.size())
+                        return;
+                    body_results[index] = build_body_parts(project, project.bodies[index]);
                 }
-                Part modified = feature.type == "LINEAR_PATTERN"
-                                    ? linear_pattern(body_parts.back(), project, feature)
-                                    : feature.type == "MIRROR"
-                                          ? mirrored(body_parts.back(), project, feature)
-                                          : edge_modified(body_parts.back(), project, feature);
-                modified.name = body.name + "_" + feature.name;
-                modified.body = body.name;
-                modified.material = body.material;
-                modified.feature_type = feature.type;
-                modified.faceted_result = true;
-                body_parts.back() = std::move(modified);
-                continue;
-            }
-            Part part = make_region_part(project, feature,
-                                         body_parts.empty() ? nullptr : &body_parts.back());
-            part.name = body.name + "_" + feature.name;
-            part.body = body.name;
-            part.material = body.material;
-            part.feature_type = feature.type;
-            if (feature.operation == compiler::ir::FeatureOperation::create) {
-                body_parts.push_back(std::move(part));
-                continue;
-            }
-            if (body_parts.empty()) {
-                part.vertices.clear();
-                part.triangles.clear();
-                body_parts.push_back(std::move(part));
-                continue;
-            }
-            std::size_t batch_end = feature_index + 1;
-            std::string result_name = body.name + "_" + feature.name;
-            if (feature.operation == compiler::ir::FeatureOperation::cut) {
-                while (batch_end < body.features.size() &&
-                       compatible_cut_batch(feature, body.features[batch_end])) {
-                    const auto& batched_feature = body.features[batch_end];
-                    auto cutter = make_region_part(project, batched_feature, &body_parts.back());
-                    append_geometry(part, cutter);
-                    result_name = body.name + "_" + batched_feature.name;
-                    ++batch_end;
-                }
-            }
-            auto boolean =
-                apply_boolean(body_parts.back(), part, feature.operation, std::move(result_name));
-            boolean.part.boolean_result = true;
-            boolean.part.feature_type = "BOOLEAN";
-            boolean.part.repairs = std::move(boolean.repairs);
-            if (batch_end > feature_index + 1) {
-                boolean.part.repairs.push_back(
-                    "batched " + std::to_string(batch_end - feature_index) +
-                    " compatible cut features into one boolean transaction");
-                feature_index = batch_end - 1;
-            }
-            body_parts.back() = std::move(boolean.part);
+            });
         }
-        const auto pose =
-            std::ranges::find(project.poses, body.name, &compiler::ir::BodyPose::body);
-        for (auto& part : body_parts) {
-            if (pose != project.poses.end())
-                apply_transform(part, pose->transform);
-            auto components = connected_components(part);
-            model.parts.insert(model.parts.end(), std::make_move_iterator(components.begin()),
-                               std::make_move_iterator(components.end()));
-        }
+        for (auto& worker : workers)
+            worker.join();
+    }
+    for (auto& body_parts : body_results) {
+        model.parts.insert(model.parts.end(), std::make_move_iterator(body_parts.begin()),
+                           std::make_move_iterator(body_parts.end()));
     }
     const auto definition_parts = model.parts;
     for (const auto& instance : project.instances) {

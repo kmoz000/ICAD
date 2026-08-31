@@ -6,6 +6,9 @@
 #include "stl_exporter.hpp"
 #include "three_mf_exporter.hpp"
 
+#include "icad/cad/model.hpp"
+#include "icad/cad/topology.hpp"
+
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
@@ -43,6 +46,16 @@ auto format_from_extension(const std::filesystem::path& output) -> ExportFormat 
 
 auto export_project(const compiler::ir::Project& project, const std::filesystem::path& output)
     -> ExportResult {
+    const auto model = cad::build_model(project);
+    cad::TopologyModel topology;
+    if (format_from_extension(output) == ExportFormat::step)
+        topology = cad::build_topology(project);
+    return export_project(project, model, topology, output);
+}
+
+auto export_project(const compiler::ir::Project& project, const cad::Model& model,
+                    const cad::TopologyModel& topology,
+                    const std::filesystem::path& output) -> ExportResult {
     if (!output.parent_path().empty()) {
         std::error_code error;
         std::filesystem::create_directories(output.parent_path(), error);
@@ -53,17 +66,17 @@ auto export_project(const compiler::ir::Project& project, const std::filesystem:
 
     switch (format_from_extension(output)) {
     case ExportFormat::obj:
-        return write_obj(project, output);
+        return write_obj(project, model, output);
     case ExportFormat::step:
-        return write_step(project, output);
+        return write_step(project, model, topology, output);
     case ExportFormat::stl:
-        return write_stl(project, output);
+        return write_stl(project, model, output);
     case ExportFormat::gltf:
-        return write_gltf(project, output, false);
+        return write_gltf(project, model, output, false);
     case ExportFormat::glb:
-        return write_gltf(project, output, true);
+        return write_gltf(project, model, output, true);
     case ExportFormat::three_mf:
-        return write_3mf(project, output);
+        return write_3mf(project, model, output);
     case ExportFormat::unsupported:
         return {false, "unsupported output extension '" + output.extension().string() + "'"};
     }

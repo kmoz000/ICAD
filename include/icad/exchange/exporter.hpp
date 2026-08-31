@@ -6,6 +6,11 @@
 #include <filesystem>
 #include <string>
 
+namespace icad::cad {
+struct Model;
+struct TopologyModel;
+}
+
 namespace icad::exchange {
 
 enum class ExportFormat { obj, stl, step, gltf, glb, three_mf, unsupported };
@@ -43,8 +48,15 @@ struct MeshPackageInspection {
     -> ExportFormat;
 [[nodiscard]] auto export_project(const compiler::ir::Project& project,
                                   const std::filesystem::path& output) -> ExportResult;
+[[nodiscard]] auto export_project(const compiler::ir::Project& project, const cad::Model& model,
+                                  const cad::TopologyModel& topology,
+                                  const std::filesystem::path& output) -> ExportResult;
 [[nodiscard]] auto inspect_step(const std::filesystem::path& input) -> StepInspection;
 [[nodiscard]] auto export_assembly_step(const compiler::ir::Project& project,
+                                        const std::filesystem::path& output) -> ExportResult;
+[[nodiscard]] auto export_assembly_step(const compiler::ir::Project& project,
+                                        const cad::Model& model,
+                                        const cad::TopologyModel& topology,
                                         const std::filesystem::path& output) -> ExportResult;
 [[nodiscard]] auto inspect_stl(const std::filesystem::path& input) -> StlInspection;
 [[nodiscard]] auto inspect_gltf(const std::filesystem::path& input) -> MeshPackageInspection;

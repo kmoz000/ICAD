@@ -38,6 +38,27 @@ struct RenderLight {
     QVector3D position;
 };
 
+struct RenderJoint {
+    QString name;
+    QString type;
+    QString parent;
+    QString child;
+    QVector3D pivot;
+    QVector3D axis;
+};
+
+struct RenderConnection {
+    QString name;
+    QString method;
+    QString standard;
+    QString first_body;
+    QString second_body;
+    QVector3D point;
+    float clearance_mm{};
+    float gap_mm{};
+    bool aligned{};
+};
+
 struct RenderSceneInfo {
     QString name;
     double duration_seconds{};
@@ -53,6 +74,8 @@ struct RenderScene {
     std::vector<std::uint32_t> wire_indices;
     std::vector<std::uint32_t> mesh_wire_indices;
     std::vector<RenderPart> parts;
+    std::vector<RenderJoint> joints;
+    std::vector<RenderConnection> connections;
     std::vector<RenderSceneInfo> scenes;
     QVector3D minimum;
     QVector3D maximum;

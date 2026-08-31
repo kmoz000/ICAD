@@ -15,6 +15,7 @@ namespace icad::viewer {
 
 struct PreviewResult {
     bool success{false};
+    bool engineering_valid{true};
     std::string message;
     std::string model_json;
     std::uint64_t revision{};
@@ -26,6 +27,15 @@ struct PreviewResult {
     std::size_t recomputed_bodies{};
     std::size_t parallel_workers{};
     double milliseconds{};
+    double compile_ms{};
+    double frontend_ms{};
+    double fingerprint_ms{};
+    double geometry_ms{};
+    double merge_ms{};
+    double analysis_ms{};
+    double validation_ms{};
+    double serialization_ms{};
+    std::vector<compiler::IncrementalBodyTiming> body_timings;
     bool unchanged{};
     std::vector<compiler::Diagnostic> diagnostics;
 };

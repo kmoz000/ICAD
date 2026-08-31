@@ -131,13 +131,12 @@ class StepWriter {
 
 } // namespace
 
-auto write_step_file(const compiler::ir::Project& project, const std::filesystem::path& output,
-                     bool assembly) -> ExportResult {
-    const auto model = cad::build_model(project);
+auto write_step_file(const compiler::ir::Project& project, const cad::Model& model,
+                     const cad::TopologyModel& topology,
+                     const std::filesystem::path& output, bool assembly) -> ExportResult {
     if (!cad::is_valid(model)) {
         return {false, "ICAD geometry validation failed before STEP export"};
     }
-    const auto topology = cad::build_topology(project);
     if (!cad::validate_topology(topology).valid())
         return {false, "ICAD topology validation failed before STEP export"};
 
@@ -300,17 +299,39 @@ auto write_step_file(const compiler::ir::Project& project, const std::filesystem
 
 auto write_step(const compiler::ir::Project& project, const std::filesystem::path& output)
     -> ExportResult {
-    return write_step_file(project, output, false);
+    const auto model = cad::build_model(project);
+    const auto topology = cad::build_topology(project);
+    return write_step(project, model, topology, output);
+}
+
+auto write_step(const compiler::ir::Project& project, const cad::Model& model,
+                const cad::TopologyModel& topology,
+                const std::filesystem::path& output) -> ExportResult {
+    return write_step_file(project, model, topology, output, false);
 }
 
 auto write_assembly_step(const compiler::ir::Project& project,
                          const std::filesystem::path& output) -> ExportResult {
-    return write_step_file(project, output, true);
+    const auto model = cad::build_model(project);
+    const auto topology = cad::build_topology(project);
+    return write_assembly_step(project, model, topology, output);
+}
+
+auto write_assembly_step(const compiler::ir::Project& project, const cad::Model& model,
+                         const cad::TopologyModel& topology,
+                         const std::filesystem::path& output) -> ExportResult {
+    return write_step_file(project, model, topology, output, true);
 }
 
 auto export_assembly_step(const compiler::ir::Project& project,
                           const std::filesystem::path& output) -> ExportResult {
     return write_assembly_step(project, output);
+}
+
+auto export_assembly_step(const compiler::ir::Project& project, const cad::Model& model,
+                          const cad::TopologyModel& topology,
+                          const std::filesystem::path& output) -> ExportResult {
+    return write_assembly_step(project, model, topology, output);
 }
 
 auto inspect_step(const std::filesystem::path& input) -> StepInspection {

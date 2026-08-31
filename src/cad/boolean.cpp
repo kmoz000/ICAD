@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdint>
 #include <iterator>
+#include <limits>
 #include <map>
 #include <memory>
 #include <optional>
@@ -18,6 +19,10 @@ namespace icad::cad {
 namespace {
 
 constexpr double epsilon = 1.0e-8;
+// Twisted freeform unions can create sub-micron BSP slivers at the transition
+// into a machined root. Keep the default reconstruction exact and opt into the
+// wider weld only for that operation family.
+constexpr double freeform_weld_epsilon = 2.0e-4;
 
 [[nodiscard]] auto subtract(const Point3& first, const Point3& second) -> Vector3 {
     return {first.x - second.x, first.y - second.y, first.z - second.z};
@@ -299,23 +304,33 @@ struct QuantizedPoint {
     auto operator<=>(const QuantizedPoint&) const = default;
 };
 
-[[nodiscard]] auto quantized(const Point3& point) -> QuantizedPoint {
-    return {static_cast<std::int64_t>(std::llround(point.x / epsilon)),
-            static_cast<std::int64_t>(std::llround(point.y / epsilon)),
-            static_cast<std::int64_t>(std::llround(point.z / epsilon))};
+[[nodiscard]] auto quantized(const Point3& point, double tolerance) -> QuantizedPoint {
+    return {static_cast<std::int64_t>(std::llround(point.x / tolerance)),
+            static_cast<std::int64_t>(std::llround(point.y / tolerance)),
+            static_cast<std::int64_t>(std::llround(point.z / tolerance))};
 }
 
 [[nodiscard]] auto reconstructed(const std::vector<Polygon>& polygons, std::string name,
-                                 std::vector<std::string>& repairs) -> Part {
+                                 std::vector<std::string>& repairs,
+                                 double weld_tolerance) -> Part {
     Part part;
     part.name = std::move(name);
     std::map<QuantizedPoint, std::size_t> vertices;
     std::set<std::array<std::size_t, 3>> triangles;
     const auto vertex_index = [&](const Point3& point) {
-        const auto key = quantized(point);
-        const auto found = vertices.find(key);
-        if (found != vertices.end())
-            return found->second;
+        const auto key = quantized(point, weld_tolerance);
+        for (std::int64_t x_offset = -1; x_offset <= 1; ++x_offset) {
+            for (std::int64_t y_offset = -1; y_offset <= 1; ++y_offset) {
+                for (std::int64_t z_offset = -1; z_offset <= 1; ++z_offset) {
+                    const auto found = vertices.find(
+                        {key.x + x_offset, key.y + y_offset, key.z + z_offset});
+                    if (found != vertices.end() &&
+                        magnitude(subtract(part.vertices[found->second], point)) <=
+                            weld_tolerance)
+                        return found->second;
+                }
+            }
+        }
         const auto index = part.vertices.size();
         part.vertices.push_back(point);
         vertices.emplace(key, index);
@@ -379,7 +394,8 @@ struct QuantizedPoint {
 
         Point3 center{};
         for (const auto index : boundary)
-            center = add(center, scale(part.vertices[index], 1.0 / static_cast<double>(boundary.size())));
+            center = add(center, scale(part.vertices[index],
+                                       1.0 / static_cast<double>(boundary.size())));
         const auto center_index = vertex_index(center);
         for (std::size_t index = 0; index < boundary.size(); ++index) {
             const Triangle triangle{center_index, boundary[index],
@@ -410,6 +426,7 @@ struct QuantizedPoint {
     if (duplicate_count != 0)
         repairs.push_back("removed " + std::to_string(duplicate_count) +
                           " duplicate boolean triangles");
+
     return part;
 }
 
@@ -419,8 +436,15 @@ auto apply_boolean(const Part& first, const Part& second,
                    compiler::ir::FeatureOperation operation, std::string result_name)
     -> BooleanResult {
     BooleanResult result;
+    const double weld_tolerance =
+        operation == compiler::ir::FeatureOperation::unite && second.feature_type == "FREEFORM"
+            ? freeform_weld_epsilon
+            : epsilon;
     result.part = reconstructed(combine(polygons_from(first), polygons_from(second), operation),
-                                std::move(result_name), result.repairs);
+                                std::move(result_name), result.repairs, weld_tolerance);
+    if (weld_tolerance > epsilon)
+        result.repairs.push_back(
+            "welded sub-micron freeform-union fragments at the machined-root transition");
     result.part.body = first.body;
     result.part.material = first.material;
     return result;

@@ -19,6 +19,7 @@ namespace {
 
 [[nodiscard]] auto copy(viewer::PreviewResult source) -> PreviewResult {
     return {source.success,
+            source.engineering_valid,
             std::move(source.message),
             std::move(source.model_json),
             source.revision,

@@ -74,6 +74,7 @@ MainWindow::MainWindow(std::filesystem::path source_path, QWidget* parent) : QMa
         return;
     }
     build_ui();
+    editor_->mode_changed = [this](QString mode) { editor_mode_->setText(std::move(mode)); };
     build_actions();
     apply_theme();
     setWindowIcon(QIcon{QStringLiteral(":/icad/icons/icad-256.png")});
@@ -82,7 +83,7 @@ MainWindow::MainWindow(std::filesystem::path source_path, QWidget* parent) : QMa
     resizeDocks({diagnostics_dock_}, {145}, Qt::Vertical);
 
     compile_timer_.setSingleShot(true);
-    compile_timer_.setInterval(110);
+    compile_timer_.setInterval(300);
     connect(&compile_timer_, &QTimer::timeout, this, [this] { begin_compile(); });
     connect(&compile_watcher_, &QFutureWatcher<CompileTaskResult>::finished, this,
             [this] { finish_compile(); });
@@ -100,6 +101,8 @@ MainWindow::MainWindow(std::filesystem::path source_path, QWidget* parent) : QMa
         history_timer_.start();
         schedule_compile();
     });
+    connect(editor_, &QPlainTextEdit::cursorPositionChanged, this,
+            [this] { update_cursor_position(); });
     connect(document_tabs_, &QTabBar::currentChanged, this,
             [this](int index) { switch_document(index); });
     connect(document_tabs_, &QTabBar::tabMoved, this, [this](int, int) {
@@ -118,16 +121,10 @@ MainWindow::MainWindow(std::filesystem::path source_path, QWidget* parent) : QMa
         if (entry.isFile() && entry.suffix().compare(QStringLiteral("icad"), Qt::CaseInsensitive) == 0)
             open_source(std::filesystem::path{entry.absoluteFilePath().toStdString()});
     });
-    connect(diagnostics_, &QListWidget::itemActivated, this, [this](QListWidgetItem* item) {
-        const int line = item->data(Qt::UserRole).toInt();
-        if (line <= 0)
-            return;
-        auto cursor = editor_->textCursor();
-        cursor.movePosition(QTextCursor::Start);
-        cursor.movePosition(QTextCursor::Down, QTextCursor::MoveAnchor, line - 1);
-        editor_->setTextCursor(cursor);
-        editor_->setFocus();
-    });
+    connect(diagnostics_, &QListWidget::itemClicked, this,
+            [this](QListWidgetItem* item) { jump_to_diagnostic(item); });
+    connect(diagnostics_, &QListWidget::itemActivated, this,
+            [this](QListWidgetItem* item) { jump_to_diagnostic(item); });
     viewport_->selection_changed = [this](std::optional<std::size_t> index) {
         update_selection(index);
     };
@@ -189,6 +186,14 @@ auto MainWindow::set_display_mode(DisplayMode mode) -> void {
     viewport_->set_display_mode(mode);
 }
 
+auto MainWindow::set_assembly_inspection(bool enabled) -> void {
+    viewport_->set_assembly_inspection(enabled);
+}
+
+auto MainWindow::set_cutaway(bool enabled) -> void {
+    viewport_->set_cutaway(enabled);
+}
+
 auto MainWindow::open_document(const std::filesystem::path& path) -> bool {
     return open_source(path);
 }
@@ -230,8 +235,8 @@ auto MainWindow::open_workspace(const std::filesystem::path& path) -> bool {
 
 MainWindow::~MainWindow() {
     compile_timer_.stop();
-    if (compile_watcher_.isRunning())
-        compile_watcher_.waitForFinished();
+    disconnect(&compile_watcher_, nullptr, this, nullptr);
+    compile_watcher_.cancel();
 }
 
 auto MainWindow::build_ui() -> void {
@@ -253,7 +258,7 @@ auto MainWindow::build_ui() -> void {
     central_layout->addWidget(document_tabs_);
 
     auto* splitter = new QSplitter{Qt::Horizontal, central};
-    editor_ = new QPlainTextEdit{splitter};
+    editor_ = new IcadEditor{splitter};
     editor_->setObjectName(QStringLiteral("sourceEditor"));
     editor_->setLineWrapMode(QPlainTextEdit::NoWrap);
     editor_->setTabStopDistance(32.0);
@@ -290,6 +295,7 @@ auto MainWindow::build_ui() -> void {
     addDockWidget(Qt::LeftDockWidgetArea, workspace_dock_);
 
     diagnostics_ = new QListWidget{this};
+    diagnostics_->setObjectName(QStringLiteral("diagnosticsList"));
     diagnostics_->setAlternatingRowColors(true);
     diagnostics_dock_ = new QDockWidget{QStringLiteral("Diagnostics"), this};
     diagnostics_dock_->setObjectName(QStringLiteral("diagnosticsDock"));
@@ -341,9 +347,18 @@ auto MainWindow::build_ui() -> void {
 
     compile_state_ = new QLabel{QStringLiteral("Ready"), this};
     compile_state_->setObjectName(QStringLiteral("compileState"));
+    editor_mode_ = new QLabel{QStringLiteral("ICAD"), this};
+    editor_mode_->setObjectName(QStringLiteral("editorMode"));
+    cursor_position_ = new QLabel{QStringLiteral("Ln 1, Col 1"), this};
+    cursor_position_->setObjectName(QStringLiteral("cursorPosition"));
+    cursor_position_->setMinimumWidth(112);
+    cursor_position_->setToolTip(QStringLiteral("1-based editor cursor position"));
     metrics_ = new QLabel{this};
     statusBar()->addWidget(compile_state_);
+    statusBar()->addPermanentWidget(editor_mode_);
+    statusBar()->addPermanentWidget(cursor_position_);
     statusBar()->addPermanentWidget(metrics_);
+    update_cursor_position();
 }
 
 auto MainWindow::build_actions() -> void {
@@ -390,6 +405,31 @@ auto MainWindow::build_actions() -> void {
     edit_menu->addAction(QStringLiteral("Paste"), QKeySequence::Paste, editor_, &QPlainTextEdit::paste);
     edit_menu->addAction(QStringLiteral("Select All"), QKeySequence::SelectAll,
                          editor_, &QPlainTextEdit::selectAll);
+    edit_menu->addSeparator();
+    auto* complete = edit_menu->addAction(QStringLiteral("Trigger Suggestions"));
+    complete->setShortcut(QKeySequence{QStringLiteral("Ctrl+Space")});
+    connect(complete, &QAction::triggered, editor_, &IcadEditor::trigger_completion);
+    auto* comment = edit_menu->addAction(QStringLiteral("Toggle Line Comment"));
+    comment->setShortcut(QKeySequence{QStringLiteral("Ctrl+/")});
+    connect(comment, &QAction::triggered, editor_, &IcadEditor::toggle_line_comment);
+    auto* duplicate = edit_menu->addAction(QStringLiteral("Duplicate Line"));
+    duplicate->setShortcut(QKeySequence{QStringLiteral("Shift+Alt+Down")});
+    connect(duplicate, &QAction::triggered, editor_, &IcadEditor::duplicate_line);
+    auto* move_up = edit_menu->addAction(QStringLiteral("Move Line Up"));
+    move_up->setShortcut(QKeySequence{QStringLiteral("Alt+Up")});
+    connect(move_up, &QAction::triggered, this, [this] { editor_->move_line(-1); });
+    auto* move_down = edit_menu->addAction(QStringLiteral("Move Line Down"));
+    move_down->setShortcut(QKeySequence{QStringLiteral("Alt+Down")});
+    connect(move_down, &QAction::triggered, this, [this] { editor_->move_line(1); });
+    auto* vim_mode = edit_menu->addAction(QStringLiteral("Vim Keybindings"));
+    vim_mode->setShortcut(QKeySequence{QStringLiteral("Ctrl+Alt+V")});
+    vim_mode->setCheckable(true);
+    vim_mode->setChecked(QSettings{}.value(QStringLiteral("vimMode"), false).toBool());
+    connect(vim_mode, &QAction::toggled, this, [this](bool enabled) {
+        editor_->set_vim_mode(enabled);
+        QSettings{}.setValue(QStringLiteral("vimMode"), enabled);
+    });
+    editor_->set_vim_mode(vim_mode->isChecked());
     update_history_actions();
 
     auto* build_menu = menuBar()->addMenu(QStringLiteral("&Build"));
@@ -418,6 +458,16 @@ auto MainWindow::build_actions() -> void {
     debug->setShortcut(QKeySequence{QStringLiteral("Ctrl+Shift+D")});
     debug->setCheckable(true);
     connect(debug, &QAction::toggled, viewport_, &CadViewport::set_debug_overlay);
+    auto* assembly_inspection =
+        view_menu->addAction(QStringLiteral("Assembly inspection / X-ray"));
+    assembly_inspection->setShortcut(QKeySequence{QStringLiteral("Ctrl+Shift+A")});
+    assembly_inspection->setCheckable(true);
+    connect(assembly_inspection, &QAction::toggled, viewport_,
+            &CadViewport::set_assembly_inspection);
+    auto* cutaway = view_menu->addAction(QStringLiteral("Clean cutaway"));
+    cutaway->setShortcut(QKeySequence{QStringLiteral("Ctrl+Shift+X")});
+    cutaway->setCheckable(true);
+    connect(cutaway, &QAction::toggled, viewport_, &CadViewport::set_cutaway);
     view_menu->addSeparator();
     view_menu->addAction(workspace_dock_->toggleViewAction());
     view_menu->addAction(diagnostics_dock_->toggleViewAction());
@@ -908,7 +958,18 @@ auto MainWindow::begin_compile() -> void {
     const auto session = document->session;
     const std::uint64_t document_id = document->id;
     compile_watcher_.setFuture(QtConcurrent::run([session, source, document_id] {
-        return CompileTaskResult{document_id, source, session->preview(source.toStdString())};
+        CompileTaskResult task;
+        task.document_id = document_id;
+        task.source = source;
+        task.preview = session->preview(source.toStdString());
+        if (task.preview.success && !task.preview.model_json.empty()) {
+            auto parsed = parse_render_scene(task.preview.model_json);
+            if (parsed.ok())
+                task.scene = std::move(parsed.scene);
+            else
+                task.scene_error = std::move(parsed.error);
+        }
+        return task;
     }));
 }
 
@@ -922,13 +983,33 @@ auto MainWindow::clear_preview_panels() -> void {
 }
 
 auto MainWindow::apply_preview(const DocumentPreview& preview) -> void {
-    clear_preview_panels();
-    update_diagnostics(preview.result);
     if (!preview.result.success) {
-        compile_state_->setText(QString::fromStdString(preview.result.message));
+        if (preview.scene) {
+            viewport_->set_scene(*preview.scene);
+            rebuild_model_tree();
+            rebuild_scene_panel();
+        } else {
+            clear_preview_panels();
+        }
+        update_diagnostics(preview.result);
+        QString failure = QString::fromStdString(preview.result.message);
+        if (!preview.result.diagnostics.empty()) {
+            const auto& diagnostic = preview.result.diagnostics.front();
+            failure = QStringLiteral("Compile failed · %1 at Ln %2, Col %3")
+                          .arg(QString::fromStdString(diagnostic.code))
+                          .arg(static_cast<qulonglong>(diagnostic.location.line))
+                          .arg(static_cast<qulonglong>(diagnostic.location.column));
+        }
+        compile_state_->setText(failure);
+        compile_state_->setToolTip(QString::fromStdString(preview.result.message));
         compile_state_->setStyleSheet(QStringLiteral("color:#fb7185"));
+        diagnostics_dock_->show();
+        diagnostics_dock_->raise();
         return;
     }
+    clear_preview_panels();
+    update_diagnostics(preview.result);
+    compile_state_->setToolTip({});
     if (!preview.scene_error.isEmpty()) {
         auto* item = new QListWidgetItem{
             QStringLiteral("ICAD-R0001 · %1").arg(preview.scene_error), diagnostics_};
@@ -945,12 +1026,16 @@ auto MainWindow::apply_preview(const DocumentPreview& preview) -> void {
     viewport_->set_scene(*preview.scene);
     rebuild_model_tree();
     rebuild_scene_panel();
-    if (preview.result.unchanged) {
+    if (!preview.result.engineering_valid) {
+        compile_state_->setText(QStringLiteral("Preview ready · engineering issues"));
+        compile_state_->setStyleSheet(QStringLiteral("color:#fbbf24"));
+    } else if (preview.result.unchanged) {
         compile_state_->setText(QStringLiteral("Preview reused"));
+        compile_state_->setStyleSheet(QStringLiteral("color:#4ade80"));
     } else {
         compile_state_->setText(QStringLiteral("Preview ready"));
+        compile_state_->setStyleSheet(QStringLiteral("color:#4ade80"));
     }
-    compile_state_->setStyleSheet(QStringLiteral("color:#4ade80"));
     metrics_->setText(QStringLiteral("%1 bodies · %2 ms · %3 reused / %4 rebuilt · %5 workers")
                           .arg(static_cast<qulonglong>(preview.result.bodies))
                           .arg(preview.result.milliseconds, 0, 'f', 1)
@@ -984,12 +1069,18 @@ auto MainWindow::finish_compile() -> void {
             DocumentPreview preview;
             preview.source = task.source;
             preview.result = std::move(task.preview);
-            if (preview.result.success && !preview.result.model_json.empty()) {
-                auto parsed = parse_render_scene(preview.result.model_json);
-                if (parsed.ok())
-                    preview.scene = std::move(parsed.scene);
-                else
-                    preview.scene_error = std::move(parsed.error);
+            if (preview.result.unchanged && completed.preview) {
+                preview.scene = std::move(completed.preview->scene);
+                preview.scene_error = std::move(completed.preview->scene_error);
+            } else if (!preview.result.success && completed.preview) {
+                // Keep the last valid model available while the user repairs a
+                // source diagnostic. The failed source and diagnostics remain
+                // authoritative; only the viewport is deliberately retained.
+                preview.scene = std::move(completed.preview->scene);
+                preview.scene_error = std::move(completed.preview->scene_error);
+            } else {
+                preview.scene = std::move(task.scene);
+                preview.scene_error = std::move(task.scene_error);
             }
             completed.preview = std::move(preview);
             if (completed_index == active_document_index_) {
@@ -1022,7 +1113,7 @@ auto MainWindow::finish_compile() -> void {
     if (document != nullptr && (compile_pending_ || !active_preview_is_current)) {
         pending_source_ = document->source;
         compile_pending_ = false;
-        begin_compile();
+        compile_timer_.start();
     }
 }
 
@@ -1034,7 +1125,7 @@ auto MainWindow::request_snapshot(QString path, std::function<void(bool)> comple
 auto MainWindow::update_diagnostics(const engine::PreviewResult& result) -> void {
     diagnostics_->clear();
     for (const auto& diagnostic : result.diagnostics) {
-        const QString description = QStringLiteral("%1 · %2:%3 · %4")
+        const QString description = QStringLiteral("%1 · Ln %2, Col %3 · %4")
                                         .arg(QString::fromStdString(diagnostic.code))
                                         .arg(static_cast<qulonglong>(diagnostic.location.line))
                                         .arg(static_cast<qulonglong>(diagnostic.location.column))
@@ -1042,9 +1133,39 @@ auto MainWindow::update_diagnostics(const engine::PreviewResult& result) -> void
         auto* item = new QListWidgetItem{description, diagnostics_};
         item->setForeground(severity_color(diagnostic.severity));
         item->setData(Qt::UserRole, static_cast<qulonglong>(diagnostic.location.line));
+        item->setData(Qt::UserRole + 1,
+                      static_cast<qulonglong>(diagnostic.location.column));
+        item->setToolTip(QStringLiteral("Click to jump to Ln %1, Col %2")
+                             .arg(static_cast<qulonglong>(diagnostic.location.line))
+                             .arg(static_cast<qulonglong>(diagnostic.location.column)));
     }
     if (result.diagnostics.empty())
         diagnostics_->addItem(QStringLiteral("No syntax, topology, assembly, or manufacturing diagnostics."));
+}
+
+auto MainWindow::jump_to_diagnostic(QListWidgetItem* item) -> void {
+    if (item == nullptr)
+        return;
+    const int line = item->data(Qt::UserRole).toInt();
+    const int column = item->data(Qt::UserRole + 1).toInt();
+    if (line <= 0 || column <= 0)
+        return;
+    auto cursor = editor_->textCursor();
+    cursor.movePosition(QTextCursor::Start);
+    cursor.movePosition(QTextCursor::Down, QTextCursor::MoveAnchor, line - 1);
+    cursor.movePosition(QTextCursor::Right, QTextCursor::MoveAnchor, column - 1);
+    editor_->setTextCursor(cursor);
+    editor_->centerCursor();
+    editor_->setFocus();
+}
+
+auto MainWindow::update_cursor_position() -> void {
+    if (editor_ == nullptr || cursor_position_ == nullptr)
+        return;
+    const auto cursor = editor_->textCursor();
+    cursor_position_->setText(QStringLiteral("Ln %1, Col %2")
+                                  .arg(cursor.blockNumber() + 1)
+                                  .arg(cursor.positionInBlock() + 1));
 }
 
 auto MainWindow::rebuild_model_tree() -> void {

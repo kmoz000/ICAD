@@ -280,6 +280,51 @@ auto parse_render_scene(std::string_view source) -> SceneParseResult {
             result.scene.parts.push_back(std::move(part));
         }
     }
+    if (const auto* joints = root.find("joints"); joints != nullptr && joints->array() != nullptr) {
+        for (const auto& source_joint : *joints->array()) {
+            RenderJoint joint;
+            joint.name = QString::fromStdString(text(source_joint.find("name")));
+            joint.type = QString::fromStdString(text(source_joint.find("type")));
+            joint.parent = QString::fromStdString(text(source_joint.find("parent")));
+            joint.child = QString::fromStdString(text(source_joint.find("child")));
+            const auto* pivot = source_joint.find("pivotMm");
+            const auto* axis = source_joint.find("axisUnit");
+            if (joint.name.isEmpty() || pivot == nullptr || axis == nullptr ||
+                !vector3(*pivot, joint.pivot) || !vector3(*axis, joint.axis)) {
+                result.error = QStringLiteral("Native scene contains an invalid assembly joint");
+                return result;
+            }
+            result.scene.joints.push_back(std::move(joint));
+        }
+    }
+    if (const auto* connections = root.find("connections");
+        connections != nullptr && connections->array() != nullptr) {
+        for (const auto& source_connection : *connections->array()) {
+            RenderConnection connection;
+            connection.name = QString::fromStdString(text(source_connection.find("name")));
+            connection.method = QString::fromStdString(text(source_connection.find("method")));
+            connection.standard = QString::fromStdString(text(source_connection.find("standard")));
+            connection.first_body =
+                QString::fromStdString(text(source_connection.find("firstBody")));
+            connection.second_body =
+                QString::fromStdString(text(source_connection.find("secondBody")));
+            connection.clearance_mm =
+                static_cast<float>(number(source_connection.find("clearanceMm")));
+            connection.gap_mm = static_cast<float>(number(source_connection.find("gapMm")));
+            if (const auto* aligned = source_connection.find("aligned");
+                aligned != nullptr && aligned->boolean() != nullptr) {
+                connection.aligned = *aligned->boolean();
+            }
+            const auto* point = source_connection.find("pointMm");
+            if (connection.name.isEmpty() || point == nullptr ||
+                !vector3(*point, connection.point)) {
+                result.error =
+                    QStringLiteral("Native scene contains an invalid assembly connection");
+                return result;
+            }
+            result.scene.connections.push_back(std::move(connection));
+        }
+    }
     if (const auto* scenes = root.find("scenes"); scenes != nullptr && scenes->array() != nullptr) {
         for (const auto& scene : *scenes->array()) {
             RenderSceneInfo info{QString::fromStdString(text(scene.find("name"))),

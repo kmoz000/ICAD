@@ -1,6 +1,9 @@
 #include "icad/project/builder.hpp"
 
 #include "icad/ai/inspector.hpp"
+#include "icad/cad/analysis.hpp"
+#include "icad/cad/intersection.hpp"
+#include "icad/cad/model.hpp"
 #include "icad/cad/topology.hpp"
 #include "icad/constraints/validator.hpp"
 #include "icad/document/exporter.hpp"
@@ -87,7 +90,15 @@ auto build(const compiler::ir::Project& project, const std::filesystem::path& ou
         std::filesystem::path{model_name}.filename() != model_name) {
         return fail("model name must be one safe filename component");
     }
-    const auto constraint_results = constraints::validate(project);
+    // Build and validate one immutable delivery snapshot, then feed that exact
+    // geometry through every writer. Rebuilding per format made large
+    // assemblies needlessly repeat booleans, topology, and all-pairs contact
+    // analysis while also risking cross-artifact drift.
+    const auto model = cad::build_model(project);
+    if (!cad::is_valid(model))
+        return fail("delivery model validation failed");
+    const auto analysis = cad::analyze(project, model);
+    const auto constraint_results = constraints::validate(project, analysis);
     if (!constraints::all_passed(constraint_results)) {
         for (const auto& constraint : constraint_results) {
             if (!constraint.passed) {
@@ -98,7 +109,10 @@ auto build(const compiler::ir::Project& project, const std::filesystem::path& ou
             }
         }
     }
-    const auto manufacturing_report = manufacturing::validate(project);
+    const auto intersections =
+        cad::analyze_intersections(project, model, project.tolerance.linear_mm);
+    const auto manufacturing_report =
+        manufacturing::validate(project, analysis, intersections);
     if (!manufacturing_report.passed) {
         return fail("manufacturing validation failed");
     }
@@ -122,47 +136,57 @@ auto build(const compiler::ir::Project& project, const std::filesystem::path& ou
     const StageCleanup cleanup{stage};
     const auto stage_base = stage / std::string{model_name};
 
-    const auto step = exchange::export_project(project, stage_base.string() + ".step");
+    const auto step =
+        exchange::export_project(project, model, topology, stage_base.string() + ".step");
     if (!step.success)
         return fail("STEP export failed: " + step.message);
     const auto assembly =
-        exchange::export_assembly_step(project, stage_base.string() + ".assembly.step");
+        exchange::export_assembly_step(project, model, topology,
+                                       stage_base.string() + ".assembly.step");
     if (!assembly.success)
         return fail("STEP assembly export failed: " + assembly.message);
-    const auto object = exchange::export_project(project, stage_base.string() + ".obj");
+    const auto object =
+        exchange::export_project(project, model, topology, stage_base.string() + ".obj");
     if (!object.success)
         return fail("OBJ export failed: " + object.message);
-    const auto stl = exchange::export_project(project, stage_base.string() + ".stl");
+    const auto stl =
+        exchange::export_project(project, model, topology, stage_base.string() + ".stl");
     if (!stl.success)
         return fail("STL export failed: " + stl.message);
-    const auto gltf = exchange::export_project(project, stage_base.string() + ".gltf");
+    const auto gltf =
+        exchange::export_project(project, model, topology, stage_base.string() + ".gltf");
     if (!gltf.success)
         return fail("glTF export failed: " + gltf.message);
-    const auto glb = exchange::export_project(project, stage_base.string() + ".glb");
+    const auto glb =
+        exchange::export_project(project, model, topology, stage_base.string() + ".glb");
     if (!glb.success)
         return fail("GLB export failed: " + glb.message);
-    const auto three_mf = exchange::export_project(project, stage_base.string() + ".3mf");
+    const auto three_mf =
+        exchange::export_project(project, model, topology, stage_base.string() + ".3mf");
     if (!three_mf.success)
         return fail("3MF export failed: " + three_mf.message);
-    const auto scene_result = scene::export_scene(project, stage_base);
+    const auto scene_result = scene::export_scene(project, model, stage_base);
     if (!scene_result.success)
         return fail("scene export failed: " + scene_result.message);
     const auto bom = document::write_bom(project, stage_base.string() + ".bom.json");
     if (!bom.success)
         return fail("BOM export failed: " + bom.message);
-    if (!manufacturing::write_report(project, stage_base.string() + ".manufacturing.json")) {
+    if (!manufacturing::write_report(project, manufacturing_report,
+                                     stage_base.string() + ".manufacturing.json")) {
         return fail("manufacturing report export failed");
     }
-    const auto drawing = drawings::write_svg(project, stage_base.string() + ".drawing.svg");
+    const auto drawing =
+        drawings::write_svg(project, analysis, model, stage_base.string() + ".drawing.svg");
     if (!drawing.success)
         return fail("drawing export failed: " + drawing.message);
-    const auto dxf = drawings::write_dxf(project, stage_base.string() + ".drawing.dxf");
+    const auto dxf =
+        drawings::write_dxf(project, analysis, model, stage_base.string() + ".drawing.dxf");
     if (!dxf.success)
         return fail("DXF drawing export failed: " + dxf.message);
     {
         std::ofstream topology_output{stage_base.string() + ".topology.json",
                                       std::ios::binary | std::ios::trunc};
-        topology_output << ai::topology_json(project) << '\n';
+        topology_output << ai::topology_json(project, topology) << '\n';
         if (!topology_output)
             return fail("topology artifact export failed");
     }

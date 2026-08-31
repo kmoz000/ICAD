@@ -187,6 +187,11 @@ struct Primitive {
 auto write_gltf(const compiler::ir::Project& project, const std::filesystem::path& output,
                 bool binary) -> ExportResult {
     const auto model = cad::build_model(project);
+    return write_gltf(project, model, output, binary);
+}
+
+auto write_gltf(const compiler::ir::Project& project, const cad::Model& model,
+                const std::filesystem::path& output, bool binary) -> ExportResult {
     if (!cad::is_valid(model))
         return {false, "ICAD geometry validation failed before glTF export"};
     std::string buffer;

@@ -35,6 +35,15 @@ auto main() -> int {
     }
     if (!overlaps(boxes[0], boxes[1]) || overlaps(boxes[0], boxes[2]))
         return fail("AABB overlap predicate failed");
+    const std::vector<Bounds> intervals{
+        {{0.0, 0.0, 0.0}, {100.0, 1.0, 1.0}},
+        {{1.0, 0.0, 0.0}, {2.0, 1.0, 1.0}},
+        {{80.0, 0.0, 0.0}, {81.0, 1.0, 1.0}},
+    };
+    const SpatialIndex interval_index{intervals};
+    if (interval_index.query({{50.0, 0.0, 0.0}, {51.0, 1.0, 1.0}}) !=
+        std::vector<std::size_t>{0})
+        return fail("AABB prefix pruning skipped a long overlapping interval");
 
     const Plane3 plane{{0.0, 0.0, 0.0}, {0.0, 0.0, 1.0}};
     const auto plane_hit = intersect(Segment3{{0.0, 0.0, -2.0}, {0.0, 0.0, 2.0}}, plane);
@@ -111,6 +120,17 @@ auto main() -> int {
         contained.intersecting_part_pairs != 0) {
         return fail("solid containment was not classified as volume interference");
     }
+
+    constexpr std::string_view cavity_source =
+        "PROJECT Cavity\nUNITS mm\n"
+        "BODY housing\nFEATURE stock\nTYPE BOX\nWIDTH 10 mm\nDEPTH 10 mm\nHEIGHT 10 mm\n"
+        "END\nFEATURE cavity\nTYPE BOX\nOPERATION CUT\nWIDTH 4 mm\nDEPTH 4 mm\n"
+        "HEIGHT 12 mm\nORIGIN_X 3 mm\nORIGIN_Y 3 mm\nORIGIN_Z -1 mm\nEND\nEND\n"
+        "BODY insert\nFEATURE solid\nTYPE BOX\nWIDTH 1 mm\nDEPTH 1 mm\nHEIGHT 1 mm\n"
+        "ORIGIN_X 4 mm\nORIGIN_Y 4 mm\nORIGIN_Z 4 mm\nEND\nEND\n";
+    const auto cavity = icad::compiler::compile(cavity_source);
+    if (!cavity.ok() || analyze_intersections(*cavity.ir_project).penetrating_part_pairs != 0)
+        return fail("solid inside a machined cavity was misclassified as material containment");
 
     constexpr std::string_view touching_source =
         "PROJECT Touching\nUNITS mm\n"

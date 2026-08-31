@@ -1,7 +1,9 @@
 if(NOT DEFINED ICAD_EXECUTABLE OR NOT DEFINED ICAD_SOURCE OR NOT DEFINED REFERENCE_ROOT OR
-   NOT DEFINED OUTPUT_ROOT)
+   NOT DEFINED OUTPUT_ROOT OR NOT DEFINED PROJECT_ROOT)
     message(FATAL_ERROR "robotic-arm benchmark is missing required paths")
 endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/robotic_reference.cmake")
 
 file(GLOB reference_stls "${REFERENCE_ROOT}/*.STL")
 list(LENGTH reference_stls reference_component_files)

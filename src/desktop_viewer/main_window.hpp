@@ -1,6 +1,7 @@
 #pragma once
 
 #include "cad_viewport.hpp"
+#include "icad_editor.hpp"
 
 #include "icad/engine/session.hpp"
 
@@ -21,8 +22,8 @@ class QDockWidget;
 class QFileSystemModel;
 class QLabel;
 class QListWidget;
+class QListWidgetItem;
 class QMenu;
-class QPlainTextEdit;
 class QSlider;
 class QTabBar;
 class QTreeView;
@@ -45,6 +46,8 @@ class MainWindow final : public QMainWindow {
     auto open_workspace(const std::filesystem::path& path) -> bool;
     auto set_standard_view(StandardView view) -> void;
     auto set_display_mode(DisplayMode mode) -> void;
+    auto set_assembly_inspection(bool enabled) -> void;
+    auto set_cutaway(bool enabled) -> void;
     auto request_snapshot(QString path, std::function<void(bool)> completion) -> void;
 
   protected:
@@ -74,6 +77,8 @@ class MainWindow final : public QMainWindow {
         std::uint64_t document_id{};
         QString source;
         engine::PreviewResult preview;
+        std::optional<RenderScene> scene;
+        QString scene_error;
     };
 
     auto build_ui() -> void;
@@ -104,6 +109,8 @@ class MainWindow final : public QMainWindow {
     auto apply_preview(const DocumentPreview& preview) -> void;
     auto restore_document_preview(const OpenDocument& document) -> void;
     auto update_diagnostics(const engine::PreviewResult& result) -> void;
+    auto jump_to_diagnostic(QListWidgetItem* item) -> void;
+    auto update_cursor_position() -> void;
     auto rebuild_model_tree() -> void;
     auto rebuild_scene_panel() -> void;
     auto update_selection(std::optional<std::size_t> index) -> void;
@@ -124,7 +131,7 @@ class MainWindow final : public QMainWindow {
     int active_document_index_{-1};
     QString error_;
     std::filesystem::path workspace_root_;
-    QPlainTextEdit* editor_{};
+    IcadEditor* editor_{};
     CadViewport* viewport_{};
     QTabBar* document_tabs_{};
     QFileSystemModel* workspace_model_{};
@@ -135,6 +142,8 @@ class MainWindow final : public QMainWindow {
     QSlider* timeline_{};
     QLabel* properties_{};
     QLabel* compile_state_{};
+    QLabel* editor_mode_{};
+    QLabel* cursor_position_{};
     QLabel* metrics_{};
     QDockWidget* diagnostics_dock_{};
     QDockWidget* workspace_dock_{};

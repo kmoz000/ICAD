@@ -74,6 +74,7 @@ class SpatialIndex {
     };
 
     std::vector<Entry> entries_;
+    std::vector<double> prefix_maximum_x_;
     double tolerance_mm_{};
 };
 
@@ -97,6 +98,8 @@ struct IntersectionAnalysis {
         std::size_t penetrating_part_pairs{};
         std::size_t contained_part_pairs{};
         std::size_t surface_contact_only_part_pairs{};
+        bool has_witness_point{};
+        Point3 witness_point{};
         bool declared_connection{};
         std::string connection_name;
         std::string connection_method;

@@ -38,6 +38,18 @@ icad_add_unit_test(assembly_semantics unit/assembly_semantics_test.cpp)
 icad_add_unit_test(assembly_interfaces unit/assembly_interfaces_test.cpp)
 add_test(NAME benchmark.incremental COMMAND icad_incremental_test)
 set_tests_properties(benchmark.incremental PROPERTIES LABELS "benchmark" TIMEOUT 60)
+
+add_executable(icad_turbojet_live_refresh_benchmark
+    benchmark/turbojet_live_refresh.cpp)
+target_link_libraries(icad_turbojet_live_refresh_benchmark PRIVATE
+    ICAD::compiler icad_project_options)
+add_test(
+    NAME benchmark.large_turbojet_refresh
+    COMMAND icad_turbojet_live_refresh_benchmark
+            ${PROJECT_SOURCE_DIR}/examples/bench/turbojet_engine.icad)
+set_tests_properties(benchmark.large_turbojet_refresh PROPERTIES
+    LABELS "benchmark;viewer;incremental;large"
+    TIMEOUT 60)
 icad_add_unit_test(intersection unit/intersection_test.cpp)
 icad_add_unit_test(topology unit/topology_test.cpp)
 icad_add_unit_test(scene unit/scene_test.cpp)
@@ -164,7 +176,7 @@ add_test(
 )
 set_tests_properties(benchmark.advanced_bridge PROPERTIES LABELS "benchmark" TIMEOUT 60)
 if(TARGET icad-viewer)
-    find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui)
+    find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Widgets)
     add_executable(icad_viewer_geometry_test
         unit/viewer_geometry_test.cpp
         ${PROJECT_SOURCE_DIR}/src/desktop_viewer/scene_model.cpp)
@@ -175,6 +187,19 @@ if(TARGET icad-viewer)
     add_test(NAME unit.viewer_geometry COMMAND icad_viewer_geometry_test)
     set_tests_properties(unit.viewer_geometry PROPERTIES LABELS "unit;viewer;geometry")
     list(APPEND ICAD_UNIT_TEST_TARGETS icad_viewer_geometry_test)
+
+    add_executable(icad_viewer_editor_test
+        unit/viewer_editor_test.cpp
+        ${PROJECT_SOURCE_DIR}/src/desktop_viewer/icad_editor.cpp)
+    target_include_directories(icad_viewer_editor_test PRIVATE
+        ${PROJECT_SOURCE_DIR}/src/desktop_viewer)
+    target_link_libraries(icad_viewer_editor_test PRIVATE
+        Qt6::Core Qt6::Gui Qt6::Widgets icad_project_options)
+    add_test(NAME unit.viewer_editor COMMAND icad_viewer_editor_test)
+    set_tests_properties(unit.viewer_editor PROPERTIES
+        LABELS "unit;viewer;editor"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    list(APPEND ICAD_UNIT_TEST_TARGETS icad_viewer_editor_test)
 
     add_test(
         NAME viewer.qt_native_smoke
@@ -209,6 +234,7 @@ add_test(
         -DICAD_EXECUTABLE=$<TARGET_FILE:icad>
         -DICAD_SOURCE=${PROJECT_SOURCE_DIR}/examples/robotic_arm.icad
         -DREFERENCE_ROOT=${PROJECT_SOURCE_DIR}/examples/Robotic_Arm_3D_Model
+        -DPROJECT_ROOT=${PROJECT_SOURCE_DIR}
         -DOUTPUT_ROOT=${CMAKE_CURRENT_BINARY_DIR}/benchmark-robotic-arm
         -P ${CMAKE_CURRENT_SOURCE_DIR}/benchmark/robotic_arm.cmake
 )
@@ -252,7 +278,7 @@ add_test(
     NAME benchmark.constrained_sketch
     COMMAND ${CMAKE_COMMAND}
         -DICAD_EXECUTABLE=$<TARGET_FILE:icad>
-        -DICAD_SOURCE=${PROJECT_SOURCE_DIR}/examples/constrained_sketch.icad
+        -DICAD_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/valid/constrained_sketch.icad
         -DOUTPUT_ROOT=${CMAKE_CURRENT_BINARY_DIR}/benchmark-constrained-sketch
         -P ${CMAKE_CURRENT_SOURCE_DIR}/benchmark/constrained_sketch.cmake
 )
@@ -358,6 +384,7 @@ add_test(
     COMMAND ${CMAKE_COMMAND}
         -DICAD_EXECUTABLE=$<TARGET_FILE:icad>
         -DREFERENCE_ROOT=${PROJECT_SOURCE_DIR}/examples/Robotic_Arm_3D_Model
+        -DPROJECT_ROOT=${PROJECT_SOURCE_DIR}
         -DOUTPUT_ROOT=${CMAKE_CURRENT_BINARY_DIR}/benchmark-agentic-robot-prompt
         -P ${CMAKE_CURRENT_SOURCE_DIR}/benchmark/agentic_robot_prompt.cmake
 )

@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
+#include <chrono>
 #include <iterator>
 #include <mutex>
 #include <optional>
@@ -85,8 +86,13 @@ auto IncrementalCompiler::compile(std::string_view source, CompileOptions option
     // compiler without observing or publishing a partially merged revision.
     const std::lock_guard cache_lock{mutex_};
     IncrementalCompileResult result;
+    const bool build_topology = options.build_topology;
     options.build_topology = false;
+    const auto started = std::chrono::steady_clock::now();
     result.compilation = compiler::compile(source, std::move(options));
+    const auto frontend_complete = std::chrono::steady_clock::now();
+    result.incremental.frontend_ms =
+        std::chrono::duration<double, std::milli>(frontend_complete - started).count();
     if (!result.compilation.ok())
         return result;
     const auto& project = *result.compilation.ir_project;
@@ -105,6 +111,7 @@ auto IncrementalCompiler::compile(std::string_view source, CompileOptions option
         cad::TopologyModel topology;
         CachedBody cached;
         std::vector<Diagnostic> diagnostics;
+        double milliseconds{};
     };
 
     std::vector<BodySelection> selections;
@@ -114,11 +121,16 @@ auto IncrementalCompiler::compile(std::string_view source, CompileOptions option
     for (const auto& body : project.bodies) {
         const auto fingerprint = body_fingerprint(project, body);
         const auto found = bodies_.find(body.name);
-        const bool reused = found != bodies_.end() && found->second.fingerprint == fingerprint;
+        const bool reused = found != bodies_.end() && found->second.fingerprint == fingerprint &&
+                            (!build_topology || !found->second.solids.empty());
         selections.push_back({&body, fingerprint, reused});
         if (!reused)
             dirty.push_back(selections.size() - 1U);
     }
+    const auto fingerprints_complete = std::chrono::steady_clock::now();
+    result.incremental.fingerprint_ms = std::chrono::duration<double, std::milli>(
+                                                fingerprints_complete - frontend_complete)
+                                                .count();
 
     std::vector<std::optional<ComputedBody>> computed(project.bodies.size());
     if (!dirty.empty()) {
@@ -138,17 +150,22 @@ auto IncrementalCompiler::compile(std::string_view source, CompileOptions option
                         return;
                     const auto selection_index = dirty[job];
                     const auto& selection = selections[selection_index];
+                    const auto body_started = std::chrono::steady_clock::now();
                     const auto single_body = body_project(project, *selection.body);
-                    auto topology = cad::build_topology(single_body);
+                    cad::TopologyModel topology;
+                    if (build_topology)
+                        topology = cad::build_topology(single_body);
                     auto model = cad::build_model(single_body);
                     ComputedBody next{std::move(topology),
-                                      CachedBody{selection.fingerprint, {}, {}, {}}, {}};
+                                      CachedBody{selection.fingerprint, {}, {}, {}}, {}, 0.0};
                     next.cached.solids = next.topology.solids;
-                    const auto validation = cad::validate_topology(next.topology);
-                    for (const auto& issue : validation.issues) {
-                        next.diagnostics.push_back(
-                            {DiagnosticSeverity::error, issue.code,
-                             issue.message + " [" + issue.entity + "]", {1, 1}});
+                    if (build_topology) {
+                        const auto validation = cad::validate_topology(next.topology);
+                        for (const auto& issue : validation.issues) {
+                            next.diagnostics.push_back(
+                                {DiagnosticSeverity::error, issue.code,
+                                 issue.message + " [" + issue.entity + "]", {1, 1}});
+                        }
                     }
                     if (!cad::is_valid(model)) {
                         next.diagnostics.push_back(
@@ -162,6 +179,9 @@ auto IncrementalCompiler::compile(std::string_view source, CompileOptions option
                         else
                             next.cached.occurrence_parts.push_back(std::move(part));
                     }
+                    next.milliseconds = std::chrono::duration<double, std::milli>(
+                                            std::chrono::steady_clock::now() - body_started)
+                                            .count();
                     computed[selection_index] = std::move(next);
                 }
             });
@@ -169,6 +189,10 @@ auto IncrementalCompiler::compile(std::string_view source, CompileOptions option
         for (auto& worker : workers)
             worker.join();
     }
+    const auto geometry_complete = std::chrono::steady_clock::now();
+    result.incremental.geometry_ms =
+        std::chrono::duration<double, std::milli>(geometry_complete - fingerprints_complete)
+            .count();
 
     std::unordered_set<std::string> current_names;
     cad::TopologyModel merged;
@@ -191,6 +215,11 @@ auto IncrementalCompiler::compile(std::string_view source, CompileOptions option
             continue;
         }
         auto next = std::move(*computed[index]);
+        std::size_t triangle_count{};
+        for (const auto& part : next.cached.definition_parts)
+            triangle_count += part.triangles.size();
+        result.incremental.body_timings.push_back(
+            {body.name, next.milliseconds, triangle_count});
         result.compilation.diagnostics.insert(
             result.compilation.diagnostics.end(),
             std::make_move_iterator(next.diagnostics.begin()),
@@ -214,12 +243,17 @@ auto IncrementalCompiler::compile(std::string_view source, CompileOptions option
         bodies_.erase(name);
     project_name_ = project.name;
     if (result.compilation.diagnostics.empty()) {
-        result.compilation.topology_model = std::move(merged);
+        if (build_topology)
+            result.compilation.topology_model = std::move(merged);
         merged_model.parts.insert(merged_model.parts.end(),
                                   std::make_move_iterator(merged_occurrences.begin()),
                                   std::make_move_iterator(merged_occurrences.end()));
         result.model = std::move(merged_model);
     }
+    result.incremental.merge_ms =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() -
+                                                  geometry_complete)
+            .count();
     return result;
 }
 

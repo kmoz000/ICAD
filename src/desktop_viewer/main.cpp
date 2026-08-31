@@ -18,6 +18,7 @@
 #include <QIcon>
 #include <QHeaderView>
 #include <QLabel>
+#include <QListWidget>
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPixmap>
@@ -25,6 +26,7 @@
 #include <QTabBar>
 #include <QThread>
 #include <QTimer>
+#include <QTextCursor>
 #include <QTreeView>
 #include <QTreeWidget>
 
@@ -44,6 +46,8 @@ auto configure_parser(QCommandLineParser& parser, QCommandLineOption& self_test_
                       QCommandLineOption& window_test_option,
                       QCommandLineOption& view_option,
                       QCommandLineOption& display_option,
+                      QCommandLineOption& assembly_inspection_option,
+                      QCommandLineOption& cutaway_option,
                       QCommandLineOption& snapshot_option,
                       QCommandLineOption& studio_snapshot_option) -> void {
     parser.setApplicationDescription(
@@ -54,6 +58,8 @@ auto configure_parser(QCommandLineParser& parser, QCommandLineOption& self_test_
     parser.addOption(window_test_option);
     parser.addOption(view_option);
     parser.addOption(display_option);
+    parser.addOption(assembly_inspection_option);
+    parser.addOption(cutaway_option);
     parser.addOption(snapshot_option);
     parser.addOption(studio_snapshot_option);
     parser.addPositionalArgument(
@@ -182,6 +188,12 @@ auto main(int argc, char** argv) -> int {
         QStringLiteral("display"),
         QStringLiteral("Initial viewport shading: solid, solid-mesh, cad-wire, or mesh-wire."),
         QStringLiteral("mode"), QStringLiteral("solid")};
+    QCommandLineOption assembly_inspection_option{
+        QStringLiteral("assembly-inspection"),
+        QStringLiteral("Render casing shells translucently and overlay joint axes and fit datums.")};
+    QCommandLineOption cutaway_option{
+        QStringLiteral("cutaway"),
+        QStringLiteral("Render casing shells translucently without assembly annotation overlays.")};
     QCommandLineOption snapshot_option{
         QStringLiteral("snapshot"),
         QStringLiteral("Render the compiled viewport to a PNG and exit."),
@@ -195,7 +207,7 @@ auto main(int argc, char** argv) -> int {
         configure_application_metadata();
         QCommandLineParser parser;
         configure_parser(parser, self_test_option, window_test_option, view_option, display_option,
-                         snapshot_option, studio_snapshot_option);
+                         assembly_inspection_option, cutaway_option, snapshot_option, studio_snapshot_option);
         parser.process(application);
         const auto positional = parser.positionalArguments();
         if (!requested_self_test)
@@ -225,7 +237,7 @@ auto main(int argc, char** argv) -> int {
 
     QCommandLineParser parser;
     configure_parser(parser, self_test_option, window_test_option, view_option, display_option,
-                     snapshot_option, studio_snapshot_option);
+                     assembly_inspection_option, cutaway_option, snapshot_option, studio_snapshot_option);
     parser.process(application);
     const auto initial_view = standard_view(parser.value(view_option));
     if (!initial_view) {
@@ -280,13 +292,19 @@ auto main(int argc, char** argv) -> int {
     }
     window.set_standard_view(*initial_view);
     window.set_display_mode(*initial_display);
+    window.set_assembly_inspection(parser.isSet(assembly_inspection_option));
+    window.set_cutaway(parser.isSet(cutaway_option));
     if (parser.isSet(window_test_option)) {
         window.show();
         auto* tabs = window.findChild<QTabBar*>(QStringLiteral("documentTabs"));
         const auto* workspace_tree = window.findChild<QTreeView*>(QStringLiteral("workspaceTree"));
         const auto* model = window.findChild<QTreeWidget*>(QStringLiteral("modelTree"));
-        const auto* editor = window.findChild<QPlainTextEdit*>(QStringLiteral("sourceEditor"));
+        auto* editor = window.findChild<QPlainTextEdit*>(QStringLiteral("sourceEditor"));
         const auto* compile_state = window.findChild<QLabel*>(QStringLiteral("compileState"));
+        const auto* cursor_position =
+            window.findChild<QLabel*>(QStringLiteral("cursorPosition"));
+        auto* diagnostics =
+            window.findChild<QListWidget*>(QStringLiteral("diagnosticsList"));
         const bool has_open_folder = std::ranges::any_of(
             window.findChildren<QAction*>(), [](const QAction* action) {
                 return action->text().remove(QLatin1Char('&')) == QStringLiteral("Open Folder…");
@@ -310,7 +328,8 @@ auto main(int argc, char** argv) -> int {
             window.document_count() != static_cast<std::size_t>(expected_tabs) ||
             workspace_tree == nullptr || workspace_tree->model() == nullptr ||
             window.workspace_root().empty() || model == nullptr ||
-            editor == nullptr || compile_state == nullptr ||
+            editor == nullptr || compile_state == nullptr || cursor_position == nullptr ||
+            diagnostics == nullptr ||
             model->selectionBehavior() != QAbstractItemView::SelectRows ||
             model->header()->sectionResizeMode(0) != QHeaderView::Stretch || !has_open_folder ||
             !has_frame_selected || !has_mesh_mode || !has_scene_lighting) {
@@ -379,6 +398,34 @@ auto main(int argc, char** argv) -> int {
                           << " current_tab=" << tabs->currentIndex() << '\n';
                 return 7;
             }
+        }
+        editor->moveCursor(QTextCursor::End);
+        application.processEvents(QEventLoop::AllEvents, 20);
+        if (!cursor_position->text().startsWith(QStringLiteral("Ln ")) ||
+            !cursor_position->text().contains(QStringLiteral(", Col "))) {
+            std::cerr << "QT_VIEWER_WINDOW_TEST failed: cursor line and column are absent\n";
+            return 8;
+        }
+        const int valid_part_count = model->topLevelItemCount();
+        editor->insertPlainText(QStringLiteral("\n$\n"));
+        QElapsedTimer diagnostic_wait;
+        diagnostic_wait.start();
+        while (diagnostic_wait.elapsed() < 5000 &&
+               !compile_state->text().startsWith(QStringLiteral("Compile failed"))) {
+            application.processEvents(QEventLoop::AllEvents, 20);
+            QThread::msleep(2);
+        }
+        if (!compile_state->text().contains(QStringLiteral("Ln ")) ||
+            !compile_state->text().contains(QStringLiteral(", Col ")) ||
+            diagnostics->count() == 0 ||
+            !diagnostics->item(0)->text().contains(QStringLiteral("Ln ")) ||
+            !diagnostics->item(0)->text().contains(QStringLiteral(", Col ")) ||
+            model->topLevelItemCount() != valid_part_count) {
+            std::cerr << "QT_VIEWER_WINDOW_TEST failed: precise diagnostics or last-valid preview are missing"
+                      << " state=" << compile_state->text().toStdString()
+                      << " diagnostics=" << diagnostics->count()
+                      << " parts=" << model->topLevelItemCount() << '\n';
+            return 9;
         }
         std::cout << "QT_VIEWER_WINDOW_TEST passed\n";
         return 0;

@@ -48,6 +48,25 @@ auto main() -> int {
         return 1;
     }
 
+    const auto apex_cone = icad::compiler::compile(
+        "PROJECT apex_cone\nUNITS mm\nBODY nose\nFEATURE tip\nTYPE CONE\n"
+        "RADIUS1 0 mm\nRADIUS2 20 mm\nHEIGHT 50 mm\nEND\nEND\n");
+    if (!apex_cone.ok()) {
+        std::cerr << "valid mathematical cone apex was rejected\n";
+        return 1;
+    }
+    const auto degenerate_cone = icad::compiler::compile(
+        "PROJECT degenerate_cone\nUNITS mm\nBODY nose\nFEATURE tip\nTYPE CONE\n"
+        "RADIUS1 0 mm\nRADIUS2 0 mm\nHEIGHT 50 mm\nEND\nEND\n");
+    const auto negative_cone = icad::compiler::compile(
+        "PROJECT negative_cone\nUNITS mm\nBODY nose\nFEATURE tip\nTYPE CONE\n"
+        "RADIUS1 -1 mm\nRADIUS2 20 mm\nHEIGHT 50 mm\nEND\nEND\n");
+    if (degenerate_cone.ok() || negative_cone.ok() ||
+        !has_code(degenerate_cone, "ICAD-S0003") || !has_code(negative_cone, "ICAD-S0003")) {
+        std::cerr << "invalid degenerate or negative cone radii were accepted\n";
+        return 1;
+    }
+
     const auto parameter_reference = icad::compiler::compile(
         "PROJECT references\nUNITS mm\nPARAMETER width 2 m\nBODY b\nFEATURE f\nTYPE BOX\n"
         "WIDTH width\nDEPTH 10 mm\nHEIGHT 10 mm\nEND\nEND\n");

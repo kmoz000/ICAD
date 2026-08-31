@@ -1,11 +1,13 @@
 #include "icad/json/value.hpp"
 
+#include <algorithm>
 #include <charconv>
+#include <cerrno>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <limits>
-#include <locale>
-#include <sstream>
+#include <locale.h>
 #include <utility>
 
 namespace icad::json {
@@ -37,6 +39,30 @@ auto Value::find(std::string_view key) const -> const Value* {
 }
 
 namespace {
+
+[[nodiscard]] auto parse_decimal(std::string_view text, double& value) -> bool {
+    constexpr std::size_t stack_capacity = 128;
+    char stack[stack_capacity]{};
+    std::string storage;
+    char* buffer = stack;
+    if (text.size() >= stack_capacity) {
+        storage.assign(text);
+        buffer = storage.data();
+    } else {
+        std::copy(text.begin(), text.end(), stack);
+        stack[text.size()] = '\0';
+    }
+    char* end = nullptr;
+    errno = 0;
+#if defined(_WIN32)
+    static _locale_t c_locale = _create_locale(LC_NUMERIC, "C");
+    value = _strtod_l(buffer, &end, c_locale);
+#else
+    static locale_t c_locale = newlocale(LC_NUMERIC_MASK, "C", nullptr);
+    value = strtod_l(buffer, &end, c_locale);
+#endif
+    return errno != ERANGE && end == buffer + text.size() && std::isfinite(value);
+}
 
 class Parser {
   public:
@@ -261,11 +287,7 @@ class Parser {
             }
         }
         double value = 0.0;
-        const auto text = source_.substr(start, position_ - start);
-        std::istringstream stream{std::string{text}};
-        stream.imbue(std::locale::classic());
-        char trailing{};
-        if (!(stream >> value) || (stream >> trailing) || !std::isfinite(value)) {
+        if (!parse_decimal(source_.substr(start, position_ - start), value)) {
             fail("JSON number is out of range");
             return std::nullopt;
         }

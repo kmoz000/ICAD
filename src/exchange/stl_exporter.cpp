@@ -30,6 +30,12 @@ namespace {
 auto write_stl(const compiler::ir::Project& project, const std::filesystem::path& output)
     -> ExportResult {
     const auto model = cad::build_model(project);
+    return write_stl(project, model, output);
+}
+
+auto write_stl(const compiler::ir::Project& project, const cad::Model& model,
+               const std::filesystem::path& output) -> ExportResult {
+    static_cast<void>(project);
     if (!cad::is_valid(model)) {
         return {false, "ICAD geometry validation failed before STL export"};
     }

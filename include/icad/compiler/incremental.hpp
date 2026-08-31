@@ -14,11 +14,22 @@
 
 namespace icad::compiler {
 
+struct IncrementalBodyTiming {
+    std::string body;
+    double milliseconds{};
+    std::size_t triangles{};
+};
+
 struct IncrementalReport {
     std::vector<std::string> reused_bodies;
     std::vector<std::string> recomputed_bodies;
     std::vector<std::string> removed_bodies;
     std::size_t worker_count{};
+    double frontend_ms{};
+    double fingerprint_ms{};
+    double geometry_ms{};
+    double merge_ms{};
+    std::vector<IncrementalBodyTiming> body_timings;
 };
 
 struct IncrementalCompileResult {

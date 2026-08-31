@@ -7,6 +7,7 @@
 #include <iterator>
 #include <limits>
 #include <map>
+#include <optional>
 #include <ranges>
 #include <tuple>
 #include <utility>
@@ -234,11 +235,6 @@ auto collect_edge_intersections(const Triangle3& source, const Triangle3& target
 
 [[nodiscard]] auto part_has_point_inside(const Part& candidate, const Part& solid,
                                          double tolerance_mm) -> bool {
-    if (std::ranges::any_of(candidate.vertices, [&](const Point3& vertex) {
-            return strictly_inside(vertex, solid, tolerance_mm);
-        })) {
-        return true;
-    }
     if (candidate.vertices.empty())
         return false;
     Point3 centroid{};
@@ -251,7 +247,24 @@ auto collect_edge_intersections(const Triangle3& source, const Triangle3& target
     centroid.x *= inverse;
     centroid.y *= inverse;
     centroid.z *= inverse;
-    return strictly_inside(centroid, solid, tolerance_mm);
+    if (strictly_inside(centroid, solid, tolerance_mm))
+        return true;
+
+    // Surface crossings already detect partial penetration. Containment needs a
+    // representative interior witness, not an O(vertices * triangles) scan of
+    // every tessellation point. Sample the complete vertex span deterministically
+    // so high-quality curved parts do not make assembly validation quadratic in
+    // tessellation density.
+    constexpr std::size_t maximum_samples = 24;
+    const auto sample_count = std::min(candidate.vertices.size(), maximum_samples);
+    for (std::size_t sample = 0; sample < sample_count; ++sample) {
+        const auto index = sample_count == 1
+                               ? std::size_t{0}
+                               : sample * (candidate.vertices.size() - 1) / (sample_count - 1);
+        if (strictly_inside(candidate.vertices[index], solid, tolerance_mm))
+            return true;
+    }
+    return false;
 }
 
 } // namespace
@@ -270,13 +283,24 @@ SpatialIndex::SpatialIndex(std::span<const Bounds> bounds, double tolerance_mm)
             return first.bounds.maximum[0] < second.bounds.maximum[0];
         return first.index < second.index;
     });
+    prefix_maximum_x_.reserve(entries_.size());
+    double maximum = std::numeric_limits<double>::lowest();
+    for (const auto& entry : entries_) {
+        maximum = std::max(maximum, entry.bounds.maximum[0]);
+        prefix_maximum_x_.push_back(maximum);
+    }
 }
 
 auto SpatialIndex::query(const Bounds& bounds) const -> std::vector<std::size_t> {
     std::vector<std::size_t> result;
     if (!valid(bounds))
         return result;
-    for (const auto& entry : entries_) {
+    const auto first = std::lower_bound(prefix_maximum_x_.begin(), prefix_maximum_x_.end(),
+                                        bounds.minimum[0] - tolerance_mm_);
+    for (auto index = static_cast<std::size_t>(
+             std::distance(prefix_maximum_x_.begin(), first));
+         index < entries_.size(); ++index) {
+        const auto& entry = entries_[index];
         if (entry.bounds.minimum[0] > bounds.maximum[0] + tolerance_mm_)
             break;
         if (overlaps(entry.bounds, bounds, tolerance_mm_))
@@ -472,6 +496,32 @@ auto analyze_intersections(const compiler::ir::Project& project, const Model& mo
     analysis.part_pair_candidates = part_pairs.size();
     using BodyPair = std::pair<std::string, std::string>;
     std::map<BodyPair, IntersectionAnalysis::BodyContact> body_contacts;
+    const auto definition_for = [&](std::string_view occurrence) -> const compiler::ir::Body* {
+        auto body = std::ranges::find(project.bodies, occurrence, &compiler::ir::Body::name);
+        if (body != project.bodies.end())
+            return &*body;
+        const auto instance = std::ranges::find(
+            project.instances, occurrence, &compiler::ir::ComponentInstance::name);
+        if (instance == project.instances.end())
+            return nullptr;
+        body = std::ranges::find(project.bodies, instance->body, &compiler::ir::Body::name);
+        return body == project.bodies.end() ? nullptr : &*body;
+    };
+    const auto reliable_containment_solid = [&](std::string_view occurrence) {
+        const auto* body = definition_for(occurrence);
+        return body != nullptr &&
+               std::ranges::none_of(body->features, [](const auto& feature) {
+                   return feature.operation == compiler::ir::FeatureOperation::cut;
+               });
+    };
+    const auto contains_bounds = [&](const Bounds& outer, const Bounds& inner) {
+        for (std::size_t axis = 0; axis < 3; ++axis) {
+            if (inner.minimum[axis] < outer.minimum[axis] - tolerance_mm ||
+                inner.maximum[axis] > outer.maximum[axis] + tolerance_mm)
+                return false;
+        }
+        return true;
+    };
 
     for (const auto& pair : part_pairs) {
         const auto& first_part = model.parts[pair.first];
@@ -508,6 +558,7 @@ auto analyze_intersections(const compiler::ir::Project& project, const Model& mo
         const SpatialIndex triangle_index{second_bounds, tolerance_mm};
         bool part_intersects = false;
         bool crossing_surfaces = false;
+        std::optional<Point3> crossing_witness;
         for (const auto& indices : first_part.triangles) {
             const auto first_triangle = triangle_from(first_part, indices);
             for (const std::size_t second_index : triangle_index.query(bounds_of(first_triangle))) {
@@ -526,6 +577,12 @@ auto analyze_intersections(const compiler::ir::Project& project, const Model& mo
                     strict_bounds_overlap &&
                     distance_squared(result.first, result.second) > tolerance_mm * tolerance_mm) {
                     crossing_surfaces = true;
+                    if (!crossing_witness) {
+                        crossing_witness =
+                            Point3{(result.first.x + result.second.x) * 0.5,
+                                   (result.first.y + result.second.y) * 0.5,
+                                   (result.first.z + result.second.z) * 0.5};
+                    }
                 }
             }
         }
@@ -534,14 +591,39 @@ auto analyze_intersections(const compiler::ir::Project& project, const Model& mo
             if (body_contact != nullptr)
                 ++body_contact->intersecting_part_pairs;
         }
-        const bool contained = body_contact != nullptr &&
-                               (part_has_point_inside(first_part, second_part, tolerance_mm) ||
-                                part_has_point_inside(second_part, first_part, tolerance_mm));
+        const bool first_in_second =
+            body_contact != nullptr && strict_bounds_overlap &&
+            contains_bounds(model_part_bounds[pair.second], model_part_bounds[pair.first]) &&
+            reliable_containment_solid(second_part.body) &&
+            part_has_point_inside(first_part, second_part, tolerance_mm);
+        const bool second_in_first =
+            body_contact != nullptr && strict_bounds_overlap &&
+            contains_bounds(model_part_bounds[pair.first], model_part_bounds[pair.second]) &&
+            reliable_containment_solid(first_part.body) &&
+            part_has_point_inside(second_part, first_part, tolerance_mm);
+        const bool contained = first_in_second || second_in_first;
         const bool penetrating = body_contact != nullptr && (crossing_surfaces || contained);
         if (penetrating) {
             ++analysis.penetrating_part_pairs;
-            if (body_contact != nullptr)
+            if (body_contact != nullptr) {
                 ++body_contact->penetrating_part_pairs;
+                if (!body_contact->has_witness_point) {
+                    if (crossing_witness) {
+                        body_contact->witness_point = *crossing_witness;
+                    } else {
+                        const auto& first_bounds = model_part_bounds[pair.first];
+                        const auto& second_part_bounds = model_part_bounds[pair.second];
+                        body_contact->witness_point = {
+                            (std::max(first_bounds.minimum[0], second_part_bounds.minimum[0]) +
+                             std::min(first_bounds.maximum[0], second_part_bounds.maximum[0])) * 0.5,
+                            (std::max(first_bounds.minimum[1], second_part_bounds.minimum[1]) +
+                             std::min(first_bounds.maximum[1], second_part_bounds.maximum[1])) * 0.5,
+                            (std::max(first_bounds.minimum[2], second_part_bounds.minimum[2]) +
+                             std::min(first_bounds.maximum[2], second_part_bounds.maximum[2])) * 0.5};
+                    }
+                    body_contact->has_witness_point = true;
+                }
+            }
         }
         if (contained) {
             ++analysis.contained_part_pairs;

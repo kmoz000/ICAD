@@ -31,8 +31,11 @@ constexpr std::array cylinder_properties{
 };
 
 constexpr std::array cone_properties{
-    PropertySpec{"RADIUS1", Dimension::length, true, true},
-    PropertySpec{"RADIUS2", Dimension::length, true, true},
+    // A manufactured cone may terminate at a mathematical apex. Feature-level
+    // semantic validation keeps both radii non-negative and rejects the
+    // doubly-zero degenerate case.
+    PropertySpec{"RADIUS1", Dimension::length, true, false},
+    PropertySpec{"RADIUS2", Dimension::length, true, false},
     PropertySpec{"HEIGHT", Dimension::length, true, true},
     PropertySpec{"ORIGIN_X", Dimension::length, false, false},
     PropertySpec{"ORIGIN_Y", Dimension::length, false, false},

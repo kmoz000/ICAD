@@ -10,6 +10,12 @@ namespace icad::exchange {
 auto write_obj(const compiler::ir::Project& project, const std::filesystem::path& output)
     -> ExportResult {
     const auto model = cad::build_model(project);
+    return write_obj(project, model, output);
+}
+
+auto write_obj(const compiler::ir::Project& project, const cad::Model& model,
+               const std::filesystem::path& output) -> ExportResult {
+    static_cast<void>(project);
     if (!cad::is_valid(model)) {
         return {false, "ICAD geometry validation failed before OBJ export"};
     }

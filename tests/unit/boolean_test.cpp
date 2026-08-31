@@ -1,5 +1,6 @@
 #include "icad/ai/inspector.hpp"
 #include "icad/cad/analysis.hpp"
+#include "icad/cad/model.hpp"
 #include "icad/cad/topology.hpp"
 #include "icad/compiler/compiler.hpp"
 #include "icad/exchange/exporter.hpp"
@@ -8,6 +9,7 @@
 #include <cmath>
 #include <filesystem>
 #include <iostream>
+#include <numbers>
 #include <string_view>
 
 namespace {
@@ -159,10 +161,108 @@ auto main() -> int {
         "WIDTH 10 mm\nDEPTH 10 mm\nHEIGHT 10 mm\nEND\nFEATURE hole\nTYPE CYLINDER\n"
         "OPERATION CUT\nRADIUS 2 mm\nHEIGHT 12 mm\nORIGIN_X 5 mm\nORIGIN_Y 5 mm\n"
         "ORIGIN_Z -1 mm\nEND\nEND\n");
+    const double analytic_curved_cut_volume = 1000.0 - std::numbers::pi * 2.0 * 2.0 * 10.0;
     if (!curved_cut.ok() ||
-        std::abs(icad::cad::analyze(*curved_cut.ir_project).volume_mm3 - 875.14219390967776) >
-            1e-7) {
-        return fail("faceted curved-operand cut produced incorrect volume");
+        std::abs(icad::cad::analyze(*curved_cut.ir_project).volume_mm3 -
+                 analytic_curved_cut_volume) > analytic_curved_cut_volume * 0.001) {
+        return fail("high-resolution curved-operand cut did not converge to analytic volume");
+    }
+
+    const auto twisted_blade_union = icad::compiler::compile(R"ICAD(
+PROJECT twisted_blade_union
+UNITS mm
+PROFILE airfoil_root
+POINT 0 mm 0 mm
+POINT 3 mm -4.8 mm
+POINT 12 mm -6.2 mm
+POINT 24 mm -3.2 mm
+POINT 28 mm 0 mm
+POINT 22 mm 3.8 mm
+POINT 10 mm 5.6 mm
+POINT 2 mm 3.2 mm
+END
+PROFILE airfoil_tip
+POINT 2 mm 0 mm
+POINT 5 mm -3.2 mm
+POINT 12 mm -4.2 mm
+POINT 22 mm -2.4 mm
+POINT 25 mm 0 mm
+POINT 20 mm 2.7 mm
+POINT 10 mm 3.8 mm
+POINT 3.5 mm 2.1 mm
+END
+PROFILE root_base
+POINT 0 mm 0 mm
+POINT 12 mm 0 mm
+POINT 14 mm 2 mm
+POINT 12.5 mm 4 mm
+POINT 13.5 mm 6 mm
+POINT 11 mm 8 mm
+POINT 3 mm 8 mm
+POINT 0.5 mm 6 mm
+POINT 1.5 mm 4 mm
+POINT 0 mm 2 mm
+END
+PROFILE root_neck
+POINT 2 mm 1 mm
+POINT 10 mm 1 mm
+POINT 11.5 mm 2.5 mm
+POINT 10.5 mm 4 mm
+POINT 11 mm 5.5 mm
+POINT 9.5 mm 7 mm
+POINT 4 mm 7 mm
+POINT 2.5 mm 5.5 mm
+POINT 3 mm 4 mm
+POINT 2 mm 2.5 mm
+END
+BODY blade
+FEATURE captured_root
+TYPE LOFT
+PROFILE root_base
+TARGET_PROFILE root_neck
+HEIGHT 12 mm
+ORIGIN_X 2 mm
+ORIGIN_Z -6 mm
+END
+FEATURE twisted_airfoil
+TYPE FREEFORM
+PROFILE airfoil_root
+TARGET_PROFILE airfoil_tip
+OPERATION UNION
+HEIGHT 76 mm
+TWIST 26 deg
+COUNT 9
+END
+END
+)ICAD");
+    if (!twisted_blade_union.ok() || !twisted_blade_union.topology_model ||
+        twisted_blade_union.topology_model->solids.size() != 1 ||
+        !icad::cad::validate_topology(*twisted_blade_union.topology_model).valid()) {
+        return fail("twisted multi-point airfoil did not form one closed solid with its root");
+    }
+    const auto blade_model = icad::cad::build_model(*twisted_blade_union.ir_project);
+    if (blade_model.parts.size() != 1 ||
+        std::ranges::none_of(blade_model.parts.front().repairs, [](const auto& repair) {
+            return repair.contains("sub-micron freeform-union fragments");
+        })) {
+        return fail("freeform root-union repair provenance was not preserved");
+    }
+
+    const auto batched_radial_cuts = icad::compiler::compile(
+        "PROJECT batched_radial_cuts\nUNITS mm\nBODY plate\n"
+        "FEATURE stock\nTYPE BOX\nWIDTH 20 mm\nDEPTH 20 mm\nHEIGHT 10 mm\nEND\n"
+        "FEATURE hole_a\nTYPE CYLINDER\nOPERATION CUT\nRADIUS 2 mm\nHEIGHT 12 mm\n"
+        "ORIGIN_X 5 mm\nORIGIN_Y 10 mm\nORIGIN_Z -1 mm\nEND\n"
+        "FEATURE hole_b\nTYPE CYLINDER\nOPERATION CUT\nRADIUS 2 mm\nHEIGHT 12 mm\n"
+        "ORIGIN_X 15 mm\nORIGIN_Y 10 mm\nORIGIN_Z -1 mm\nEND\nEND\n");
+    if (!batched_radial_cuts.ok())
+        return fail("compatible transformed primitive cutters did not compile");
+    const auto batched_model = icad::cad::build_model(*batched_radial_cuts.ir_project);
+    if (!icad::cad::is_valid(batched_model) || batched_model.parts.size() != 1 ||
+        std::ranges::none_of(batched_model.parts.front().repairs, [](const auto& repair) {
+            return repair.contains("batched 2 compatible cut features");
+        })) {
+        return fail("transformed primitive cutters were not evaluated in one boolean transaction");
     }
 
     const auto empty_intersection = icad::compiler::compile(

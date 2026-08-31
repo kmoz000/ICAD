@@ -52,5 +52,7 @@ struct Report {
 [[nodiscard]] auto write_report(const compiler::ir::Project& project,
                                 const std::filesystem::path& output,
                                 const Rules& rules = {}) -> bool;
+[[nodiscard]] auto write_report(const compiler::ir::Project& project, const Report& report,
+                                const std::filesystem::path& output) -> bool;
 
 } // namespace icad::manufacturing

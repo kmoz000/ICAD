@@ -2311,6 +2311,12 @@ auto project_json(const compiler::ir::Project& project) -> std::string {
 
 auto topology_json(const compiler::ir::Project& project) -> std::string {
     const auto topology = cad::build_topology(project);
+    return topology_json(project, topology);
+}
+
+auto topology_json(const compiler::ir::Project& project,
+                   const cad::TopologyModel& topology) -> std::string {
+    static_cast<void>(project);
     const auto validation = cad::validate_topology(topology);
     std::ostringstream output;
     output << std::setprecision(17) << "{\"schema\":\"icad.topology.v1\",\"valid\":"

@@ -144,6 +144,11 @@ auto write_zip(std::ostream& output, std::vector<Entry>& entries) -> bool {
 auto write_3mf(const compiler::ir::Project& project, const std::filesystem::path& output)
     -> ExportResult {
     const auto model = cad::build_model(project);
+    return write_3mf(project, model, output);
+}
+
+auto write_3mf(const compiler::ir::Project& project, const cad::Model& model,
+               const std::filesystem::path& output) -> ExportResult {
     if (!cad::is_valid(model))
         return {false, "ICAD geometry validation failed before 3MF export"};
     std::ofstream stream{output, std::ios::binary};

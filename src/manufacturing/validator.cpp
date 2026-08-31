@@ -223,9 +223,13 @@ auto validate(const compiler::ir::Project& project, const cad::ProjectAnalysis& 
                                      "material preset is incompatible with manufacturing process"});
         }
         for (const auto& feature : body.features) {
+            const double hole_radius = feature.type == "CONE"
+                                           ? std::min(property(feature, "RADIUS1"),
+                                                      property(feature, "RADIUS2"))
+                                           : property(feature, "RADIUS");
             if (feature.operation == compiler::ir::FeatureOperation::cut &&
                 (feature.type == "CYLINDER" || feature.type == "CONE") &&
-                property(feature, "RADIUS") * 2.0 < rules.minimum_hole_diameter_mm) {
+                hole_radius * 2.0 < rules.minimum_hole_diameter_mm) {
                 report.issues.push_back({"ICAD-M0008", Severity::error, feature.name,
                                          "cut hole diameter is below the process rule"});
             }
@@ -255,6 +259,11 @@ auto validate(const compiler::ir::Project& project, const cad::ProjectAnalysis& 
 auto write_report(const compiler::ir::Project& project, const std::filesystem::path& output,
                   const Rules& rules) -> bool {
     const auto report = validate(project, rules);
+    return write_report(project, report, output);
+}
+
+auto write_report(const compiler::ir::Project& project, const Report& report,
+                  const std::filesystem::path& output) -> bool {
     std::ofstream stream{output, std::ios::binary};
     if (!stream) {
         return false;

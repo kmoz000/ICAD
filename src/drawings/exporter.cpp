@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cctype>
 #include <fstream>
 #include <iomanip>
 #include <iterator>
@@ -112,6 +113,10 @@ auto projected_view(std::ostream& stream, const std::vector<const cad::Part*>& p
            << "\" width=\"" << width << "\" height=\"" << height
            << "\"/><text class=\"view-label\" x=\"" << x + 12.0 << "\" y=\""
            << y + 22.0 << "\">" << label << "</text>\n";
+    stream << "<line class=\"centerline\" x1=\"" << x + 8.0 << "\" y1=\"" << center_y
+           << "\" x2=\"" << x + width - 8.0 << "\" y2=\"" << center_y
+           << "\"/><line class=\"centerline\" x1=\"" << center_x << "\" y1=\"" << y + 30.0
+           << "\" x2=\"" << center_x << "\" y2=\"" << y + height - 8.0 << "\"/>\n";
     for (const auto* part : parts) {
         stream << "<path data-part=\"" << xml(part->name) << "\" d=\"";
         std::map<std::pair<std::size_t, std::size_t>, std::vector<std::array<double, 3>>> edges;
@@ -157,13 +162,35 @@ auto projected_view(std::ostream& stream, const std::vector<const cad::Part*>& p
 
 auto dimension(std::ostream& stream, double x, double y, double length,
                std::string_view label) -> void {
-    stream << "<g class=\"dimension\"><line x1=\"" << x << "\" y1=\"" << y
+    stream << "<g class=\"dimension\"><line class=\"dimension-line\" x1=\"" << x << "\" y1=\"" << y
            << "\" x2=\"" << x + length << "\" y2=\"" << y
            << "\"/><line x1=\"" << x << "\" y1=\"" << y - 7.0 << "\" x2=\""
            << x << "\" y2=\"" << y + 7.0 << "\"/><line x1=\"" << x + length
            << "\" y1=\"" << y - 7.0 << "\" x2=\"" << x + length << "\" y2=\""
-           << y + 7.0 << "\"/><text x=\"" << x + length * 0.5 << "\" y=\"" << y - 7.0
+           << y + 7.0 << "\"/><text text-anchor=\"middle\" x=\"" << x + length * 0.5 << "\" y=\"" << y - 7.0
            << "\">" << xml(label) << "</text></g>\n";
+}
+
+auto vertical_dimension(std::ostream& stream, double x, double y, double length,
+                        std::string_view label) -> void {
+    stream << "<g class=\"dimension\"><line class=\"dimension-line\" x1=\"" << x << "\" y1=\"" << y
+           << "\" x2=\"" << x << "\" y2=\"" << y + length
+           << "\"/><line x1=\"" << x - 7.0 << "\" y1=\"" << y << "\" x2=\"" << x + 7.0
+           << "\" y2=\"" << y << "\"/><line x1=\"" << x - 7.0 << "\" y1=\"" << y + length
+           << "\" x2=\"" << x + 7.0 << "\" y2=\"" << y + length
+           << "\"/><text text-anchor=\"middle\" transform=\"translate(" << x - 9.0 << ' ' << y + length * 0.5
+           << ") rotate(-90)\">" << xml(label) << "</text></g>\n";
+}
+
+[[nodiscard]] auto drawing_family(std::string_view name) -> std::string {
+    std::string family{name};
+    const auto separator = family.find_last_of('_');
+    if (separator == std::string::npos || separator + 1U == family.size())
+        return family;
+    const auto suffix = std::string_view{family}.substr(separator + 1U);
+    if (std::ranges::all_of(suffix, [](unsigned char character) { return std::isdigit(character); }))
+        family.resize(separator);
+    return family;
 }
 
 [[nodiscard]] auto definition_for_occurrence(const compiler::ir::Project& project,
@@ -196,8 +223,13 @@ auto dimension(std::ostream& stream, double x, double y, double length,
 
 auto write_svg(const compiler::ir::Project& project, const std::filesystem::path& output)
     -> ExportResult {
-    const auto analysis = cad::analyze(project);
     const auto model = cad::build_model(project);
+    const auto analysis = cad::analyze(project, model);
+    return write_svg(project, analysis, model, output);
+}
+
+auto write_svg(const compiler::ir::Project& project, const cad::ProjectAnalysis& analysis,
+               const cad::Model& model, const std::filesystem::path& output) -> ExportResult {
     if (analysis.parts.empty()) {
         return {false, "project has no drawable parts"};
     }
@@ -205,22 +237,71 @@ auto write_svg(const compiler::ir::Project& project, const std::filesystem::path
     if (!stream) {
         return {false, "cannot open SVG drawing output"};
     }
-    const std::size_t sheet_count = project.bodies.size() + 1U;
+    std::set<std::string> part_families;
+    for (const auto& body : project.bodies)
+        part_families.insert(drawing_family(body.name));
+    const std::size_t sheet_count = part_families.size() + 2U;
     const double drawing_height = sheet_height * static_cast<double>(sheet_count);
     stream << std::setprecision(12) << "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\""
            << sheet_width << "\" height=\"" << drawing_height << "\" viewBox=\"0 0 "
-           << sheet_width << ' ' << drawing_height << "\"><style>"
+           << sheet_width << ' ' << drawing_height
+           << "\"><defs><marker id=\"arrow\" markerWidth=\"8\" markerHeight=\"8\" refX=\"4\" refY=\"4\" orient=\"auto-start-reverse\"><path d=\"M0,0 L8,4 L0,8 z\" fill=\"#102030\"/></marker></defs><style>"
               ".sheet{fill:#fff;stroke:#102030;stroke-width:1}.view rect{fill:#fbfdff;stroke:#8090a0}"
               ".view path{fill:none;stroke:#102030;stroke-width:.7;vector-effect:non-scaling-stroke}"
-              "text{font-family:Arial,sans-serif;fill:#102030}.title{font-size:28px;font-weight:700}"
+              "text{font-family:Arial,sans-serif;fill:#102030;text-anchor:start}.title{font-size:28px;font-weight:700}"
               ".subtitle{font-size:13px;fill:#526273}.view-label{font-size:13px;font-weight:700}"
-              ".dimension{fill:none;stroke:#2563eb;stroke-width:1}.dimension text{fill:#1d4ed8;"
-              "stroke:none;font-size:12px;text-anchor:middle}.section{font-size:15px;font-weight:700}"
+              ".centerline{stroke:#526273;stroke-width:.65;stroke-dasharray:12 3 2 3}.dimension{fill:none;stroke:#102030;stroke-width:.8}.dimension-line{marker-start:url(#arrow);marker-end:url(#arrow)}.dimension text{fill:#102030;"
+              "stroke:none;font-size:12px}.section{font-size:15px;font-weight:700}"
               ".row{font-size:12px}.small{font-size:10px}.rule{stroke:#a8b3bd;stroke-width:.7}"
               "@media print{.sheet-group{break-after:page}}</style>\n";
 
-    std::size_t sheet_index = 0;
+    std::vector<const cad::Part*> overview_parts;
+    overview_parts.reserve(model.parts.size());
+    for (const auto& part : model.parts)
+        overview_parts.push_back(&part);
+    const auto overview_bounds = drawing_bounds(overview_parts);
+    const std::array overview_extent{overview_bounds.maximum[0] - overview_bounds.minimum[0],
+                                     overview_bounds.maximum[1] - overview_bounds.minimum[1],
+                                     overview_bounds.maximum[2] - overview_bounds.minimum[2]};
+    stream << "<g class=\"sheet-group\" id=\"assembly-overview\" data-sheet-kind=\"assembly\">"
+              "<rect class=\"sheet\" x=\"20\" y=\"20\" width=\"1560\" height=\"1160\"/>"
+              "<text class=\"title\" x=\"50\" y=\"62\">GENERAL ARRANGEMENT — "
+           << xml(project.name)
+           << "</text><text class=\"subtitle\" x=\"50\" y=\"87\">A-A · THIRD-ANGLE PROJECTION · RELEASED MANUFACTURING ASSEMBLY · Sheet 1 of "
+           << sheet_count << "</text>";
+    projected_view(stream, overview_parts, overview_bounds, 0, 2, 50, 118, 900, 360,
+                   "SIDE ELEVATION");
+    projected_view(stream, overview_parts, overview_bounds, 1, 2, 1000, 118, 540, 360,
+                   "INLET END VIEW");
+    projected_view(stream, overview_parts, overview_bounds, 0, 2, 50, 555, 1120, 355,
+                   "LONGITUDINAL SECTION A-A");
+    dimension(stream, 82, 510, 835, "OVERALL LENGTH " + number(overview_extent[0], 1) + " mm");
+    vertical_dimension(stream, 1515, 170, 260,
+                       "MAX DIA Ø" + number(std::max(overview_extent[1], overview_extent[2]), 1) + " mm");
+    stream << "<text class=\"section\" x=\"1205\" y=\"565\">ENGINE DATUM / RELEASE</text>"
+              "<text class=\"row\" x=\"1205\" y=\"593\">A — ENGINE AXIS / SHAFT JOURNALS</text>"
+              "<text class=\"row\" x=\"1205\" y=\"616\">B — FRONT MOUNTING FLANGE</text>"
+              "<text class=\"row\" x=\"1205\" y=\"639\">C — VERTICAL MOUNT PLANE</text>"
+              "<text class=\"row\" x=\"1205\" y=\"680\">GENERAL TOLERANCE ISO 2768-mK</text>"
+              "<text class=\"row\" x=\"1205\" y=\"703\">DIMENSIONING ISO 129-1</text>"
+              "<text class=\"row\" x=\"1205\" y=\"726\">PROJECTION ISO 5456-2</text>"
+              "<text class=\"row\" x=\"1205\" y=\"749\">TITLE BLOCK ISO 7200</text>"
+              "<rect x=\"1040\" y=\"1015\" width=\"510\" height=\"135\" fill=\"none\" stroke=\"#102030\"/>"
+              "<line class=\"rule\" x1=\"1040\" y1=\"1050\" x2=\"1550\" y2=\"1050\"/>"
+              "<line class=\"rule\" x1=\"1040\" y1=\"1085\" x2=\"1550\" y2=\"1085\"/>"
+              "<text class=\"row\" x=\"1055\" y=\"1038\">TITLE: " << xml(project.name)
+           << " — GENERAL ARRANGEMENT</text><text class=\"row\" x=\"1055\" y=\"1073\">DWG: ICAD-"
+           << xml(project.name) << "-GA · REV A · SHEET 1/" << sheet_count
+           << "</text><text class=\"row\" x=\"1055\" y=\"1108\">UNITS: "
+           << xml(project.canonical_length_unit)
+           << " · SCALE: NTS · THIRD ANGLE</text><text class=\"row\" x=\"1055\" y=\"1137\">STATUS: MANUFACTURING RELEASE · DATUMS A | B | C</text></g>\n";
+
+    std::size_t sheet_index = 1;
+    std::set<std::string> emitted_families;
     for (const auto& body : project.bodies) {
+        const auto family = drawing_family(body.name);
+        if (!emitted_families.insert(family).second)
+            continue;
         const double offset = sheet_height * static_cast<double>(sheet_index);
         std::vector<const cad::Part*> parts;
         for (const auto& part : model.parts) {
@@ -231,9 +312,14 @@ auto write_svg(const compiler::ir::Project& project, const std::filesystem::path
         const std::array extent{bounds.maximum[0] - bounds.minimum[0],
                                 bounds.maximum[1] - bounds.minimum[1],
                                 bounds.maximum[2] - bounds.minimum[2]};
-        std::size_t quantity = 1;
-        quantity += static_cast<std::size_t>(std::ranges::count(project.instances, body.name,
-                                                               &compiler::ir::ComponentInstance::body));
+        std::size_t quantity = static_cast<std::size_t>(std::ranges::count_if(
+            project.bodies, [&family](const auto& candidate) {
+                return drawing_family(candidate.name) == family;
+            }));
+        quantity += static_cast<std::size_t>(std::ranges::count_if(
+            project.instances, [&family](const auto& instance) {
+                return drawing_family(instance.body) == family;
+            }));
         double surface_area = 0.0;
         double volume = 0.0;
         for (const auto& part : analysis.parts) {
@@ -247,15 +333,16 @@ auto write_svg(const compiler::ir::Project& project, const std::filesystem::path
                << "\" data-sheet-kind=\"part\" transform=\"translate(0 " << offset
                << ")\"><rect class=\"sheet\" x=\"20\" y=\"20\" width=\"1560\" height=\"1160\"/>"
                   "<text class=\"title\" x=\"50\" y=\"62\">PART DETAIL — "
-               << xml(body.name) << "</text><text class=\"subtitle\" x=\"50\" y=\"87\">"
+               << xml(family) << "</text><text class=\"subtitle\" x=\"50\" y=\"87\">"
                << xml(project.name) << " · Third-angle projected native edges · Sheet "
                << sheet_index + 1U << " of " << sheet_count << "</text>";
         projected_view(stream, parts, bounds, 0, 1, 50, 115, 470, 330, "TOP (X/Y)");
         projected_view(stream, parts, bounds, 0, 2, 565, 115, 470, 330, "FRONT (X/Z)");
         projected_view(stream, parts, bounds, 1, 2, 1080, 115, 470, 330, "RIGHT (Y/Z)");
-        dimension(stream, 65, 478, 420, "X OVERALL " + number(extent[0]) + " mm");
-        dimension(stream, 580, 478, 420, "Y OVERALL " + number(extent[1]) + " mm");
-        dimension(stream, 1095, 478, 420, "Z OVERALL " + number(extent[2]) + " mm");
+        const bool airfoil = family.contains("blade") || family.contains("vane");
+        dimension(stream, 65, 478, 420, (airfoil ? "AXIAL CHORD " : "OVERALL LENGTH ") + number(extent[0]) + " mm");
+        dimension(stream, 580, 478, 420, (airfoil ? "RADIAL SPAN " : "OVERALL WIDTH ") + number(extent[1]) + " mm");
+        dimension(stream, 1095, 478, 420, (airfoil ? "MAX THICKNESS " : "OVERALL HEIGHT ") + number(extent[2]) + " mm");
 
         stream << "<text class=\"section\" x=\"50\" y=\"535\">MANUFACTURING DEFINITION</text>"
                   "<text class=\"row\" x=\"50\" y=\"560\">MATERIAL: "
@@ -278,6 +365,11 @@ auto write_svg(const compiler::ir::Project& project, const std::filesystem::path
                 if (!properties.empty())
                     properties += " · ";
                 properties += property.name + "=" + number(property.value.value) + property.value.unit;
+            }
+            constexpr std::size_t schedule_width = 68U;
+            if (properties.size() > schedule_width) {
+                properties.resize(schedule_width - 3U);
+                properties += "...";
             }
             stream << "<text class=\"row\" x=\"50\" y=\"" << row_y << "\">"
                    << feature_rows + 1U << ". " << xml(feature.name) << " | "
@@ -361,13 +453,13 @@ auto write_svg(const compiler::ir::Project& project, const std::filesystem::path
                   "<text class=\"row\" x=\"50\" y=\"978\">SKETCH WORKSPACES: "
                << body_sketches << " · FEATURE OPERATIONS: " << body.features.size()
                << " · Verify all named holes, fits, edge treatments, and mating faces against source.</text>"
-                  "<text class=\"row\" x=\"50\" y=\"1001\">GENERAL: deburr edges; preserve authored material and units; do not scale geometry; inspect critical interfaces before assembly.</text>"
+                  "<text class=\"row\" x=\"50\" y=\"1001\">GENERAL: deburr edges; ISO 2768-mK unless specified; dimensions ISO 129-1; third-angle projection ISO 5456-2.</text>"
                   "<rect x=\"1040\" y=\"1040\" width=\"510\" height=\"110\" fill=\"none\" stroke=\"#102030\"/>"
                   "<text class=\"row\" x=\"1055\" y=\"1066\">TITLE: "
-               << xml(body.name) << "</text><text class=\"row\" x=\"1055\" y=\"1091\">UNITS: "
-               << xml(project.canonical_length_unit) << " · SCALE: AUTO · PROJECTION: THIRD ANGLE</text>"
-                  "<text class=\"row\" x=\"1055\" y=\"1116\">DATUMS: A | B | C · STATUS: MANUFACTURING DETAIL</text>"
-                  "<text class=\"row\" x=\"1055\" y=\"1141\">SOURCE OF TRUTH: declarative ICAD model</text></g>\n";
+               << xml(family) << "</text><text class=\"row\" x=\"1055\" y=\"1091\">UNITS: "
+               << xml(project.canonical_length_unit) << " · SCALE: NTS · PROJECTION: THIRD ANGLE</text>"
+                  "<text class=\"row\" x=\"1055\" y=\"1116\">DATUMS: A | B | C · REV A · STATUS: MANUFACTURING DETAIL</text>"
+                  "<text class=\"row\" x=\"1055\" y=\"1141\">ISO 7200 TITLE DATA · SOURCE: DECLARATIVE ICAD MODEL</text></g>\n";
         ++sheet_index;
     }
 
@@ -439,9 +531,9 @@ auto write_svg(const compiler::ir::Project& project, const std::filesystem::path
            << " · JOINTS: " << project.joints.size() << "</text>"
               "<text class=\"row\" x=\"1055\" y=\"1116\">DATUMS: A | B | C · STATUS: ASSEMBLY RELEASE</text>"
               "<text class=\"row\" x=\"1055\" y=\"1141\">UNITS: "
-           << xml(project.canonical_length_unit) << " · SCALE: AUTO</text></g>\n</svg>\n";
+           << xml(project.canonical_length_unit) << " · SCALE: NTS · ISO 129-1 / ISO 5456-2</text></g>\n</svg>\n";
     return {static_cast<bool>(stream),
-            "SVG manufacturing drawing set complete: part details followed by assembly"};
+            "SVG manufacturing drawing set complete: general arrangement, part families, and assembly release"};
 }
 
 namespace {
@@ -470,8 +562,13 @@ auto text(std::ostream& stream, std::string_view layer, std::string_view value, 
 
 auto write_dxf(const compiler::ir::Project& project, const std::filesystem::path& output)
     -> ExportResult {
-    const auto analysis = cad::analyze(project);
     const auto model = cad::build_model(project);
+    const auto analysis = cad::analyze(project, model);
+    return write_dxf(project, analysis, model, output);
+}
+
+auto write_dxf(const compiler::ir::Project& project, const cad::ProjectAnalysis& analysis,
+               const cad::Model& model, const std::filesystem::path& output) -> ExportResult {
     if (analysis.parts.empty())
         return {false, "project has no drawable parts"};
     std::ofstream stream{output, std::ios::binary};

@@ -106,15 +106,16 @@ auto main() -> int {
     std::string resized{connection_source};
     const auto height = resized.find("HEIGHT 10 mm");
     resized.replace(height, std::string_view{"HEIGHT 10 mm"}.size(), "HEIGHT 100 mm");
-    const auto rejected = connection_session.preview(resized);
-    if (rejected.success || !rejected.model_json.empty() || rejected.diagnostics.empty() ||
-        std::ranges::none_of(rejected.diagnostics, [](const auto& diagnostic) {
+    const auto flagged = connection_session.preview(resized);
+    if (!flagged.success || flagged.engineering_valid || flagged.model_json.empty() ||
+        flagged.diagnostics.empty() ||
+        std::ranges::none_of(flagged.diagnostics, [](const auto& diagnostic) {
             return diagnostic.code == "ICAD-V0001" || diagnostic.code == "ICAD-M0013";
         })) {
-        return fail("live preview replaced valid geometry with a stale resized connection");
+        return fail("engineering issue did not retain diagnostics with the current geometry");
     }
     const auto restored = connection_session.preview(connection_source);
-    if (!restored.success || !restored.unchanged || restored.revision != seated.revision)
-        return fail("rejected engineering edit did not preserve the last valid preview revision");
+    if (!restored.success || !restored.engineering_valid || restored.model_json.empty())
+        return fail("valid connection did not render after an engineering issue was corrected");
     return 0;
 }

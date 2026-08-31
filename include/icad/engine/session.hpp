@@ -14,6 +14,7 @@ namespace icad::engine {
 
 struct PreviewResult {
     bool success{};
+    bool engineering_valid{true};
     std::string message;
     std::string model_json;
     std::uint64_t revision{};

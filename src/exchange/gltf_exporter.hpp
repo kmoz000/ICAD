@@ -6,5 +6,7 @@ namespace icad::exchange {
 
 [[nodiscard]] auto write_gltf(const compiler::ir::Project& project,
                               const std::filesystem::path& output, bool binary) -> ExportResult;
+[[nodiscard]] auto write_gltf(const compiler::ir::Project& project, const cad::Model& model,
+                              const std::filesystem::path& output, bool binary) -> ExportResult;
 
 } // namespace icad::exchange

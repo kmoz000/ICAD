@@ -57,6 +57,8 @@ auto print_usage(std::ostream& output) -> void {
               "       icad agent-bootstrap <prompt> [--source-out <source.icad>]\n"
               "       icad agent-create <prompt> --source-out <source.icad> --output-dir <directory>\n"
               "       icad agent-review <source.icad>\n"
+              "       icad drawing-svg <source.icad> <drawing.svg>\n"
+              "       icad drawing-dxf <source.icad> <drawing.dxf>\n"
               "       icad build <source.icad> [--output-dir <directory>]\n"
               "       icad language\n"
               "       icad materials\n"
@@ -547,6 +549,8 @@ auto main(int argc, char** argv) -> int {
                       << ",\"containedPartPairs\":" << contact.contained_part_pairs
                       << ",\"surfaceContactOnlyPartPairs\":"
                       << contact.surface_contact_only_part_pairs
+                      << ",\"witnessPointMm\":[" << contact.witness_point.x << ','
+                      << contact.witness_point.y << ',' << contact.witness_point.z << ']'
                       << ",\"declaredConnection\":"
                       << (contact.declared_connection ? "true" : "false");
             if (contact.declared_connection) {
@@ -619,6 +623,22 @@ auto main(int argc, char** argv) -> int {
         }
         std::cout << "MANUFACTURING " << (report.passed ? "PASS" : "FAIL") << '\n';
         return report.passed ? 0 : 1;
+    }
+    if (command == "drawing-svg" || command == "drawing-dxf") {
+        if (argc != 4) {
+            print_usage(std::cerr);
+            return 2;
+        }
+        const std::filesystem::path output{argv[3]};
+        const auto exported = command == "drawing-svg"
+                                  ? icad::drawings::write_svg(*result.ir_project, output)
+                                  : icad::drawings::write_dxf(*result.ir_project, output);
+        if (!exported.success) {
+            std::cerr << "icad: drawing export failed: " << exported.message << '\n';
+            return 1;
+        }
+        std::cout << output.string() << ": " << command << '\n';
+        return 0;
     }
     if (command == "build") {
         const auto directory = output_directory(argc, argv);

@@ -5,11 +5,14 @@
 
 #include <cstring>
 #include <filesystem>
+#include <mutex>
 #include <new>
 #include <string>
 
 struct icad_engine_session {
     explicit icad_engine_session(const char* path) : session{std::filesystem::path{path}} {}
+    std::mutex preview_mutex;
+    std::string last_engineering_valid_source;
     icad::engine::Session session;
 };
 
@@ -82,9 +85,16 @@ auto icad_engine_session_preview_json(icad_engine_session* session, const char* 
                                       size_t source_size) -> char* {
     if (session == nullptr || (source == nullptr && source_size != 0))
         return error_json("invalid preview arguments");
-    const auto result = session->session.preview(std::string_view{source, source_size});
+    const std::lock_guard lock{session->preview_mutex};
+    const std::string_view source_view{source, source_size};
+    const bool restoring_last_valid = source_view == session->last_engineering_valid_source;
+    const auto result = session->session.preview(source_view);
+    const bool delivery_success = result.success && result.engineering_valid;
+    if (delivery_success)
+        session->last_engineering_valid_source.assign(source_view);
     auto value = icad::json::Value::Object{
-        {"success", result.success},
+        {"success", delivery_success},
+        {"engineeringValid", result.engineering_valid},
         {"message", result.message},
         {"revision", static_cast<double>(result.revision)},
         {"bodies", static_cast<double>(result.bodies)},
@@ -95,11 +105,11 @@ auto icad_engine_session_preview_json(icad_engine_session* session, const char* 
         {"recomputedBodies", static_cast<double>(result.recomputed_bodies)},
         {"parallelWorkers", static_cast<double>(result.parallel_workers)},
         {"milliseconds", result.milliseconds},
-        {"unchanged", result.unchanged},
+        {"unchanged", result.unchanged || restoring_last_valid},
         {"diagnostics", diagnostics(result.diagnostics)},
     };
     auto serialized = icad::json::serialize(value);
-    if (result.success && !result.model_json.empty()) {
+    if (delivery_success && !result.model_json.empty()) {
         serialized.pop_back();
         serialized += ",\"model\":" + result.model_json + '}';
     }

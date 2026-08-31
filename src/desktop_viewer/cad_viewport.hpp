@@ -35,6 +35,8 @@ class CadViewport final : public QOpenGLWidget, protected QOpenGLFunctions {
     auto set_active_scene(std::size_t index) -> void;
     auto set_scene_lighting(bool enabled) -> void;
     auto set_debug_overlay(bool enabled) -> void;
+    auto set_assembly_inspection(bool enabled) -> void;
+    auto set_cutaway(bool enabled) -> void;
     auto select_part(std::optional<std::size_t> index) -> void;
     auto save_screenshot(const QString& path) -> bool;
 
@@ -63,6 +65,7 @@ class CadViewport final : public QOpenGLWidget, protected QOpenGLFunctions {
     [[nodiscard]] auto pick_part(const QPoint& point) const -> std::optional<std::size_t>;
     [[nodiscard]] auto orientation_cube_rect() const -> QRect;
     auto draw_hud(QPainter& painter) const -> void;
+    auto draw_assembly_overlay(QPainter& painter) const -> void;
 
     RenderScene scene_;
     QOpenGLShaderProgram mesh_program_;
@@ -83,6 +86,8 @@ class CadViewport final : public QOpenGLWidget, protected QOpenGLFunctions {
     std::size_t active_scene_{};
     bool scene_lighting_{true};
     bool debug_overlay_{false};
+    bool assembly_inspection_{false};
+    bool cutaway_{false};
     bool initialized_{false};
     bool scene_dirty_{false};
     bool dragging_{false};

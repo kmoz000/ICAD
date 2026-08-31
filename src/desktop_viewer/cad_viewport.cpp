@@ -39,6 +39,7 @@ in vec3 eye_normal;
 in vec3 eye_position;
 in vec4 base_color;
 uniform float selected;
+uniform float opacity;
 uniform int light_count;
 uniform int light_is_point[4];
 uniform vec3 light_position[4];
@@ -78,7 +79,7 @@ void main() {
     color = max(color, base_color.rgb * 0.46);
     color += vec3(0.070, 0.082, 0.095) * (0.50 + rim * 1.25);
     color = mix(color, vec3(0.12, 0.72, 1.0), selected * 0.48);
-    fragment = vec4(color, 1.0);
+    fragment = vec4(color, opacity);
 }
 )glsl";
 
@@ -133,6 +134,40 @@ void main() { fragment = line_color; }
     }
     path.closeSubpath();
     return path;
+}
+
+[[nodiscard]] auto inspection_shell(const RenderPart& part) -> bool {
+    const auto body = part.body.toLower();
+    return body.contains(QStringLiteral("casing")) ||
+           body.contains(QStringLiteral("liner")) ||
+           body.contains(QStringLiteral("nozzle")) ||
+           body.contains(QStringLiteral("flange")) ||
+           body.contains(QStringLiteral("inspection_cover"));
+}
+
+[[nodiscard]] auto cutaway_shell(const RenderPart& part) -> bool {
+    const auto body = part.body.toLower();
+    return body.contains(QStringLiteral("casing")) ||
+           body.contains(QStringLiteral("nozzle")) ||
+           body.contains(QStringLiteral("flange")) ||
+           body.contains(QStringLiteral("inspection_cover")) ||
+           body.contains(QStringLiteral("inspection_boss"));
+}
+
+[[nodiscard]] auto cutaway_liner(const RenderPart& part) -> bool {
+    return part.body.contains(QStringLiteral("liner"), Qt::CaseInsensitive);
+}
+
+[[nodiscard]] auto connection_color(const QString& method) -> QColor {
+    if (method == QStringLiteral("BOLTED") || method == QStringLiteral("SCREWED"))
+        return QColor{"#38bdf8"};
+    if (method == QStringLiteral("BEARING"))
+        return QColor{"#f59e0b"};
+    if (method == QStringLiteral("PRESS_FIT"))
+        return QColor{"#e879f9"};
+    if (method == QStringLiteral("SLIP_FIT"))
+        return QColor{"#34d399"};
+    return QColor{"#cbd5e1"};
 }
 
 } // namespace
@@ -259,12 +294,24 @@ auto CadViewport::set_debug_overlay(bool enabled) -> void {
     update();
 }
 
+auto CadViewport::set_assembly_inspection(bool enabled) -> void {
+    assembly_inspection_ = enabled;
+    update();
+}
+
+auto CadViewport::set_cutaway(bool enabled) -> void {
+    cutaway_ = enabled;
+    update();
+}
+
 auto CadViewport::orientation_cube_rect() const -> QRect {
     return QRect{width() - 132, 20, 104, 104};
 }
 
 auto CadViewport::draw_hud(QPainter& painter) const -> void {
     painter.setRenderHint(QPainter::Antialiasing);
+    if (assembly_inspection_)
+        draw_assembly_overlay(painter);
     const QRect cube = orientation_cube_rect();
     const QPoint center = cube.center();
     const auto tile = rounded_hexagon(QRectF{cube}.adjusted(1.0, 1.0, -1.0, -1.0), 8.0);
@@ -319,6 +366,69 @@ auto CadViewport::draw_hud(QPainter& painter) const -> void {
     painter.fillPath(debug_tile, QColor{5, 12, 22, 218});
     painter.setPen(QColor{"#67e8f9"});
     painter.drawText(panel.adjusted(12, 8, -8, -6), Qt::AlignLeft | Qt::AlignVCenter, text);
+}
+
+auto CadViewport::draw_assembly_overlay(QPainter& painter) const -> void {
+    if (scene_.empty())
+        return;
+    const auto project = [this](const QVector3D& source) -> std::optional<QPointF> {
+        const QVector4D clip = projection_ * view_ * QVector4D{source, 1.0F};
+        if (clip.w() <= 0.0F)
+            return std::nullopt;
+        const QVector3D ndc = clip.toVector3DAffine();
+        if (ndc.z() < -1.0F || ndc.z() > 1.0F)
+            return std::nullopt;
+        return QPointF{(ndc.x() + 1.0F) * 0.5F * static_cast<float>(width()),
+                       (1.0F - ndc.y()) * 0.5F * static_cast<float>(height())};
+    };
+    painter.setFont(QFont{QStringLiteral("Menlo"), 8});
+    for (const auto& connection : scene_.connections) {
+        const auto point = project(connection.point);
+        if (!point)
+            continue;
+        const QColor color = connection.aligned ? connection_color(connection.method)
+                                                 : QColor{"#ef4444"};
+        painter.setPen(QPen{QColor{5, 12, 22, 220}, 3.5});
+        painter.drawEllipse(*point, 4.0, 4.0);
+        painter.setPen(QPen{color, 2.0});
+        painter.drawEllipse(*point, 3.0, 3.0);
+    }
+    const float axis_length = scene_.radius() * 0.07F;
+    for (const auto& joint : scene_.joints) {
+        const auto pivot = project(joint.pivot);
+        const auto axis_end = project(joint.pivot + joint.axis * axis_length);
+        if (!pivot || !axis_end)
+            continue;
+        const QColor color = joint.type == QStringLiteral("REVOLUTE")
+                                 ? QColor{"#fb923c"}
+                                 : joint.type == QStringLiteral("PRISMATIC")
+                                       ? QColor{"#a78bfa"}
+                                       : QColor{"#22d3ee"};
+        painter.setPen(QPen{QColor{5, 12, 22, 210}, 5.0});
+        painter.drawLine(*pivot, *axis_end);
+        painter.setPen(QPen{color, 2.0});
+        painter.drawLine(*pivot, *axis_end);
+        painter.setBrush(QColor{5, 12, 22, 225});
+        painter.drawEllipse(*pivot, 5.0, 5.0);
+        painter.setBrush(color);
+        painter.drawEllipse(*pivot, 3.0, 3.0);
+        // Fixed joints are intentionally dense in a real assembly. Label only
+        // movable axes; the remaining cyan witnesses stay readable without a
+        // wall of overlapping names across the engine centerline.
+        if (joint.type != QStringLiteral("FIXED"))
+            painter.drawText(*pivot + QPointF{7.0, -6.0}, joint.name);
+    }
+    const QRect legend{20, 20, 370, 76};
+    QPainterPath panel;
+    panel.addRoundedRect(QRectF{legend}, 9.0, 9.0);
+    painter.fillPath(panel, QColor{5, 12, 22, 220});
+    painter.setPen(QColor{"#e2e8f0"});
+    painter.drawText(legend.adjusted(10, 7, -8, -8), Qt::AlignTop | Qt::AlignLeft,
+                     QStringLiteral("ASSEMBLY INSPECTION  %1 joints  %2 fits\n"
+                                    "cyan: joint axis   blue: bolted   magenta: fitted\n"
+                                    "green: mounted/welded   red: alignment fault")
+                         .arg(static_cast<qulonglong>(scene_.joints.size()))
+                         .arg(static_cast<qulonglong>(scene_.connections.size())));
 }
 
 auto CadViewport::select_part(std::optional<std::size_t> index) -> void {
@@ -537,13 +647,42 @@ auto CadViewport::paintGL() -> void {
             mesh_program_.setUniformValue((QByteArray{"light_intensity["} + suffix).constData(),
                                           light.intensity);
         }
-        for (std::size_t index = 0; index < scene_.parts.size(); ++index) {
+        const auto draw_part = [this](std::size_t index, float opacity) {
             const auto& part = scene_.parts[index];
             mesh_program_.setUniformValue("selected", selected_part_ == index ? 1.0F : 0.0F);
+            mesh_program_.setUniformValue("opacity", opacity);
             const auto offset = reinterpret_cast<const void*>(
                 static_cast<std::uintptr_t>(part.first_index) * sizeof(std::uint32_t));
             glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(part.index_count), GL_UNSIGNED_INT,
                            offset);
+        };
+        if (assembly_inspection_ || cutaway_) {
+            const auto opacity_for = [this](const RenderPart& part) {
+                if (!cutaway_)
+                    return inspection_shell(part) ? 0.20F : 1.0F;
+                if (cutaway_shell(part))
+                    return 0.12F;
+                if (cutaway_liner(part))
+                    return 0.48F;
+                return 1.0F;
+            };
+            for (std::size_t index = 0; index < scene_.parts.size(); ++index) {
+                if (opacity_for(scene_.parts[index]) >= 1.0F)
+                    draw_part(index, 1.0F);
+            }
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glDepthMask(GL_FALSE);
+            for (std::size_t index = 0; index < scene_.parts.size(); ++index) {
+                const float opacity = opacity_for(scene_.parts[index]);
+                if (opacity < 1.0F)
+                    draw_part(index, opacity);
+            }
+            glDepthMask(GL_TRUE);
+            glDisable(GL_BLEND);
+        } else {
+            for (std::size_t index = 0; index < scene_.parts.size(); ++index)
+                draw_part(index, 1.0F);
         }
         mesh_program_.release();
         index_buffer_.release();
