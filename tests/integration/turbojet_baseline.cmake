@@ -22,7 +22,14 @@ string(REPLACE
     reconstructed "${reconstructed}")
 file(MAKE_DIRECTORY "${OUTPUT_ROOT}")
 file(WRITE "${OUTPUT_ROOT}/turbojet_engine_r3.icad" "${reconstructed}")
-file(SHA256 "${OUTPUT_ROOT}/turbojet_engine_r3.icad" actual_r3_sha)
+file(READ "${OUTPUT_ROOT}/turbojet_engine_r3.icad" reconstructed_bytes)
+# CMake may materialize generated text with native Windows newlines. R3 is a
+# frozen source definition, so compare its canonical LF byte stream while the
+# separately tracked anchor and reconstruction-input files remain exact hashes.
+string(REPLACE "\r\n" "\n" canonical_r3 "${reconstructed_bytes}")
+string(REPLACE "\r" "\n" canonical_r3 "${canonical_r3}")
+string(SHA256 actual_r3_sha "${canonical_r3}")
 if(NOT actual_r3_sha STREQUAL r3_sha)
-    message(FATAL_ERROR "R3 source reconstruction SHA-256 does not match the frozen baseline")
+    message(FATAL_ERROR
+        "R3 source reconstruction SHA-256 does not match the frozen baseline: ${actual_r3_sha}")
 endif()
