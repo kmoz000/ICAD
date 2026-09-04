@@ -90,6 +90,30 @@ Read back the generated STEP and STL with `icad inspect-step` and
 GLB, 3MF, HTML viewer, scene data, BOM, manufacturing report, SVG, DXF, and
 topology JSON.
 
+## Engineering evidence and controlled release states
+
+When a project has an adjacent evidence manifest, inspect it as part of every
+release-oriented validation pass:
+
+```sh
+icad evidence-json model.icad --manifest model.evidence.json
+icad compliance-json model.icad --manifest model.evidence.json \
+  --basis EASA-CS-E-AMENDMENT-8
+icad compliance-report model.icad --manifest model.evidence.json \
+  --format html --output build/compliance.html
+```
+
+The read-only MCP equivalents are `icad.evidence.inspect` and
+`icad.compliance.inspect`. Treat a stale model revision, controlled-input
+digest, material definition, load case, referenced-entity digest, or artifact
+hash as a failed gate. Do not invent CFD, FEA, fatigue, thermal, test, or
+certification results from display geometry.
+
+Only `BENCHMARK`, `DEVELOPMENT`, `GROUND_TEST_RELEASED`, and
+`DEMONSTRATOR_VALIDATED` are repository lifecycle states. Never select or claim
+`TYPE_CERTIFIED`, airworthy, flight approved, or authority certified from ICAD
+validation; those require external authority records and a separate program.
+
 ## Agentic modeling rules
 
 - Query `icad.language` before authoring. A persistent source may begin with

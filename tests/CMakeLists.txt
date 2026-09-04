@@ -43,6 +43,17 @@ add_executable(icad_turbojet_live_refresh_benchmark
     benchmark/turbojet_live_refresh.cpp)
 target_link_libraries(icad_turbojet_live_refresh_benchmark PRIVATE
     ICAD::compiler icad_project_options)
+if(ICAD_ENABLE_SANITIZERS)
+    # Instrumentation makes geometry timing non-representative. Keep the complete
+    # model and incremental correctness checks active without treating sanitizer
+    # overhead as a production performance regression.
+    target_compile_definitions(icad_turbojet_live_refresh_benchmark PRIVATE
+        ICAD_TURBOJET_TIMING_GATES=0)
+elseif(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    target_compile_definitions(icad_turbojet_live_refresh_benchmark PRIVATE
+        ICAD_TURBOJET_INITIAL_BUDGET_MS=20000
+        ICAD_TURBOJET_EDIT_BUDGET_MS=5000)
+endif()
 add_test(
     NAME benchmark.large_turbojet_refresh
     COMMAND icad_turbojet_live_refresh_benchmark
@@ -50,6 +61,9 @@ add_test(
 set_tests_properties(benchmark.large_turbojet_refresh PROPERTIES
     LABELS "benchmark;viewer;incremental;large"
     TIMEOUT 60)
+if(ICAD_ENABLE_SANITIZERS)
+    set_tests_properties(benchmark.large_turbojet_refresh PROPERTIES TIMEOUT 120)
+endif()
 icad_add_unit_test(intersection unit/intersection_test.cpp)
 icad_add_unit_test(topology unit/topology_test.cpp)
 icad_add_unit_test(scene unit/scene_test.cpp)
