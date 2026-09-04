@@ -85,9 +85,8 @@ class LiveSession {
     std::string last_preview_source_;
     PreviewResult last_preview_;
     std::vector<std::pair<std::filesystem::path, std::filesystem::file_time_type>> import_stamps_;
-    std::vector<std::pair<std::filesystem::path, std::filesystem::file_time_type>> evidence_stamps_;
+    std::vector<std::pair<std::filesystem::path, std::string>> evidence_digests_;
     bool evidence_exists_{};
-    std::filesystem::file_time_type evidence_stamp_{};
 };
 
 } // namespace icad::viewer

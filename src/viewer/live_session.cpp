@@ -54,20 +54,19 @@ namespace {
     return std::string{std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}};
 }
 
-[[nodiscard]] auto evidence_dependency_stamps(const std::filesystem::path& manifest_path,
-                                              std::string_view manifest_source)
-    -> std::vector<std::pair<std::filesystem::path, std::filesystem::file_time_type>> {
-    std::vector<std::pair<std::filesystem::path, std::filesystem::file_time_type>> stamps;
+[[nodiscard]] auto evidence_dependency_digests(const std::filesystem::path& manifest_path,
+                                               std::string_view manifest_source)
+    -> std::vector<std::pair<std::filesystem::path, std::string>> {
+    std::vector<std::pair<std::filesystem::path, std::string>> digests;
     const auto append = [&](const std::filesystem::path& path) {
-        std::error_code error;
-        const auto timestamp = std::filesystem::last_write_time(path, error);
-        if (!error)
-            stamps.emplace_back(path, timestamp);
+        const auto content = read_file(path);
+        if (content)
+            digests.emplace_back(path, evidence::sha256(*content));
     };
     append(manifest_path);
     const auto parsed = json::parse(manifest_source);
     if (!parsed.ok())
-        return stamps;
+        return digests;
     for (const auto field : {"controlledInputs", "artifacts"}) {
         const auto* value = parsed.value->find(field);
         const auto* entries = value == nullptr ? nullptr : value->array();
@@ -76,11 +75,15 @@ namespace {
         for (const auto& entry : *entries) {
             const auto* path_value = entry.find("path");
             const auto* relative = path_value == nullptr ? nullptr : path_value->string();
-            if (relative != nullptr && !std::filesystem::path{*relative}.is_absolute())
-                append((manifest_path.parent_path() / *relative).lexically_normal());
+            if (relative == nullptr)
+                continue;
+            const std::filesystem::path dependency{*relative};
+            append(dependency.is_absolute()
+                       ? dependency.lexically_normal()
+                       : (manifest_path.parent_path() / dependency).lexically_normal());
         }
     }
-    return stamps;
+    return digests;
 }
 
 [[nodiscard]] auto declaration_location(std::string_view source, std::string_view name)
@@ -129,15 +132,11 @@ auto LiveSession::preview(std::string_view source) -> PreviewResult {
     std::error_code evidence_error;
     const bool evidence_exists = std::filesystem::is_regular_file(manifest_path, evidence_error);
     const auto manifest = evidence_exists ? read_file(manifest_path) : std::nullopt;
-    const auto evidence_stamps = manifest ? evidence_dependency_stamps(manifest_path, *manifest)
-                                          : decltype(evidence_stamps_){};
-    const auto evidence_stamp = evidence_exists
-                                    ? std::filesystem::last_write_time(manifest_path, evidence_error)
-                                    : std::filesystem::file_time_type{};
+    const auto evidence_digests = manifest ? evidence_dependency_digests(manifest_path, *manifest)
+                                           : decltype(evidence_digests_){};
     const bool evidence_unchanged = evidence_exists == evidence_exists_ &&
-                                    (!evidence_exists || (!evidence_error &&
-                                                         evidence_stamp == evidence_stamp_ &&
-                                                         unchanged_imports(evidence_stamps_)));
+                                    (!evidence_exists ||
+                                     (!evidence_error && evidence_digests == evidence_digests_));
     if (source == last_preview_source_ && last_preview_.success &&
         unchanged_imports(import_stamps_) && evidence_unchanged) {
         result = last_preview_;
@@ -262,8 +261,7 @@ auto LiveSession::preview(std::string_view source) -> PreviewResult {
     }
     last_preview_ = result;
     evidence_exists_ = evidence_exists;
-    evidence_stamp_ = evidence_stamp;
-    evidence_stamps_ = evidence_stamps;
+    evidence_digests_ = evidence_digests;
     // The native viewport already owns the uploaded model. Retain only compact metadata
     // for unchanged-source responses instead of duplicating a potentially huge
     // mesh payload in the session cache.
