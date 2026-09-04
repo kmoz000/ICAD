@@ -1,2 +1,4 @@
+* text=auto eol=lf
+
 examples/Robotic_Arm_3D_Model/*.STL binary
 examples/Robotic_Arm_3D_Model/*.STEP binary

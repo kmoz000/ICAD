@@ -56,7 +56,7 @@ auto main() -> int {
     const std::string load_case = R"JSON({"schema":"test-load-case.v1","speedRpm":0,"status":"fixture-only"})JSON";
     const auto load_case_path = root / "load-case.json";
     {
-        std::ofstream output{load_case_path};
+        std::ofstream output{load_case_path, std::ios::binary};
         output << load_case;
     }
     const auto load_case_sha = icad::evidence::sha256(load_case);
@@ -79,7 +79,7 @@ auto main() -> int {
     analysis = replace_all(std::move(analysis), "@LOAD_SHA@", load_case_sha);
     const auto analysis_path = root / "rotor.json";
     {
-        std::ofstream output{analysis_path};
+        std::ofstream output{analysis_path, std::ios::binary};
         output << analysis;
     }
     const auto analysis_sha = icad::evidence::sha256(analysis);
@@ -109,7 +109,7 @@ auto main() -> int {
         return fail("valid development evidence was rejected");
 
     {
-        std::ofstream output{load_case_path};
+        std::ofstream output{load_case_path, std::ios::binary};
         output << load_case << '\n';
     }
     const auto input_stale_evaluation = icad::evidence::evaluate(
@@ -118,7 +118,7 @@ auto main() -> int {
         !icad::evidence::compliance_json(input_stale_evaluation).contains("ICAD-E0017"))
         return fail("changed controlled input did not stale the evidence");
     {
-        std::ofstream output{load_case_path};
+        std::ofstream output{load_case_path, std::ios::binary};
         output << load_case;
     }
 
@@ -155,7 +155,7 @@ auto main() -> int {
         return fail("rejected evidence was allowed to support a release");
 
     {
-        std::ofstream output{analysis_path};
+        std::ofstream output{analysis_path, std::ios::binary};
         output << analysis << '\n';
     }
     const auto tampered = icad::evidence::evaluate(
@@ -164,7 +164,7 @@ auto main() -> int {
         !icad::evidence::compliance_json(tampered).contains("ICAD-E0026"))
         return fail("tampered evidence artifact was not rejected");
     {
-        std::ofstream output{analysis_path};
+        std::ofstream output{analysis_path, std::ios::binary};
         output << analysis;
     }
 

@@ -50,8 +50,11 @@ if(ICAD_ENABLE_SANITIZERS)
     target_compile_definitions(icad_turbojet_live_refresh_benchmark PRIVATE
         ICAD_TURBOJET_TIMING_GATES=0)
 elseif(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    # The hosted Ubuntu Debug baseline is about 24.2 s for the full 358-body
+    # preview; keep a measured 30 s regression ceiling while Release stays at
+    # the stricter defaults declared by the benchmark.
     target_compile_definitions(icad_turbojet_live_refresh_benchmark PRIVATE
-        ICAD_TURBOJET_INITIAL_BUDGET_MS=20000
+        ICAD_TURBOJET_INITIAL_BUDGET_MS=30000
         ICAD_TURBOJET_EDIT_BUDGET_MS=5000)
 endif()
 add_test(
