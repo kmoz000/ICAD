@@ -76,3 +76,19 @@ install(FILES assets/icons/icad.ico assets/icons/icad.icns assets/icons/icad-256
         DESTINATION share/icad/icons)
 install(FILES examples/advanced.icad examples/robotic_arm.icad examples/sketch_history.icad
         DESTINATION share/icad/examples)
+install(FILES
+        docs/schemas/icad.analysis.result.v1.schema.json
+        docs/schemas/icad.evidence.manifest.v1.schema.json
+        docs/schemas/icad.compliance.v1.schema.json
+        DESTINATION share/icad/schemas)
+install(FILES
+        examples/bench/turbojet_engine.icad
+        examples/bench/turbojet_engine.evidence.json
+        examples/bench/DESIGN_PREPARATION.md
+        examples/bench/benchmark.md
+        DESTINATION share/icad/examples/bench)
+install(DIRECTORY
+        examples/bench/baseline
+        examples/bench/development
+        DESTINATION share/icad/examples/bench
+        FILES_MATCHING PATTERN "*.md" PATTERN "*.json" PATTERN "*.patch")

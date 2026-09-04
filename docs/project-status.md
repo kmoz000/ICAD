@@ -270,5 +270,13 @@ with project-owned credentials. Projected drawing edges are exact delivery-mesh
 edges; standards-specific GD&T authoring and analytic hidden-line removal remain
 future language depth and are not overclaimed as certified drafting.
 
+The turbojet ground-demonstrator program is intentionally at `DEVELOPMENT`.
+Its adjacent evidence manifest, controlled-input digests, CS-E development
+matrix, hazard register, and viewer/LSP/CLI/MCP evidence surfaces establish the
+repository gate, but they do not substitute for qualified thermodynamic,
+aerodynamic, rotor-dynamic, stress, life, combustion, controls, manufacturing,
+facility, or physical test work. Running-hardware geometry and fueled testing
+remain blocked until the recorded external reviews and approvals exist.
+
 DWG is intentionally not counted as a 3D target: ICAD will not disguise mesh
 data as DWG. The implemented DXF is genuine 2D drawing data.

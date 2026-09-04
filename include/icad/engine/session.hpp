@@ -17,6 +17,7 @@ struct PreviewResult {
     bool engineering_valid{true};
     std::string message;
     std::string model_json;
+    std::string evidence_json;
     std::uint64_t revision{};
     std::size_t bodies{};
     std::size_t materials{};

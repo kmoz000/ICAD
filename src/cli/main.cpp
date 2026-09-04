@@ -9,6 +9,7 @@
 #include "icad/compiler/lexer/token.hpp"
 #include "icad/constraints/validator.hpp"
 #include "icad/drawings/exporter.hpp"
+#include "icad/evidence/compliance.hpp"
 #include "icad/exchange/exporter.hpp"
 #include "icad/lsp/server.hpp"
 #include "icad/manufacturing/validator.hpp"
@@ -42,6 +43,9 @@ auto print_usage(std::ostream& output) -> void {
               "       icad compare-json <first.icad> <second.icad>\n"
               "       icad topology-json <source.icad>\n"
               "       icad diagnostics-json <source.icad>\n"
+              "       icad evidence-json <source.icad> --manifest <evidence.json>\n"
+              "       icad compliance-json <source.icad> --manifest <evidence.json> --basis <basis>\n"
+              "       icad compliance-report <source.icad> --manifest <evidence.json> --format html [--output <report.html>]\n"
               "       icad measure <source.icad>\n"
               "       icad distance-json <source.icad> <first-body> <second-body>\n"
               "       icad interference-json <source.icad>\n"
@@ -435,8 +439,11 @@ auto main(int argc, char** argv) -> int {
         return review.contains("\"ready\":true") ? 0 : 1;
     }
 
+    const bool evidence_command = command == "evidence-json" ||
+                                  command == "compliance-json" ||
+                                  command == "compliance-report";
     const icad::compiler::CompileOptions file_options{
-        .build_topology = true,
+        .build_topology = !evidence_command,
         .imports = {.source_path = source_path, .project_root = source_path.parent_path()}};
 
     if (command == "tokens") {
@@ -475,6 +482,68 @@ auto main(int argc, char** argv) -> int {
     if (command == "check") {
         std::cout << source_path.string() << ": compile check passed\n";
         return 0;
+    }
+    if (command == "evidence-json" || command == "compliance-json" ||
+        command == "compliance-report") {
+        const bool evidence_only = command == "evidence-json";
+        const bool report = command == "compliance-report";
+        const bool valid_shape = evidence_only ? argc == 5
+                                 : report      ? (argc == 7 || argc == 9)
+                                               : argc == 7;
+        if (!valid_shape || std::string_view{argv[3]} != "--manifest") {
+            print_usage(std::cerr);
+            return 2;
+        }
+        const std::filesystem::path manifest_path{argv[4]};
+        const auto manifest = read_file(manifest_path);
+        if (!manifest) {
+            std::cerr << "icad: cannot read evidence manifest: " << manifest_path.string() << '\n';
+            return 2;
+        }
+        std::string_view basis;
+        if (!evidence_only) {
+            if (report) {
+                if (std::string_view{argv[5]} != "--format" ||
+                    std::string_view{argv[6]} != "html") {
+                    print_usage(std::cerr);
+                    return 2;
+                }
+            } else {
+                if (std::string_view{argv[5]} != "--basis") {
+                    print_usage(std::cerr);
+                    return 2;
+                }
+                basis = argv[6];
+            }
+        }
+        const auto evaluation = icad::evidence::evaluate(
+            *source, *result.ir_project, *manifest, manifest_path, basis);
+        if (evidence_only) {
+            std::cout << icad::evidence::evidence_json(evaluation) << '\n';
+        } else if (!report) {
+            std::cout << icad::evidence::compliance_json(evaluation) << '\n';
+        } else {
+            std::filesystem::path output = manifest_path.parent_path() / "compliance-report.html";
+            if (argc == 9) {
+                if (std::string_view{argv[7]} != "--output") {
+                    print_usage(std::cerr);
+                    return 2;
+                }
+                output = argv[8];
+            }
+            std::ofstream html{output, std::ios::binary | std::ios::trunc};
+            if (!html || !(html << icad::evidence::compliance_html(evaluation))) {
+                std::cerr << "icad: cannot write compliance report: " << output.string() << '\n';
+                return 1;
+            }
+            std::cout << output.string() << ": icad.compliance.v1 html\n";
+        }
+        for (const auto& issue : evaluation.issues) {
+            if (issue.severity == icad::evidence::Severity::error)
+                std::cerr << issue.path << ':' << issue.line << ':' << issue.column
+                          << ": error[" << issue.code << "]: " << issue.message << '\n';
+        }
+        return evaluation.manifest_valid ? 0 : 1;
     }
     if (command == "ast") {
         print_ast(*result.program);

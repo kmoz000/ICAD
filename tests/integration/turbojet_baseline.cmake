@@ -1,0 +1,28 @@
+if(NOT DEFINED ICAD_SOURCE OR NOT DEFINED BASELINE_PATCH OR NOT DEFINED OUTPUT_ROOT)
+    message(FATAL_ERROR "ICAD_SOURCE, BASELINE_PATCH, and OUTPUT_ROOT are required")
+endif()
+
+set(anchor_sha "6df35f9c1614bf883e7268cc481337bbee846a12df4ad4547bb5435976b50649")
+set(patch_sha "579f9da26620cdf8c74129650b4ee8bc1ae03bf49f4e77ec666f1e1b41ae0b02")
+set(r3_sha "d4050632062a7a3a9e1ff019c15d24aca59bf05adb77ba2df2990645a62dc2da")
+
+file(SHA256 "${ICAD_SOURCE}" actual_anchor_sha)
+file(SHA256 "${BASELINE_PATCH}" actual_patch_sha)
+if(NOT actual_anchor_sha STREQUAL anchor_sha OR NOT actual_patch_sha STREQUAL patch_sha)
+    message(FATAL_ERROR "the immutable R3 reconstruction inputs changed")
+endif()
+
+file(READ "${ICAD_SOURCE}" development_source)
+set(development_header "# Single-spool turbojet ground-demonstrator DEVELOPMENT model.\n# Current geometry maturity is the preserved R3 packaging benchmark: it is not\n# released for rotating-hardware fabrication, fueled operation, flight, or a\n# certification claim. Accepted partner evidence controls every future change.\n# Design authority: this ICAD source, its adjacent evidence manifest, and\n# DESIGN_PREPARATION.md.")
+set(r3_header "# Complete non-flight-certified single-spool turbojet mechanical benchmark.\n# Design authority: this ICAD source plus DESIGN_PREPARATION.md.")
+string(REPLACE "${development_header}" "${r3_header}" reconstructed "${development_source}")
+string(REPLACE
+    "# Editable system parameters and derived design handles. TGD-REQ-ENV-001 fixes\n# the preferred candidate envelope. Running clearances remain Gate-1 open."
+    "# Editable system parameters and derived design handles."
+    reconstructed "${reconstructed}")
+file(MAKE_DIRECTORY "${OUTPUT_ROOT}")
+file(WRITE "${OUTPUT_ROOT}/turbojet_engine_r3.icad" "${reconstructed}")
+file(SHA256 "${OUTPUT_ROOT}/turbojet_engine_r3.icad" actual_r3_sha)
+if(NOT actual_r3_sha STREQUAL r3_sha)
+    message(FATAL_ERROR "R3 source reconstruction SHA-256 does not match the frozen baseline")
+endif()

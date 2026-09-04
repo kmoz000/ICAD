@@ -60,6 +60,7 @@ icad_add_unit_test(mechanism unit/mechanism_test.cpp)
 icad_add_unit_test(engineering unit/engineering_test.cpp)
 icad_add_unit_test(agent unit/agent_test.cpp)
 icad_add_unit_test(json unit/json_test.cpp)
+icad_add_unit_test(evidence unit/evidence_test.cpp)
 icad_add_unit_test(mcp unit/mcp_test.cpp)
 icad_add_unit_test(source_document unit/source_document_test.cpp)
 icad_add_unit_test(fuzz_smoke unit/fuzz_smoke_test.cpp)
@@ -117,6 +118,30 @@ add_test(
         -P ${CMAKE_CURRENT_SOURCE_DIR}/integration/cli_language.cmake
 )
 set_tests_properties(integration.cli_language PROPERTIES LABELS "integration;language")
+
+add_test(
+    NAME integration.cli_evidence
+    COMMAND ${CMAKE_COMMAND}
+        -DICAD_EXECUTABLE=$<TARGET_FILE:icad>
+        -DICAD_SOURCE=${PROJECT_SOURCE_DIR}/examples/bench/turbojet_engine.icad
+        -DICAD_MANIFEST=${PROJECT_SOURCE_DIR}/examples/bench/turbojet_engine.evidence.json
+        -DOUTPUT_ROOT=${CMAKE_CURRENT_BINARY_DIR}/evidence
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/integration/cli_evidence.cmake
+)
+set_tests_properties(integration.cli_evidence PROPERTIES
+    LABELS "integration;evidence;turbojet"
+    TIMEOUT 60)
+
+add_test(
+    NAME integration.turbojet_baseline
+    COMMAND ${CMAKE_COMMAND}
+        -DICAD_SOURCE=${PROJECT_SOURCE_DIR}/examples/bench/turbojet_engine.icad
+        -DBASELINE_PATCH=${PROJECT_SOURCE_DIR}/examples/bench/baseline/R3_SOURCE_FROM_DEVELOPMENT.patch
+        -DOUTPUT_ROOT=${CMAKE_CURRENT_BINARY_DIR}/turbojet-baseline
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/integration/turbojet_baseline.cmake
+)
+set_tests_properties(integration.turbojet_baseline PROPERTIES
+    LABELS "integration;evidence;turbojet;baseline")
 
 add_test(
     NAME integration.cli_check_advanced_sketch_constraints

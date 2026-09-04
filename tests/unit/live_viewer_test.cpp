@@ -1,4 +1,6 @@
 #include "icad/viewer/live_session.hpp"
+#include "icad/document/revision.hpp"
+#include "icad/evidence/compliance.hpp"
 
 #include <algorithm>
 #include <filesystem>
@@ -7,6 +9,7 @@
 #include <iterator>
 #include <string>
 #include <string_view>
+#include <utility>
 
 namespace {
 
@@ -42,6 +45,15 @@ CONNECT mount base_flange cover_flange METHOD BOLTED STANDARD ISO_4762 FASTENER 
 auto fail(std::string_view message) -> int {
     std::cerr << message << '\n';
     return 1;
+}
+
+auto replace_all(std::string text, std::string_view before, std::string_view after) -> std::string {
+    std::size_t offset{};
+    while ((offset = text.find(before, offset)) != std::string::npos) {
+        text.replace(offset, before.size(), after);
+        offset += after.size();
+    }
+    return text;
 }
 
 } // namespace
@@ -117,5 +129,48 @@ auto main() -> int {
     const auto restored = connection_session.preview(connection_source);
     if (!restored.success || !restored.engineering_valid || restored.model_json.empty())
         return fail("valid connection did not render after an engineering issue was corrected");
+
+    const auto evidence_path = root / "evidence.icad";
+    const auto input_path = root / "controlled.json";
+    const auto manifest_path = root / "evidence.evidence.json";
+    constexpr std::string_view controlled_input = "{\"revision\":1}";
+    {
+        std::ofstream output{evidence_path, std::ios::binary};
+        output << source;
+    }
+    {
+        std::ofstream output{input_path, std::ios::binary};
+        output << controlled_input;
+    }
+    std::string manifest = R"JSON({
+"schema":"icad.evidence.manifest.v1","project":"live_viewer","basis":"TEST-BASIS","lifecycleState":"DEVELOPMENT",
+"model":{"path":"evidence.icad","revision":"@REV@","sha256":"@MODEL_SHA@"},
+"controlledInputs":[{"id":"INPUT","kind":"load-case","path":"controlled.json","sha256":"@INPUT_SHA@"}],
+"requirements":[{"id":"REQ","title":"Fixture requirement","evidenceState":"assumed","criticality":"ordinary","entities":["part"],"evidence":[]}],
+"compliance":[{"paragraph":"TEST","applicability":"not-applicable","rationale":"Viewer cache fixture","reviewer":"Test fixture","status":"open","evidence":[]}],
+"artifacts":[],"hazards":[],"approvals":[],"prohibitedClaims":["EASA certified","airworthy","flight approved","TYPE_CERTIFIED"]})JSON";
+    manifest = replace_all(std::move(manifest), "@REV@", icad::document::revision_id(source));
+    manifest = replace_all(std::move(manifest), "@MODEL_SHA@", icad::evidence::sha256(source));
+    manifest = replace_all(std::move(manifest), "@INPUT_SHA@",
+                           icad::evidence::sha256(controlled_input));
+    {
+        std::ofstream output{manifest_path, std::ios::binary};
+        output << manifest;
+    }
+    icad::viewer::LiveSession evidence_session{evidence_path};
+    const auto evidence_first = evidence_session.preview(evidence_session.source());
+    const auto evidence_reused = evidence_session.preview(evidence_session.source());
+    if (!evidence_first.success || evidence_first.evidence_json.empty() ||
+        !evidence_first.evidence_json.contains("\"manifestValid\":true") ||
+        !evidence_reused.unchanged)
+        return fail("viewer did not evaluate and cache adjacent engineering evidence");
+    {
+        std::ofstream output{input_path, std::ios::binary};
+        output << controlled_input << '\n';
+    }
+    const auto evidence_stale = evidence_session.preview(evidence_session.source());
+    if (!evidence_stale.success || evidence_stale.unchanged ||
+        !evidence_stale.evidence_json.contains("ICAD-E0017"))
+        return fail("viewer did not invalidate evidence after a controlled input changed");
     return 0;
 }

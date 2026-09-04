@@ -22,6 +22,7 @@ namespace {
             source.engineering_valid,
             std::move(source.message),
             std::move(source.model_json),
+            std::move(source.evidence_json),
             source.revision,
             source.bodies,
             source.materials,

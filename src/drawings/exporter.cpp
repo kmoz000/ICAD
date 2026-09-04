@@ -363,7 +363,7 @@ auto write_svg(const compiler::ir::Project& project, const cad::ProjectAnalysis&
             std::string properties;
             for (const auto& property : feature.properties) {
                 if (!properties.empty())
-                    properties += " · ";
+                    properties += " | ";
                 properties += property.name + "=" + number(property.value.value) + property.value.unit;
             }
             constexpr std::size_t schedule_width = 68U;

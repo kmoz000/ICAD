@@ -1,36 +1,10 @@
-if(NOT DEFINED ICAD_EXECUTABLE OR NOT DEFINED ICAD_SOURCE OR NOT DEFINED REFERENCE_ROOT OR
+if(NOT DEFINED ICAD_EXECUTABLE OR NOT DEFINED ICAD_SOURCE OR
    NOT DEFINED OUTPUT_ROOT OR NOT DEFINED PROJECT_ROOT)
     message(FATAL_ERROR "robotic-arm benchmark is missing required paths")
 endif()
 
-include("${CMAKE_CURRENT_LIST_DIR}/robotic_reference.cmake")
-
-file(GLOB reference_stls "${REFERENCE_ROOT}/*.STL")
-list(LENGTH reference_stls reference_component_files)
-if(NOT reference_component_files EQUAL 10)
-    message(FATAL_ERROR "expected 10 reference STL component files, found ${reference_component_files}")
-endif()
-set(reference_facets 0)
-foreach(stl IN LISTS reference_stls)
-    file(STRINGS "${stl}" facets REGEX "^[ \\t]*facet normal")
-    list(LENGTH facets facet_count)
-    math(EXPR reference_facets "${reference_facets} + ${facet_count}")
-endforeach()
-if(NOT reference_facets EQUAL 23314)
-    message(FATAL_ERROR "reference STL facet baseline changed: ${reference_facets}")
-endif()
-
-set(reference_step "${REFERENCE_ROOT}/Robotic Arm 3D Model.STEP")
-execute_process(
-    COMMAND "${ICAD_EXECUTABLE}" inspect-step "${reference_step}"
-    RESULT_VARIABLE reference_step_result
-    OUTPUT_VARIABLE reference_step_output
-    ERROR_VARIABLE reference_step_error
-)
-if(NOT reference_step_result EQUAL 0 OR
-   NOT reference_step_output MATCHES "STEP_SOLIDS 20" OR
-   NOT reference_step_output MATCHES "STEP_ASSEMBLY_COMPONENTS 21")
-    message(FATAL_ERROR "reference STEP baseline was not recognized: ${reference_step_error}${reference_step_output}")
+if(NOT EXISTS "${ICAD_SOURCE}")
+    message(FATAL_ERROR "procedural robotic-arm reference source is missing: ${ICAD_SOURCE}")
 endif()
 
 file(REMOVE_RECURSE "${OUTPUT_ROOT}")

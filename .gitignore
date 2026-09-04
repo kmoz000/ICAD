@@ -18,7 +18,20 @@ PLAN.md
 !.vscode/extensions.json
 !.vscode/settings.json
 *.swp
-examples/bench
+# Keep the turbojet source and controlled development records versioned while
+# excluding its multi-gigabyte generated export/validation workspace.
+examples/bench/*
+!examples/bench/*.icad
+!examples/bench/*.md
+!examples/bench/*.json
+!examples/bench/baseline/
+examples/bench/baseline/*
+!examples/bench/baseline/*.json
+!examples/bench/baseline/*.patch
+!examples/bench/development/
+examples/bench/development/*
+!examples/bench/development/*.md
+!examples/bench/development/*.json
 # Compiler outputs
 *.obj
 *.step

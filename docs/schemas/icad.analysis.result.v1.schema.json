@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://icad.dev/schemas/icad.analysis.result.v1.schema.json",
+  "title": "ICAD external engineering analysis result",
+  "type": "object",
+  "required": [
+    "schema", "analysisId", "discipline", "solver", "inputModelRevision",
+    "inputModelSha256", "units", "assumptions", "results", "margins",
+    "limitations", "artifacts", "author", "independentReviewer", "disposition"
+  ],
+  "properties": {
+    "schema": { "const": "icad.analysis.result.v1" },
+    "analysisId": { "type": "string", "minLength": 1 },
+    "discipline": { "type": "string", "minLength": 1 },
+    "solver": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "validationReference": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "inputModelRevision": { "type": "string", "pattern": "^[0-9a-f]{16}$" },
+    "inputModelSha256": { "$ref": "#/$defs/sha256" },
+    "inputDigests": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/sha256" }
+    },
+    "units": { "type": "string", "minLength": 1 },
+    "assumptions": { "type": "array", "items": { "type": "string" } },
+    "results": { "type": "object" },
+    "margins": { "type": "object" },
+    "limitations": { "type": "array", "items": { "type": "string" } },
+    "artifacts": { "type": "array", "items": { "type": "string" } },
+    "author": { "$ref": "#/$defs/person" },
+    "independentReviewer": { "$ref": "#/$defs/reviewer" },
+    "disposition": { "enum": ["draft", "in-review", "accepted", "rejected"] }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "person": {
+      "type": "object",
+      "required": ["name", "organization"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "organization": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "reviewer": {
+      "type": "object",
+      "required": ["name", "organization", "approvedAt"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "organization": { "type": "string", "minLength": 1 },
+        "approvedAt": { "type": "string", "format": "date" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

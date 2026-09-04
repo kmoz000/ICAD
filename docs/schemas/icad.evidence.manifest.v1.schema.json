@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://icad.dev/schemas/icad.evidence.manifest.v1.schema.json",
+  "title": "ICAD engineering evidence manifest",
+  "type": "object",
+  "required": [
+    "schema", "project", "basis", "lifecycleState", "model", "controlledInputs", "requirements",
+    "compliance", "artifacts", "hazards", "approvals", "prohibitedClaims"
+  ],
+  "properties": {
+    "schema": { "const": "icad.evidence.manifest.v1" },
+    "project": { "type": "string", "minLength": 1 },
+    "basis": { "type": "string", "minLength": 1 },
+    "lifecycleState": {
+      "enum": ["BENCHMARK", "DEVELOPMENT", "GROUND_TEST_RELEASED", "DEMONSTRATOR_VALIDATED"]
+    },
+    "model": {
+      "type": "object",
+      "required": ["path", "revision", "sha256"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "revision": { "type": "string", "pattern": "^[0-9a-f]{16}$" },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      },
+      "additionalProperties": false
+    },
+    "controlledInputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "path", "sha256"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "kind": { "enum": ["material-definition", "load-case", "analysis-input", "test-definition", "facility-requirement"] },
+          "path": { "type": "string", "minLength": 1 },
+          "sha256": { "$ref": "#/$defs/sha256" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "requirements": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "evidenceState", "criticality", "entities", "evidence"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "title": { "type": "string", "minLength": 1 },
+          "evidenceState": { "enum": ["given", "assumed", "calculated", "independently-reviewed", "test-demonstrated"] },
+          "criticality": { "enum": ["ordinary", "important", "safety-critical"] },
+          "entities": { "type": "array", "items": { "type": "string" } },
+          "evidence": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": false
+      }
+    },
+    "compliance": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["paragraph", "applicability", "rationale", "reviewer", "status", "evidence"],
+        "properties": {
+          "paragraph": { "type": "string", "minLength": 1 },
+          "applicability": { "enum": ["applicable", "development-analogue", "deferred-to-flight-program", "not-applicable"] },
+          "rationale": { "type": "string", "minLength": 1 },
+          "reviewer": { "type": "string", "minLength": 1 },
+          "status": { "enum": ["open", "partially-supported", "satisfied"] },
+          "evidence": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": false
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "path", "sha256", "disposition", "inputModelRevision", "inputModelSha256", "author", "independentReviewer"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "kind": { "enum": ["analysis", "test", "approval", "drawing", "manufacturing", "calibration"] },
+          "path": { "type": "string", "minLength": 1 },
+          "sha256": { "$ref": "#/$defs/sha256" },
+          "disposition": { "enum": ["draft", "in-review", "accepted", "rejected"] },
+          "inputModelRevision": { "type": "string", "pattern": "^[0-9a-f]{16}$" },
+          "inputModelSha256": { "$ref": "#/$defs/sha256" },
+          "inputDigests": {
+            "type": "object",
+            "additionalProperties": { "$ref": "#/$defs/sha256" }
+          },
+          "units": { "type": "string" },
+          "author": { "$ref": "#/$defs/person" },
+          "independentReviewer": { "$ref": "#/$defs/reviewer" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "hazards": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "severity", "status"],
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "severity": { "enum": ["catastrophic", "critical", "major", "minor"] },
+          "status": { "enum": ["open", "mitigated", "closed"] }
+        },
+        "additionalProperties": false
+      }
+    },
+    "approvals": { "type": "array", "items": { "type": "string" } },
+    "prohibitedClaims": { "type": "array", "items": { "type": "string" } }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "person": {
+      "type": "object",
+      "required": ["name", "organization"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "organization": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "reviewer": {
+      "type": "object",
+      "required": ["name", "organization", "approvedAt"],
+      "properties": {
+        "name": { "type": "string" },
+        "organization": { "type": "string" },
+        "approvedAt": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

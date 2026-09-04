@@ -1,6 +1,7 @@
 add_library(icad_compiler
     agent/workflow.cpp
     json/value.cpp
+    evidence/compliance.cpp
     project/builder.cpp
     mcp/server.cpp
     compiler/compiler.cpp

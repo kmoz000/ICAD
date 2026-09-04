@@ -305,6 +305,8 @@ auto main(int argc, char** argv) -> int {
             window.findChild<QLabel*>(QStringLiteral("cursorPosition"));
         auto* diagnostics =
             window.findChild<QListWidget*>(QStringLiteral("diagnosticsList"));
+        const auto* evidence =
+            window.findChild<QListWidget*>(QStringLiteral("evidenceList"));
         const bool has_open_folder = std::ranges::any_of(
             window.findChildren<QAction*>(), [](const QAction* action) {
                 return action->text().remove(QLatin1Char('&')) == QStringLiteral("Open Folder…");
@@ -329,7 +331,7 @@ auto main(int argc, char** argv) -> int {
             workspace_tree == nullptr || workspace_tree->model() == nullptr ||
             window.workspace_root().empty() || model == nullptr ||
             editor == nullptr || compile_state == nullptr || cursor_position == nullptr ||
-            diagnostics == nullptr ||
+            diagnostics == nullptr || evidence == nullptr ||
             model->selectionBehavior() != QAbstractItemView::SelectRows ||
             model->header()->sectionResizeMode(0) != QHeaderView::Stretch || !has_open_folder ||
             !has_frame_selected || !has_mesh_mode || !has_scene_lighting) {

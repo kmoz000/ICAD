@@ -1,0 +1,21 @@
+{
+  "schema": "turbojet.load-cases.v1",
+  "status": "INPUT_DEFINITION_REQUIRED",
+  "revision": "DRAFT-0",
+  "purpose": "Controlled placeholder for the reviewed ground-demonstrator operating envelope and structural, thermal, rotor-dynamic, containment, mount, and test-cell load cases.",
+  "requiredLoadCaseFamilies": [
+    "design-point and off-design steady operation",
+    "start, acceleration, deceleration, flameout, and emergency shutdown transients",
+    "overspeed and overtemperature protection",
+    "rotor unbalance, critical-speed passage, bearing failure, rub, and seizure",
+    "blade release and casing or test-cell containment",
+    "mount limit, ultimate, proof, transport, lifting, and thrust loads",
+    "cold build, thermal growth, casing distortion, and full tolerance accumulation"
+  ],
+  "approvedOperatingPoints": [],
+  "approvedLoadCases": [],
+  "limitations": [
+    "This file supplies no numerical load case and cannot authorize detailed running-hardware geometry or operation.",
+    "Any content change invalidates evidence carrying the previous SHA-256 digest."
+  ]
+}

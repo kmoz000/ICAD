@@ -1089,6 +1089,33 @@ world-space geometry. STL, OBJ, embedded glTF 2.0, binary GLB 2.0, and OPC 3MF
 are generated from the same validated delivery model. The drawings module also
 emits an R2013 ASCII DXF containing genuine 2D LINE/TEXT entities.
 
+## External engineering evidence
+
+ICAD can bind a model to independently produced engineering evidence without
+pretending that display geometry is CFD, FEA, fatigue, thermal, test, or
+certification evidence. The public `icad.analysis.result.v1`,
+`icad.evidence.manifest.v1`, and `icad.compliance.v1` schemas live in
+[`docs/schemas`](docs/schemas). Evidence is invalidated when the model revision,
+model SHA-256, referenced controlled-input digest, artifact digest, or units no
+longer match.
+
+```sh
+build/bin/icad evidence-json model.icad --manifest model.evidence.json
+build/bin/icad compliance-json model.icad --manifest model.evidence.json \
+  --basis EASA-CS-E-AMENDMENT-8
+build/bin/icad compliance-report model.icad --manifest model.evidence.json \
+  --format html --output build/compliance.html
+```
+
+The same evaluation is available through the read-only MCP tools
+`icad.evidence.inspect` and `icad.compliance.inspect`. The LSP reports manifest
+line and column locations, and ICAD Studio presents the current lifecycle,
+release state, and evidence diagnostics in its Evidence panel.
+
+Only `BENCHMARK`, `DEVELOPMENT`, `GROUND_TEST_RELEASED`, and
+`DEMONSTRATOR_VALIDATED` can be selected. `TYPE_CERTIFIED` is rejected; an
+external authority program and issued certificate remain outside ICAD.
+
 Shapr3D supports STEP for 3D body import, while its DWG/DXF import path is for
 2D drawing data. ICAD therefore does not emit a misleading 3D DWG. The current
 STEP writer is structurally tested here; final interoperability still needs a

@@ -1,0 +1,20 @@
+{
+  "schema": "turbojet.materials-and-processes.v1",
+  "status": "INPUT_DEFINITION_REQUIRED",
+  "revision": "DRAFT-0",
+  "purpose": "Controlled placeholder identifying the material and process data that qualified partners must approve before Design Freeze R1.",
+  "requiredRecords": [
+    "material specification and product form",
+    "heat treatment and coating specification",
+    "temperature-dependent allowables source",
+    "surface finish and dimensional inspection method",
+    "NDT method and acceptance criteria",
+    "supplier lot traceability and serialized critical-part rules"
+  ],
+  "approvedMaterials": [],
+  "approvedProcesses": [],
+  "limitations": [
+    "This file contains no material allowables and cannot support strength, life, fabrication, or test release.",
+    "Any content change invalidates evidence carrying the previous SHA-256 digest."
+  ]
+}

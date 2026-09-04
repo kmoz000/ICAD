@@ -2,6 +2,7 @@
 
 #include "icad_highlighter.hpp"
 #include "scene_model.hpp"
+#include "icad/json/value.hpp"
 
 #include <QAction>
 #include <QActionGroup>
@@ -302,6 +303,16 @@ auto MainWindow::build_ui() -> void {
     diagnostics_dock_->setWidget(diagnostics_);
     addDockWidget(Qt::BottomDockWidgetArea, diagnostics_dock_);
 
+    evidence_ = new QListWidget{this};
+    evidence_->setObjectName(QStringLiteral("evidenceList"));
+    evidence_->setAlternatingRowColors(true);
+    evidence_dock_ = new QDockWidget{QStringLiteral("Engineering Evidence"), this};
+    evidence_dock_->setObjectName(QStringLiteral("evidenceDock"));
+    evidence_dock_->setWidget(evidence_);
+    addDockWidget(Qt::BottomDockWidgetArea, evidence_dock_);
+    tabifyDockWidget(diagnostics_dock_, evidence_dock_);
+    diagnostics_dock_->raise();
+
     model_tree_ = new QTreeWidget{this};
     model_tree_->setObjectName(QStringLiteral("modelTree"));
     model_tree_->setHeaderLabels({QStringLiteral("Component"), QStringLiteral("Material")});
@@ -471,6 +482,7 @@ auto MainWindow::build_actions() -> void {
     view_menu->addSeparator();
     view_menu->addAction(workspace_dock_->toggleViewAction());
     view_menu->addAction(diagnostics_dock_->toggleViewAction());
+    view_menu->addAction(evidence_dock_->toggleViewAction());
 
     auto* camera_menu = menuBar()->addMenu(QStringLiteral("&Camera"));
     auto* fit = camera_menu->addAction(QStringLiteral("Frame all"));
@@ -976,6 +988,7 @@ auto MainWindow::begin_compile() -> void {
 auto MainWindow::clear_preview_panels() -> void {
     viewport_->clear_scene();
     diagnostics_->clear();
+    evidence_->clear();
     model_tree_->clear();
     scenes_->clear();
     properties_->setText(QStringLiteral("No component selected"));
@@ -992,6 +1005,7 @@ auto MainWindow::apply_preview(const DocumentPreview& preview) -> void {
             clear_preview_panels();
         }
         update_diagnostics(preview.result);
+        update_evidence(preview.result);
         QString failure = QString::fromStdString(preview.result.message);
         if (!preview.result.diagnostics.empty()) {
             const auto& diagnostic = preview.result.diagnostics.front();
@@ -1009,6 +1023,7 @@ auto MainWindow::apply_preview(const DocumentPreview& preview) -> void {
     }
     clear_preview_panels();
     update_diagnostics(preview.result);
+    update_evidence(preview.result);
     compile_state_->setToolTip({});
     if (!preview.scene_error.isEmpty()) {
         auto* item = new QListWidgetItem{
@@ -1141,6 +1156,78 @@ auto MainWindow::update_diagnostics(const engine::PreviewResult& result) -> void
     }
     if (result.diagnostics.empty())
         diagnostics_->addItem(QStringLiteral("No syntax, topology, assembly, or manufacturing diagnostics."));
+}
+
+auto MainWindow::update_evidence(const engine::PreviewResult& result) -> void {
+    evidence_->clear();
+    if (result.evidence_json.empty()) {
+        auto* item = new QListWidgetItem{
+            QStringLiteral("No adjacent .evidence.json manifest; model remains unmanaged development geometry."),
+            evidence_};
+        item->setForeground(QColor{"#fbbf24"});
+        return;
+    }
+    const auto parsed = json::parse(result.evidence_json);
+    if (!parsed.ok()) {
+        auto* item = new QListWidgetItem{QStringLiteral("Evidence result could not be parsed."), evidence_};
+        item->setForeground(QColor{"#fb7185"});
+        return;
+    }
+    const auto string_value = [&](std::string_view name) -> QString {
+        const auto* value = parsed.value->find(name);
+        const auto* text = value == nullptr ? nullptr : value->string();
+        return text == nullptr ? QStringLiteral("unknown") : QString::fromStdString(*text);
+    };
+    const auto bool_value = [&](std::string_view name) -> bool {
+        const auto* value = parsed.value->find(name);
+        const auto* flag = value == nullptr ? nullptr : value->boolean();
+        return flag != nullptr && *flag;
+    };
+    const auto number_value = [&](std::string_view name) -> qulonglong {
+        const auto* value = parsed.value->find(name);
+        const auto* number = value == nullptr ? nullptr : value->number();
+        return number == nullptr ? 0U : static_cast<qulonglong>(*number);
+    };
+    evidence_->addItem(QStringLiteral("Lifecycle: %1").arg(string_value("lifecycleState")));
+    evidence_->addItem(QStringLiteral("Basis: %1").arg(string_value("basis")));
+    auto* status = new QListWidgetItem{
+        bool_value("releaseReady") ? QStringLiteral("Ground-test release evidence accepted")
+                                    : QStringLiteral("Ground-test release blocked"), evidence_};
+    status->setForeground(bool_value("releaseReady") ? QColor{"#4ade80"} : QColor{"#fb7185"});
+    evidence_->addItem(QStringLiteral("Open requirements: %1 · Open applicable paragraphs: %2 · Blocking hazards: %3")
+                           .arg(number_value("openRequirements"))
+                           .arg(number_value("openApplicableCompliance"))
+                           .arg(number_value("blockingHazards")));
+    evidence_dock_->raise();
+    const auto* issues_value = parsed.value->find("issues");
+    const auto* issues = issues_value == nullptr ? nullptr : issues_value->array();
+    if (issues == nullptr || issues->empty()) {
+        evidence_->addItem(QStringLiteral("Manifest integrity: valid"));
+        return;
+    }
+    for (const auto& issue : *issues) {
+        const auto* code_value = issue.find("code");
+        const auto* message_value = issue.find("message");
+        const auto* line_value = issue.find("line");
+        const auto* column_value = issue.find("column");
+        const auto* code = code_value == nullptr ? nullptr : code_value->string();
+        const auto* message = message_value == nullptr ? nullptr : message_value->string();
+        const auto line = line_value == nullptr || line_value->number() == nullptr
+                              ? 1.0
+                              : *line_value->number();
+        const auto column = column_value == nullptr || column_value->number() == nullptr
+                                ? 1.0
+                                : *column_value->number();
+        auto* item = new QListWidgetItem{
+            QStringLiteral("%1 · Ln %2, Col %3 · %4")
+                .arg(code == nullptr ? QStringLiteral("ICAD-E") : QString::fromStdString(*code))
+                .arg(static_cast<qulonglong>(line))
+                .arg(static_cast<qulonglong>(column))
+                .arg(message == nullptr ? QStringLiteral("Evidence issue")
+                                        : QString::fromStdString(*message)),
+            evidence_};
+        item->setForeground(QColor{"#fb7185"});
+    }
 }
 
 auto MainWindow::jump_to_diagnostic(QListWidgetItem* item) -> void {

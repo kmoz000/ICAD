@@ -2,11 +2,13 @@
 
 #include "icad/compiler/compiler.hpp"
 #include "icad/compiler/language.hpp"
+#include "icad/evidence/compliance.hpp"
 
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <istream>
 #include <ostream>
 #include <sstream>
@@ -51,6 +53,38 @@ namespace {
         decoded.erase(decoded.begin());
 #endif
     return decoded;
+}
+
+[[nodiscard]] auto uri_from_source_path(const std::filesystem::path& path) -> std::string {
+    std::string uri{"file://"};
+    const auto generic = std::filesystem::absolute(path).lexically_normal().generic_string();
+    for (const char raw_character : generic) {
+        const auto character = static_cast<unsigned char>(raw_character);
+        if (std::isalnum(character) || character == '/' || character == '-' || character == '_' ||
+            character == '.' || character == '~') {
+            uri.push_back(static_cast<char>(character));
+        } else {
+            constexpr char hex[] = "0123456789ABCDEF";
+            uri.push_back('%');
+            uri.push_back(hex[(character >> 4U) & 0xfU]);
+            uri.push_back(hex[character & 0xfU]);
+        }
+    }
+    return uri;
+}
+
+[[nodiscard]] auto evidence_path_for(const std::filesystem::path& source_path)
+    -> std::filesystem::path {
+    auto path = source_path;
+    path.replace_extension(".evidence.json");
+    return path;
+}
+
+[[nodiscard]] auto read_text_file(const std::filesystem::path& path) -> std::optional<std::string> {
+    std::ifstream input{path, std::ios::binary};
+    if (!input)
+        return std::nullopt;
+    return std::string{std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}};
 }
 
 [[nodiscard]] auto escaped(std::string_view value) -> std::string {
@@ -377,7 +411,7 @@ auto send(std::ostream& output, std::string_view message) -> void {
 }
 
 auto publish_diagnostics(std::ostream& output, std::string_view uri,
-                         std::string_view source) -> void {
+                         std::string_view source) -> compiler::CompileResult {
     const auto source_path = source_path_from_uri(uri);
     const auto compilation = compiler::compile(
         source, compiler::CompileOptions{
@@ -404,6 +438,46 @@ auto publish_diagnostics(std::ostream& output, std::string_view uri,
     }
     message += "]}}";
     send(output, message);
+    return compilation;
+}
+
+auto publish_evidence_diagnostics(std::ostream& output, std::string_view model_uri,
+                                  std::string_view source,
+                                  const compiler::CompileResult& compilation) -> void {
+    const auto model_path = source_path_from_uri(model_uri);
+    if (model_path.empty())
+        return;
+    const auto manifest_path = evidence_path_for(model_path);
+    const auto manifest = read_text_file(manifest_path);
+    if (!manifest)
+        return;
+    if (!compilation.ok())
+        return;
+    const auto evaluation = evidence::evaluate(source, *compilation.ir_project, *manifest,
+                                               manifest_path);
+    std::string message =
+        "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/publishDiagnostics\",\"params\":{\"uri\":\"";
+    message += escaped(uri_from_source_path(manifest_path));
+    message += "\",\"diagnostics\":[";
+    for (std::size_t index = 0; index < evaluation.issues.size(); ++index) {
+        if (index != 0)
+            message.push_back(',');
+        const auto& issue = evaluation.issues[index];
+        const auto line = issue.line > 0 ? issue.line - 1 : 0;
+        const auto column = issue.column > 0 ? issue.column - 1 : 0;
+        const int severity = issue.severity == evidence::Severity::error     ? 1
+                             : issue.severity == evidence::Severity::warning ? 2
+                                                                             : 3;
+        message += "{\"range\":{\"start\":{\"line\":" + std::to_string(line) +
+                   ",\"character\":" + std::to_string(column) +
+                   "},\"end\":{\"line\":" + std::to_string(line) +
+                   ",\"character\":" + std::to_string(column + 1) +
+                   "}},\"severity\":" + std::to_string(severity) + " ,\"code\":\"" +
+                   escaped(issue.code) + "\",\"source\":\"icad-evidence\",\"message\":\"" +
+                   escaped(issue.message) + "\"}";
+    }
+    message += "]}}";
+    send(output, message);
 }
 
 } // namespace
@@ -425,12 +499,20 @@ auto run(std::istream& input, std::ostream& output) -> int {
             const auto uri = string_field(message, "uri");
             const auto source = string_field(message, "text");
             documents[uri] = source;
-            publish_diagnostics(output, uri, source);
+            const auto compilation = publish_diagnostics(output, uri, source);
+            publish_evidence_diagnostics(output, uri, source, compilation);
         } else if (method == "textDocument/didClose") {
             const auto uri = string_field(message, "uri");
             documents.erase(uri);
             send(output, "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/publishDiagnostics\","
                          "\"params\":{\"uri\":\"" + escaped(uri) + "\",\"diagnostics\":[]}}");
+            const auto source_path = source_path_from_uri(uri);
+            if (!source_path.empty()) {
+                send(output, "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/publishDiagnostics\","
+                             "\"params\":{\"uri\":\"" +
+                                 escaped(uri_from_source_path(evidence_path_for(source_path))) +
+                                 "\",\"diagnostics\":[]}}");
+            }
         } else if (method == "textDocument/completion") {
             send(output, "{\"jsonrpc\":\"2.0\",\"id\":" + id +
                          ",\"result\":" + completion_items() + "}");

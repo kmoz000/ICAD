@@ -18,6 +18,7 @@ struct PreviewResult {
     bool engineering_valid{true};
     std::string message;
     std::string model_json;
+    std::string evidence_json;
     std::uint64_t revision{};
     std::size_t bodies{};
     std::size_t materials{};
@@ -84,6 +85,9 @@ class LiveSession {
     std::string last_preview_source_;
     PreviewResult last_preview_;
     std::vector<std::pair<std::filesystem::path, std::filesystem::file_time_type>> import_stamps_;
+    std::vector<std::pair<std::filesystem::path, std::filesystem::file_time_type>> evidence_stamps_;
+    bool evidence_exists_{};
+    std::filesystem::file_time_type evidence_stamp_{};
 };
 
 } // namespace icad::viewer

@@ -109,6 +109,7 @@ class MainWindow final : public QMainWindow {
     auto apply_preview(const DocumentPreview& preview) -> void;
     auto restore_document_preview(const OpenDocument& document) -> void;
     auto update_diagnostics(const engine::PreviewResult& result) -> void;
+    auto update_evidence(const engine::PreviewResult& result) -> void;
     auto jump_to_diagnostic(QListWidgetItem* item) -> void;
     auto update_cursor_position() -> void;
     auto rebuild_model_tree() -> void;
@@ -137,6 +138,7 @@ class MainWindow final : public QMainWindow {
     QFileSystemModel* workspace_model_{};
     QTreeView* workspace_tree_{};
     QListWidget* diagnostics_{};
+    QListWidget* evidence_{};
     QTreeWidget* model_tree_{};
     QListWidget* scenes_{};
     QSlider* timeline_{};
@@ -146,6 +148,7 @@ class MainWindow final : public QMainWindow {
     QLabel* cursor_position_{};
     QLabel* metrics_{};
     QDockWidget* diagnostics_dock_{};
+    QDockWidget* evidence_dock_{};
     QDockWidget* workspace_dock_{};
     QMenu* recent_menu_{};
     QAction* history_back_action_{};

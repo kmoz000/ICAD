@@ -1,0 +1,35 @@
+{
+  "schema": "icad.benchmark.baseline.v1",
+  "name": "turbojet-r3-packaging-benchmark",
+  "frozenAt": "2026-08-31",
+  "source": {
+    "developmentAnchorPath": "../turbojet_engine.icad",
+    "developmentAnchorSha256": "6df35f9c1614bf883e7268cc481337bbee846a12df4ad4547bb5435976b50649",
+    "reconstructionPatch": "R3_SOURCE_FROM_DEVELOPMENT.patch",
+    "reconstructionPatchSha256": "579f9da26620cdf8c74129650b4ee8bc1ae03bf49f4e77ec666f1e1b41ae0b02",
+    "revision": "84591a6e080feec9",
+    "sha256": "d4050632062a7a3a9e1ff019c15d24aca59bf05adb77ba2df2990645a62dc2da"
+  },
+  "validatedCounts": {
+    "components": 358,
+    "solids": 365,
+    "declaredEngagements": 262,
+    "unintendedPenetrations": 0,
+    "testsPassed": 71
+  },
+  "artifactChecksums": {
+    "turbojet_engine.step": "9c4ff269e0ff671508a05aecbdc2db58228320a6583937d68fe4be4f3a569f29",
+    "turbojet_engine.assembly.step": "2675481b3aefa1621e4086df8f41c396cf47eee552691bc4cc97fbb40ffc3b0f",
+    "turbojet_engine.glb": "d75693e19bbc10f8bc8318c16e4d246771f642aeb4cd82d10a91f47501c9eb66",
+    "turbojet_engine.3mf": "0ad21f3334886c812b1aaa376a09791f8f503109071cf96da8bbdbde548718e0",
+    "turbojet_engine.drawing.svg": "0466eccff86dcf4ea212126d90e2c746f3f61f4a75c8a319dd447f9838bd591c",
+    "turbojet_engine.drawing.dxf": "a2dad92ce5785f8ae8d3bb105c83d6c13bc6dab3056263e70a0b7571ae47e9e7",
+    "turbojet_engine.bom.json": "804e4bad06a80721bd28cd5a838f2fbbe931c92303cbfe51c3cd6d0793bd60c7",
+    "turbojet_engine.manufacturing.json": "faad5da45f094cf2229f7d38757d4688fc7a83be078f5b3e67d773d68965cc4f",
+    "final-cutaway-side.png": "6fded8f6eab63b065b894b38a4aa0a8cff86ef88aef0ff344fa1d2987068a893",
+    "final-drawing-general-arrangement.png": "f81b70725386c6548bf07fb24f4bf6c0988b7e824326b58f8881c99a67a689a3",
+    "final-drawing-compressor-blade.png": "07a39f16814da14244b4da77514fa6cb9305b4c50217d825c7552b3388aef8bc"
+  },
+  "status": "immutable-reference",
+  "limitation": "Non-running, non-flight-certified packaging benchmark."
+}

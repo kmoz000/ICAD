@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://icad.dev/schemas/icad.compliance.v1.schema.json",
+  "title": "ICAD development compliance evaluation",
+  "type": "object",
+  "required": [
+    "schema", "basis", "modelRevision", "modelSha256", "lifecycleState",
+    "manifestValid", "releaseReady", "openRequirements",
+    "safetyCriticalRequirements", "validationRequirementsOpen", "openApplicableCompliance", "blockingHazards",
+    "requirements", "compliance", "artifacts", "hazards", "prohibitedClaims", "issues"
+  ],
+  "properties": {
+    "schema": { "const": "icad.compliance.v1" },
+    "basis": { "type": "string" },
+    "modelRevision": { "type": "string" },
+    "modelSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "lifecycleState": { "type": "string" },
+    "manifestValid": { "type": "boolean" },
+    "releaseReady": { "type": "boolean" },
+    "openRequirements": { "type": "number", "minimum": 0 },
+    "safetyCriticalRequirements": { "type": "number", "minimum": 0 },
+    "validationRequirementsOpen": { "type": "number", "minimum": 0 },
+    "openApplicableCompliance": { "type": "number", "minimum": 0 },
+    "blockingHazards": { "type": "number", "minimum": 0 },
+    "requirements": { "type": "array" },
+    "compliance": { "type": "array" },
+    "artifacts": { "type": "array" },
+    "hazards": { "type": "array" },
+    "prohibitedClaims": { "type": "array", "items": { "type": "string" } },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["code", "severity", "path", "line", "column", "message"],
+        "properties": {
+          "code": { "type": "string" },
+          "severity": { "enum": ["information", "warning", "error"] },
+          "path": { "type": "string" },
+          "line": { "type": "number", "minimum": 1 },
+          "column": { "type": "number", "minimum": 1 },
+          "message": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

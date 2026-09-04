@@ -1,26 +1,11 @@
-if(NOT DEFINED ICAD_EXECUTABLE OR NOT DEFINED OUTPUT_ROOT OR NOT DEFINED REFERENCE_ROOT OR
+if(NOT DEFINED ICAD_EXECUTABLE OR NOT DEFINED OUTPUT_ROOT OR
    NOT DEFINED PROJECT_ROOT)
     message(FATAL_ERROR "agentic robot prompt benchmark is missing required paths")
 endif()
 
-include("${CMAKE_CURRENT_LIST_DIR}/robotic_reference.cmake")
-
-file(GLOB reference_stls "${REFERENCE_ROOT}/*.STL")
-list(LENGTH reference_stls reference_components)
-if(NOT reference_components EQUAL 10)
-    message(FATAL_ERROR "agentic benchmark expected 10 reference components, found ${reference_components}")
-endif()
-execute_process(
-    COMMAND "${ICAD_EXECUTABLE}" inspect-step
-            "${REFERENCE_ROOT}/Robotic Arm 3D Model.STEP"
-    RESULT_VARIABLE reference_result
-    OUTPUT_VARIABLE reference_output
-    ERROR_VARIABLE reference_error
-)
-if(NOT reference_result EQUAL 0 OR NOT reference_output MATCHES "STEP_SOLIDS 20" OR
-   NOT reference_output MATCHES "STEP_ASSEMBLY_COMPONENTS 21")
-    message(FATAL_ERROR "agentic benchmark could not validate the supplied reference: ${reference_error}${reference_output}")
-endif()
+# The former external STL/STEP fixture was intentionally removed. This test
+# validates the rebuilt procedural reference through agent creation, assembly
+# STEP read-back, visual topology, and manufacturing checks below.
 file(REMOVE_RECURSE "${OUTPUT_ROOT}")
 file(MAKE_DIRECTORY "${OUTPUT_ROOT}")
 set(source "${OUTPUT_ROOT}/prompt_robotic_arm.icad")

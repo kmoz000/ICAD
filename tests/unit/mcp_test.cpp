@@ -116,6 +116,15 @@ auto main() -> int {
                           {{"source", std::string{valid_source}},
                            {"outputDirectory", "artifacts"},
                            {"modelName", "mcp_part"}});
+    messages += tool_call(28, "icad.evidence.inspect",
+                          {{"source", std::string{valid_source}},
+                           {"manifest", "{}"},
+                           {"manifestPath", "evidence.json"}});
+    messages += tool_call(29, "icad.compliance.inspect",
+                          {{"source", std::string{valid_source}},
+                           {"manifest", "{}"},
+                           {"manifestPath", "evidence.json"},
+                           {"basis", "EASA-CS-E-AMENDMENT-8"}});
     messages += tool_call(7, "icad.build",
                           {{"source", std::string{valid_source}},
                            {"outputDirectory", "../escape"},
@@ -172,7 +181,7 @@ auto main() -> int {
             return fail("MCP emitted invalid JSON");
         parsed_responses.push_back(std::move(*parsed.value));
     }
-    if (parsed_responses.size() != 28) {
+    if (parsed_responses.size() != 30) {
         return fail("MCP emitted an unexpected response count");
     }
     const auto serialized = output.str();
@@ -182,6 +191,10 @@ auto main() -> int {
         !serialized.contains("\"name\":\"icad.project.restore\"") ||
         !serialized.contains("\"name\":\"icad.project.set_parameters\"") ||
         !serialized.contains("\"name\":\"icad.agent.create\"") ||
+        !serialized.contains("\"name\":\"icad.evidence.inspect\"") ||
+        !serialized.contains("\"name\":\"icad.compliance.inspect\"") ||
+        !serialized.contains("\"schema\":\"icad.evidence.manifest.v1\"") ||
+        !serialized.contains("\"schema\":\"icad.compliance.v1\"") ||
         !serialized.contains("\"name\":\"icad.topology\"") ||
         !serialized.contains("\"name\":\"icad.visualize\"") ||
         !serialized.contains("\"name\":\"icad.compare\"") ||

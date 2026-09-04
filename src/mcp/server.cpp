@@ -8,6 +8,7 @@
 #include "icad/compiler/language.hpp"
 #include "icad/constraints/validator.hpp"
 #include "icad/document/source.hpp"
+#include "icad/evidence/compliance.hpp"
 #include "icad/json/value.hpp"
 #include "icad/manufacturing/validator.hpp"
 #include "icad/materials/library.hpp"
@@ -345,6 +346,39 @@ auto send(std::ostream& output, const json::Value& message) -> void {
                 {"manufacturing", object({{"passed", manufacturing_report.passed},
                                           {"issues", json::Value{std::move(issue_json)}}})}}),
         !passed);
+}
+
+[[nodiscard]] auto evidence_source(const json::Value* arguments, bool compliance_only) -> json::Value {
+    const auto* source = source_argument(arguments);
+    const auto* manifest = string_at(arguments, "manifest");
+    const auto* manifest_path = string_at(arguments, "manifestPath");
+    const auto* basis = string_at(arguments, "basis");
+    if (source == nullptr || manifest == nullptr || manifest_path == nullptr) {
+        return tool_error("ICAD-MCP-ARGS",
+                          "evidence inspection requires source, manifest, and manifestPath strings");
+    }
+    const auto manifest_file = std::filesystem::path{*manifest_path};
+    auto source_path = manifest_file;
+    source_path.replace_extension();
+    if (const auto parsed_manifest = json::parse(*manifest); parsed_manifest.ok()) {
+        const auto* model = parsed_manifest.value->find("model");
+        const auto* declared_path = string_at(model, "path");
+        if (declared_path != nullptr && !std::filesystem::path{*declared_path}.is_absolute())
+            source_path = manifest_file.parent_path() / *declared_path;
+    }
+    const auto compilation = compiler::compile(
+        *source, compiler::CompileOptions{
+                     .build_topology = false,
+                     .imports = {.source_path = source_path,
+                                 .project_root = manifest_file.parent_path()}});
+    if (!compilation.ok())
+        return tool_result(parsed_value(ai::diagnostics_json(*source)), true);
+    const auto evaluation = evidence::evaluate(
+        *source, *compilation.ir_project, *manifest, manifest_file,
+        basis == nullptr ? std::string_view{} : std::string_view{*basis});
+    const auto serialized = compliance_only ? evidence::compliance_json(evaluation)
+                                            : evidence::evidence_json(evaluation);
+    return tool_result(parsed_value(serialized), !evaluation.manifest_valid);
 }
 
 [[nodiscard]] auto material_library() -> json::Value {
@@ -855,6 +889,8 @@ auto send(std::ostream& output, const json::Value& message) -> void {
 {"name":"icad.interference","title":"Query assembly interference","description":"Classify penetrating, contained, and surface-only body contacts.","inputSchema":{"type":"object","properties":{"source":{"type":"string"}},"required":["source"],"additionalProperties":false},"annotations":{"readOnlyHint":true}},
 {"name":"icad.section","title":"Query plane section","description":"Intersect a plane with the complete design or one named body.","inputSchema":{"type":"object","properties":{"source":{"type":"string"},"px":{"type":"number"},"py":{"type":"number"},"pz":{"type":"number"},"nx":{"type":"number"},"ny":{"type":"number"},"nz":{"type":"number"},"body":{"type":"string"}},"required":["source","px","py","pz","nx","ny","nz"],"additionalProperties":false},"annotations":{"readOnlyHint":true}},
 {"name":"icad.build","title":"Build ICAD artifact package","description":"Compile and atomically stage a complete CAD, mesh, viewer, BOM, manufacturing, and drawing package inside the configured workspace.","inputSchema":{"type":"object","properties":{"source":{"type":"string"},"outputDirectory":{"type":"string","description":"Workspace-relative output directory"},"modelName":{"type":"string","pattern":"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"}},"required":["source","outputDirectory","modelName"],"additionalProperties":false},"annotations":{"readOnlyHint":false,"destructiveHint":false}}
+,{"name":"icad.evidence.inspect","title":"Inspect engineering evidence","description":"Validate a versioned evidence manifest, partner analysis results, model revision links, SHA-256 integrity, units, and independent approvals without running or fabricating a solver.","inputSchema":{"type":"object","properties":{"source":{"type":"string"},"manifest":{"type":"string"},"manifestPath":{"type":"string"}},"required":["source","manifest","manifestPath"],"additionalProperties":false},"annotations":{"readOnlyHint":true}}
+,{"name":"icad.compliance.inspect","title":"Inspect development compliance","description":"Return icad.compliance.v1 readiness, open requirements, hazards, stale evidence, prohibited claims, and lifecycle state for a ground-demonstrator program.","inputSchema":{"type":"object","properties":{"source":{"type":"string"},"manifest":{"type":"string"},"manifestPath":{"type":"string"},"basis":{"type":"string"}},"required":["source","manifest","manifestPath","basis"],"additionalProperties":false},"annotations":{"readOnlyHint":true}}
 ,{"name":"icad.project.read","title":"Read durable ICAD project","description":"Read workspace-confined ICAD source with an exact hexadecimal revision for optimistic concurrency.","inputSchema":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false},"annotations":{"readOnlyHint":true}}
 ,{"name":"icad.project.write","title":"Commit durable ICAD project","description":"Compiler-validate and atomically commit complete ICAD source when expectedRevision matches; use absent to create.","inputSchema":{"type":"object","properties":{"path":{"type":"string"},"source":{"type":"string"},"expectedRevision":{"type":"string"}},"required":["path","source","expectedRevision"],"additionalProperties":false},"annotations":{"readOnlyHint":false,"destructiveHint":false}}
 ,{"name":"icad.project.set_parameter","title":"Edit ICAD parameter","description":"Atomically update one named parameter with optimistic concurrency while preserving surrounding source.","inputSchema":{"type":"object","properties":{"path":{"type":"string"},"parameter":{"type":"string"},"value":{"type":"number"},"unit":{"type":"string"},"expectedRevision":{"type":"string"}},"required":["path","parameter","value","unit","expectedRevision"],"additionalProperties":false},"annotations":{"readOnlyHint":false,"destructiveHint":false}}
@@ -903,6 +939,10 @@ auto send(std::ostream& output, const json::Value& message) -> void {
         return section_source(arguments);
     if (name == "icad.build")
         return build_source(arguments, workspace);
+    if (name == "icad.evidence.inspect")
+        return evidence_source(arguments, false);
+    if (name == "icad.compliance.inspect")
+        return evidence_source(arguments, true);
     if (name == "icad.project.read")
         return project_read(arguments, workspace);
     if (name == "icad.project.write")

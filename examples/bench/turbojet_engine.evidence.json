@@ -1,0 +1,223 @@
+{
+  "schema": "icad.evidence.manifest.v1",
+  "project": "single_spool_turbojet",
+  "basis": "EASA-CS-E-AMENDMENT-8",
+  "lifecycleState": "DEVELOPMENT",
+  "model": {
+    "path": "turbojet_engine.icad",
+    "revision": "ea98f7f60891e282",
+    "sha256": "6df35f9c1614bf883e7268cc481337bbee846a12df4ad4547bb5435976b50649"
+  },
+  "controlledInputs": [
+    {
+      "id": "MATERIALS-AND-PROCESSES",
+      "kind": "material-definition",
+      "path": "development/materials-and-processes.json",
+      "sha256": "07416ca9ad62af417e40e86b14abe72eed350e1fb2677eb0e88b5d7a302d8ce9"
+    },
+    {
+      "id": "GROUND-DEMONSTRATOR-LOAD-CASES",
+      "kind": "load-case",
+      "path": "development/load-cases.json",
+      "sha256": "754a1d85c422afa1b7fb6deded24db8e4ac57689314bbb6fc35efc07f74e9036"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "TGD-REQ-ENV-001",
+      "title": "Preferred compact single-spool candidate envelope",
+      "evidenceState": "given",
+      "criticality": "important",
+      "entities": ["engine_length", "max_radius", "single_spool_rotation"],
+      "evidence": []
+    },
+    {
+      "id": "TGD-REQ-CYCLE-001",
+      "title": "Reviewed design-point and off-design operating envelope",
+      "evidenceState": "assumed",
+      "criticality": "safety-critical",
+      "entities": ["compressor_rotor_disk_1", "turbine_rotor_disk", "exhaust_nozzle"],
+      "evidence": []
+    },
+    {
+      "id": "TGD-REQ-ROTOR-001",
+      "title": "Rotor integrity, overspeed, forced response, and declared life",
+      "evidenceState": "assumed",
+      "criticality": "safety-critical",
+      "entities": ["shaft_continuous", "compressor_rotor_disk_1", "turbine_rotor_disk"],
+      "evidence": []
+    },
+    {
+      "id": "TGD-REQ-CLEARANCE-001",
+      "title": "Cold and hot clearances derived from tolerance, orbit, distortion, and thermal growth",
+      "evidenceState": "assumed",
+      "criticality": "safety-critical",
+      "entities": ["bearing_clearance", "rotor_axial_clearance", "structure_compressor_casing", "turbine_casing"],
+      "evidence": []
+    },
+    {
+      "id": "TGD-REQ-BEARING-001",
+      "title": "Bearing, preload, lubrication, sealing, and scavenge system",
+      "evidenceState": "assumed",
+      "criticality": "safety-critical",
+      "entities": ["front_bearing_fit", "rear_bearing_fit", "shaft_rear_labyrinth"],
+      "evidence": []
+    },
+    {
+      "id": "TGD-REQ-FUEL-001",
+      "title": "Jet A-1 fuel metering, distribution, isolation, drainage, and fire safety",
+      "evidenceState": "assumed",
+      "criticality": "safety-critical",
+      "entities": ["combustor_fuel_manifold", "combustor_casing"],
+      "evidence": []
+    },
+    {
+      "id": "TGD-REQ-CONTROL-001",
+      "title": "Independent overspeed, overtemperature, flameout, and emergency shutdown protection",
+      "evidenceState": "assumed",
+      "criticality": "safety-critical",
+      "entities": ["single_spool_rotation"],
+      "evidence": []
+    },
+    {
+      "id": "TGD-REQ-CONTAIN-001",
+      "title": "Rotor/blade and test-cell containment substantiation",
+      "evidenceState": "assumed",
+      "criticality": "safety-critical",
+      "entities": ["structure_compressor_casing", "turbine_casing"],
+      "evidence": []
+    },
+    {
+      "id": "TGD-REQ-MOUNT-001",
+      "title": "Mount and test-stand limit, ultimate, proof, and conformity evidence",
+      "evidenceState": "assumed",
+      "criticality": "safety-critical",
+      "entities": ["structure_mount_front", "structure_mount_rear", "front_engine_mount", "rear_engine_mount"],
+      "evidence": []
+    },
+    {
+      "id": "TGD-REQ-MFG-001",
+      "title": "Controlled materials, processes, FAI, NDT, balance, and serialized critical parts",
+      "evidenceState": "assumed",
+      "criticality": "safety-critical",
+      "entities": ["titanium_rotor", "hot_nickel", "bearing_steel"],
+      "evidence": []
+    },
+    {
+      "id": "TGD-REQ-TEST-001",
+      "title": "Morocco facility permits and independent test-readiness review",
+      "evidenceState": "assumed",
+      "criticality": "safety-critical",
+      "entities": ["engine_ground"],
+      "evidence": []
+    },
+    {
+      "id": "TGD-REQ-ENDURANCE-001",
+      "title": "Approved envelope, endurance, teardown, and final limitations",
+      "evidenceState": "assumed",
+      "criticality": "safety-critical",
+      "entities": ["single_spool_rotation"],
+      "evidence": []
+    }
+  ],
+  "compliance": [
+    {
+      "paragraph": "CS-E 20",
+      "applicability": "development-analogue",
+      "rationale": "Controlled engine configuration and interfaces are required for the ground demonstrator.",
+      "reviewer": "unassigned",
+      "status": "open",
+      "evidence": []
+    },
+    {
+      "paragraph": "CS-E 25",
+      "applicability": "development-analogue",
+      "rationale": "Ground operating, inspection, and maintenance instructions are required.",
+      "reviewer": "unassigned",
+      "status": "open",
+      "evidence": []
+    },
+    {
+      "paragraph": "CS-E 50/60",
+      "applicability": "development-analogue",
+      "rationale": "Control, limiting, monitoring, and instrumentation require independent evidence.",
+      "reviewer": "unassigned",
+      "status": "open",
+      "evidence": []
+    },
+    {
+      "paragraph": "CS-E 110/130/170",
+      "applicability": "development-analogue",
+      "rationale": "Assembly control, fire prevention, and component verification apply to safe ground operation.",
+      "reviewer": "unassigned",
+      "status": "open",
+      "evidence": []
+    },
+    {
+      "paragraph": "CS-E 510",
+      "applicability": "development-analogue",
+      "rationale": "Hazardous effects and protection-system dependencies require qualified safety analysis.",
+      "reviewer": "unassigned",
+      "status": "open",
+      "evidence": []
+    },
+    {
+      "paragraph": "CS-E 520/560",
+      "applicability": "development-analogue",
+      "rationale": "Strength, containment-related loads, and fuel-system safety remain open.",
+      "reviewer": "unassigned",
+      "status": "open",
+      "evidence": []
+    },
+    {
+      "paragraph": "CS-E 650/710/720",
+      "applicability": "development-analogue",
+      "rationale": "Vibration, calibration, and functioning evidence are required before envelope release.",
+      "reviewer": "unassigned",
+      "status": "open",
+      "evidence": []
+    },
+    {
+      "paragraph": "CS-E 740",
+      "applicability": "development-analogue",
+      "rationale": "A qualified partner must approve the ground-demonstrator endurance schedule.",
+      "reviewer": "unassigned",
+      "status": "open",
+      "evidence": []
+    },
+    {
+      "paragraph": "CS-E 810",
+      "applicability": "development-analogue",
+      "rationale": "Compressor and turbine blade failure and containment require analysis and test evidence.",
+      "reviewer": "unassigned",
+      "status": "open",
+      "evidence": []
+    },
+    {
+      "paragraph": "Flight installation, icing, ingestion, relight, emissions and type certification",
+      "applicability": "deferred-to-flight-program",
+      "rationale": "The selected end state is a contained ground demonstrator, not an aircraft engine approval.",
+      "reviewer": "program safety lead",
+      "status": "open",
+      "evidence": []
+    }
+  ],
+  "artifacts": [],
+  "hazards": [
+    { "id": "HAZ-001", "title": "Uncontained rotor or blade debris", "severity": "catastrophic", "status": "open" },
+    { "id": "HAZ-002", "title": "Uncontrolled fire or fuel release", "severity": "catastrophic", "status": "open" },
+    { "id": "HAZ-003", "title": "Inability to shut down", "severity": "catastrophic", "status": "open" },
+    { "id": "HAZ-004", "title": "Overspeed or overtemperature", "severity": "critical", "status": "open" },
+    { "id": "HAZ-005", "title": "Bearing or lubrication failure", "severity": "critical", "status": "open" },
+    { "id": "HAZ-006", "title": "Engine mount or test-stand failure", "severity": "catastrophic", "status": "open" },
+    { "id": "HAZ-007", "title": "Hot exhaust, noise, or blast injury", "severity": "critical", "status": "open" },
+    { "id": "HAZ-008", "title": "Instrumentation disagreement masks an unsafe state", "severity": "critical", "status": "open" }
+  ],
+  "approvals": [],
+  "prohibitedClaims": [
+    "EASA certified",
+    "airworthy",
+    "flight approved",
+    "TYPE_CERTIFIED"
+  ]
+}

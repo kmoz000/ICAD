@@ -1,0 +1,24 @@
+--- turbojet_engine.icad.development
++++ turbojet_engine.icad.r3
+@@ -1,9 +1,5 @@
+-# Single-spool turbojet ground-demonstrator DEVELOPMENT model.
+-# Current geometry maturity is the preserved R3 packaging benchmark: it is not
+-# released for rotating-hardware fabrication, fueled operation, flight, or a
+-# certification claim. Accepted partner evidence controls every future change.
+-# Design authority: this ICAD source, its adjacent evidence manifest, and
+-# DESIGN_PREPARATION.md.
++# Complete non-flight-certified single-spool turbojet mechanical benchmark.
++# Design authority: this ICAD source plus DESIGN_PREPARATION.md.
+ REQUIRES ICAD 1.0
+ REQUIRES CAPABILITY PARAMETER_EXPRESSIONS_V1
+ REQUIRES CAPABILITY QUALIFIED_VALUE_REFERENCES_V1
+@@ -22,9 +18,8 @@
+ UNITS mm
+ TOLERANCE LINEAR 0.1 mm ANGULAR 0.25 deg
+ 
+-# Editable system parameters and derived design handles. TGD-REQ-ENV-001 fixes
+-# the preferred candidate envelope. Running clearances remain Gate-1 open.
++# Editable system parameters and derived design handles.
+ PARAMETER engine_length 1000 mm
+ PARAMETER max_radius 200 mm
+ PARAMETER shaft_radius 20 mm
